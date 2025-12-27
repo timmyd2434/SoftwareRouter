@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Activity, RefreshCw, TrendingUp, TrendingDown, AlertCircle, Network } from 'lucide-react';
 import './Traffic.css';
+import { API_ENDPOINTS } from '../apiConfig';
 
 const Traffic = () => {
     const [stats, setStats] = useState({});
@@ -26,7 +27,7 @@ const Traffic = () => {
 
     const fetchStats = () => {
         setLoading(true);
-        fetch('http://localhost:8080/api/traffic/stats')
+        fetch(API_ENDPOINTS.TRAFFIC_STATS)
             .then(res => res.json())
             .then(data => {
                 setStats(data);
@@ -39,7 +40,7 @@ const Traffic = () => {
     };
 
     const fetchConnections = () => {
-        fetch('http://localhost:8080/api/traffic/connections')
+        fetch(API_ENDPOINTS.TRAFFIC_CONNECTIONS)
             .then(res => res.json())
             .then(data => {
                 setConnections(data || []);

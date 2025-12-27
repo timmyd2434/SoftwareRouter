@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Network, Plus, Trash2, Settings, Power, RefreshCw, X, AlertCircle } from 'lucide-react';
 import './Interfaces.css';
+import { API_ENDPOINTS } from '../apiConfig';
 
 const Interfaces = () => {
     const [interfaces, setInterfaces] = useState([]);
@@ -40,7 +41,7 @@ const Interfaces = () => {
 
     const fetchInterfaces = () => {
         setLoading(true);
-        fetch('http://localhost:8080/api/interfaces')
+        fetch(API_ENDPOINTS.INTERFACES)
             .then(res => res.json())
             .then(data => {
                 setInterfaces(data);
@@ -53,7 +54,7 @@ const Interfaces = () => {
     };
 
     const fetchMetadata = () => {
-        fetch('http://localhost:8080/api/interfaces/metadata')
+        fetch(API_ENDPOINTS.INTERFACE_METADATA)
             .then(res => res.json())
             .then(data => {
                 setMetadata(data || {});
@@ -76,7 +77,7 @@ const Interfaces = () => {
         }
 
         try {
-            const res = await fetch('http://localhost:8080/api/interfaces/vlan', {
+            const res = await fetch(API_ENDPOINTS.INTERFACE_VLAN, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -109,7 +110,7 @@ const Interfaces = () => {
         if (!confirm(`Delete VLAN interface ${interfaceName}?`)) return;
 
         try {
-            const res = await fetch(`http://localhost:8080/api/interfaces/vlan?interface=${interfaceName}`, {
+            const res = await fetch(`${API_ENDPOINTS.INTERFACE_VLAN}?interface=${interfaceName}`, {
                 method: 'DELETE'
             });
 
@@ -132,7 +133,7 @@ const Interfaces = () => {
         }
 
         try {
-            const res = await fetch('http://localhost:8080/api/interfaces/ip', {
+            const res = await fetch(API_ENDPOINTS.INTERFACE_IP, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(ipForm)
@@ -159,7 +160,7 @@ const Interfaces = () => {
         if (!confirm(`Set ${interfaceName} to ${newState.toUpperCase()}?`)) return;
 
         try {
-            const res = await fetch('http://localhost:8080/api/interfaces/state', {
+            const res = await fetch(API_ENDPOINTS.INTERFACE_STATE, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -192,7 +193,7 @@ const Interfaces = () => {
 
     const handleSetLabel = async () => {
         try {
-            const res = await fetch('http://localhost:8080/api/interfaces/label', {
+            const res = await fetch(API_ENDPOINTS.INTERFACE_LABEL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(labelForm)

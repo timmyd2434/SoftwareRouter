@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Shield, AlertTriangle, Ban, TrendingUp, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react';
 import './Security.css';
+import { API_ENDPOINTS } from '../apiConfig';
 
 const Security = () => {
     const [stats, setStats] = useState(null);
@@ -10,14 +11,14 @@ const Security = () => {
     const [filter, setFilter] = useState('all'); // all, high, medium, low
 
     const fetchStats = () => {
-        fetch('http://localhost:8080/api/security/stats')
+        fetch(API_ENDPOINTS.SECURITY_STATS)
             .then(res => res.json())
             .then(data => setStats(data))
             .catch(err => console.error(err));
     };
 
     const fetchAlerts = () => {
-        fetch('http://localhost:8080/api/security/suricata/alerts')
+        fetch(API_ENDPOINTS.SECURITY_ALERTS)
             .then(res => res.json())
             .then(data => {
                 setAlerts(data || []);
@@ -30,7 +31,7 @@ const Security = () => {
     };
 
     const fetchDecisions = () => {
-        fetch('http://localhost:8080/api/security/crowdsec/decisions')
+        fetch(API_ENDPOINTS.SECURITY_DECISIONS)
             .then(res => res.json())
             .then(data => setDecisions(data || []))
             .catch(err => console.error(err));

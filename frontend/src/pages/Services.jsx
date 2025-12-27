@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Server, CheckCircle, XCircle, Power, RotateCw, AlertCircle } from 'lucide-react';
 import './Services.css';
+import { API_ENDPOINTS } from '../apiConfig';
 
 const Services = () => {
     const [services, setServices] = useState([]);
@@ -15,7 +16,7 @@ const Services = () => {
 
     const fetchServices = () => {
         setLoading(true);
-        fetch('http://localhost:8080/api/services')
+        fetch(API_ENDPOINTS.SERVICES)
             .then(res => res.json())
             .then(data => {
                 setServices(data);
@@ -38,7 +39,7 @@ const Services = () => {
         setActionLoading(prev => ({ ...prev, [displayName]: action }));
 
         try {
-            const res = await fetch('http://localhost:8080/api/services/control', {
+            const res = await fetch(API_ENDPOINTS.SERVICES_CONTROL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ serviceName, action })

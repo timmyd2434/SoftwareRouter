@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import Card from '../components/dashboard/Card';
 import { Cpu, HardDrive, Wifi, Activity } from 'lucide-react';
 import './Dashboard.css';
+import { API_ENDPOINTS } from '../apiConfig';
 
 const Dashboard = () => {
     const [systemStatus, setSystemStatus] = useState(null);
@@ -11,7 +12,7 @@ const Dashboard = () => {
     useEffect(() => {
         const fetchStatus = async () => {
             try {
-                const res = await fetch('http://localhost:8080/api/status');
+                const res = await fetch(API_ENDPOINTS.STATUS);
                 if (res.ok) {
                     const data = await res.json();
                     setSystemStatus(data);
