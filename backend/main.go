@@ -326,6 +326,47 @@ func applyCloudflareConfig(cfg AppConfig) error {
 	return nil
 }
 
+func applyAdBlockerConfig(cfg AppConfig) error {
+	if cfg.AdBlocker == "none" {
+		// Ensure standard DNS services are running if we're not using an adblocker
+		exec.Command("systemctl", "start", "dnsmasq").Run()
+		exec.Command("systemctl", "start", "unbound").Run()
+		return nil
+	}
+
+	if cfg.AdBlocker == "pihole" {
+		fmt.Println("Applying Pi-hole configuration...")
+
+		// 1. Check if pihole is installed
+		_, err := exec.LookPath("pihole")
+		if err != nil {
+			fmt.Println("Installing Pi-hole (Unattended)...")
+
+			// Stop conflicting services
+			exec.Command("systemctl", "stop", "dnsmasq").Run()
+			exec.Command("systemctl", "stop", "unbound").Run()
+
+			// Pi-hole automated install command
+			// Note: We use --unattended and provide a basic config if needed,
+			// but we'll try the simplest route first.
+			installCmd := "curl -sSL https://install.pi-hole.net | bash /dev/stdin --unattended"
+			err := exec.Command("bash", "-c", installCmd).Run()
+			if err != nil {
+				return fmt.Errorf("failed to install Pi-hole: %v", err)
+			}
+		} else {
+			// Ensure it's running
+			exec.Command("pihole", "enable").Run()
+			// Stop conflicting services
+			exec.Command("systemctl", "stop", "dnsmasq").Run()
+			exec.Command("systemctl", "stop", "unbound").Run()
+		}
+		fmt.Println("Pi-hole setup complete.")
+	}
+
+	return nil
+}
+
 func updateConfig(w http.ResponseWriter, r *http.Request) {
 	var cfg AppConfig
 	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
@@ -347,6 +388,16 @@ func updateConfig(w http.ResponseWriter, r *http.Request) {
 			err := applyCloudflareConfig(cfg)
 			if err != nil {
 				fmt.Printf("ERROR applying Cloudflare config: %v\n", err)
+			}
+		}()
+	}
+
+	// Trigger Ad-blocker setup if choice changed
+	if cfg.AdBlocker != oldCfg.AdBlocker {
+		go func() {
+			err := applyAdBlockerConfig(cfg)
+			if err != nil {
+				fmt.Printf("ERROR applying Ad-blocker config: %v\n", err)
 			}
 		}()
 	}
@@ -606,6 +657,19 @@ func getServiceStatus(name, serviceName string) ServiceStatus {
 				version = parts[1]
 			}
 		}
+	} else if name == "Ad-blocking DNS" {
+		// Check for pihole version
+		out, _ := exec.Command("pihole", "-v").Output()
+		if len(out) > 0 {
+			// Pi-hole version is v5.18.2 (usually)
+			parts := strings.Fields(string(out))
+			for i, part := range parts {
+				if part == "version" && i+1 < len(parts) {
+					version = parts[i+1]
+					break
+				}
+			}
+		}
 	} else if name == "WireGuard VPN" {
 		// WireGuard is a kernel module + tools, wg --version not always available standardly like others
 		// We'll leave version as - for now
@@ -620,6 +684,12 @@ func getServiceStatus(name, serviceName string) ServiceStatus {
 }
 
 func getServices(w http.ResponseWriter, r *http.Request) {
+	cfg := loadConfig()
+	adBlockerService := "adguardhome"
+	if cfg.AdBlocker == "pihole" {
+		adBlockerService = "pihole-FTL"
+	}
+
 	servicesToMonitor := []struct {
 		displayName string
 		serviceName string
@@ -630,7 +700,7 @@ func getServices(w http.ResponseWriter, r *http.Request) {
 		{"Suricata (IDS/IPS)", "suricata"},
 		{"OpenVPN Server", "openvpn"},
 		{"Cloudflare Tunnel", "cloudflared"},
-		{"Ad-blocking DNS", "adguardhome"},
+		{"Ad-blocking DNS", adBlockerService},
 	}
 
 	var results []ServiceStatus
