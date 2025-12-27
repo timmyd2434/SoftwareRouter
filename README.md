@@ -62,7 +62,7 @@ A modern, feature-rich web-based router management interface built with React (f
 SoftRouter is designed for rapid deployment as a self-contained network appliance. Use the master installation script for a production-ready, security-hardened setup:
 
 ```bash
-cd /home/tim/Documents/SoftwareRouter
+cd ~/SoftwareRouter
 sudo chmod +x master-install.sh
 sudo ./master-install.sh
 ```
@@ -125,7 +125,7 @@ w.Header().Set("Access-Control-Allow-Origin", "https://yourdomain.com")
 **Terminal 1 - Backend:**
 ```bash
 cd backend
-echo "09_SEPT_1982td" | sudo -S go run main.go >> backend.log 2>&1 &
+echo "Your_Password" | sudo -S go run main.go >> backend.log 2>&1 &
 
 # Monitor logs
 tail -f backend.log
