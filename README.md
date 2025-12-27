@@ -63,7 +63,7 @@ SoftRouter is designed for rapid deployment as a self-contained network applianc
 
 ```bash
 git clone -b Dev https://www.github.com/timmyd2434/SoftwareRouter.git
-cd ~/SoftwareRouter
+cd SoftwareRouter
 sudo chmod +x master-install.sh
 sudo ./master-install.sh
 ```
