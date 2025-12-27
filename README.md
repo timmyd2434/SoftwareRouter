@@ -58,7 +58,18 @@ A modern, feature-rich web-based router management interface built with React (f
 
 ## 🚀 Installation
 
-### 1. Install System Dependencies
+### Simplified Setup (Recommended)
+The easiest way to get started on a new machine or headless server is to use the master installation script:
+
+```bash
+cd /home/tim/Documents/SoftwareRouter
+sudo ./install.sh
+```
+This script handles all system dependencies, frontend packages, and backend compilation.
+
+### Manual Installation (Optional)
+
+#### 1. Install System Dependencies
 
 ```bash
 # Update package list
