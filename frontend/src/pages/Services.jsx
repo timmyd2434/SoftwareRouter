@@ -159,21 +159,6 @@ const Services = () => {
                 </div>
             )}
 
-            <div className="services-note">
-                <AlertCircle size={16} />
-                <div>
-                    <strong>Testing Environment Note:</strong>
-                    <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.85rem' }}>
-                        • <strong>DHCP (dnsmasq)</strong> requires network interface configuration and may conflict with laptop networking
-                        <br />
-                        • <strong>WireGuard</strong> requires a configured interface (e.g., wg0.conf in /etc/wireguard/)
-                        <br />
-                        • The backend runs with sudo privileges for service control
-                        <br />
-                        • Check <code>sudo systemctl status &lt;service&gt;</code> for detailed error information
-                    </p>
-                </div>
-            </div>
         </div>
     );
 };

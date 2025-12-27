@@ -29,33 +29,36 @@ const Dashboard = () => {
         return () => clearInterval(interval);
     }, []);
 
+    const formatMemory = (kb) => {
+        if (!kb) return "0 GB";
+        return (kb / (1024 * 1024)).toFixed(2) + " GB";
+    };
+
     return (
         <div className="dashboard-container">
             <div className="dashboard-grid">
                 <Card
-                    title="CPU Usage"
-                    value={loading ? "..." : "12%"}
-                    subtext="4 Cores Active"
+                    title="CPU Load"
+                    value={loading ? "..." : (systemStatus?.cpu_usage?.toFixed(2) || "0.00")}
+                    subtext="System Load Average"
                     icon={Cpu}
-                    trend={2.4}
                 />
                 <Card
                     title="Memory"
-                    value={loading ? "..." : "2.4 GB"}
-                    subtext="of 8.0 GB Total"
+                    value={loading ? "..." : formatMemory(systemStatus?.memory_used)}
+                    subtext={`of ${formatMemory(systemStatus?.memory_total)} Total`}
                     icon={HardDrive}
                 />
                 <Card
-                    title="Network Traffic"
-                    value="1.2 Gbps"
-                    subtext="Total Throughput"
+                    title="Network Status"
+                    value="ACTIVE"
+                    subtext="All Interfaces Up"
                     icon={Activity}
-                    trend={12}
                 />
                 <Card
-                    title="Active Devices"
-                    value="24"
-                    subtext="Connected Clients"
+                    title="Time"
+                    value={loading ? "..." : new Date(systemStatus?.timestamp).toLocaleTimeString()}
+                    subtext="Server Time"
                     icon={Wifi}
                 />
             </div>

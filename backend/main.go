@@ -15,10 +15,13 @@ import (
 
 // SystemStatus represents the basic health and info
 type SystemStatus struct {
-	Hostname  string    `json:"hostname"`
-	OS        string    `json:"os"`
-	Uptime    string    `json:"uptime"`
-	Timestamp time.Time `json:"timestamp"`
+	Hostname    string    `json:"hostname"`
+	OS          string    `json:"os"`
+	Uptime      string    `json:"uptime"`
+	CPUUsage    float64   `json:"cpu_usage"`
+	MemoryUsed  uint64    `json:"memory_used"`
+	MemoryTotal uint64    `json:"memory_total"`
+	Timestamp   time.Time `json:"timestamp"`
 }
 
 // InterfaceInfo represents a network interface
@@ -130,11 +133,41 @@ func getSystemStatus(w http.ResponseWriter, r *http.Request) {
 		uptime = strings.TrimSpace(string(out))
 	}
 
+	// Simple CPU Usage from loadavg
+	cpuUsage := 0.0
+	loadData, err := os.ReadFile("/proc/loadavg")
+	if err == nil {
+		fmt.Sscanf(string(loadData), "%f", &cpuUsage)
+	}
+
+	// Memory usage from /proc/meminfo
+	var memTotal, memFree, memAvailable uint64
+	memData, err := os.ReadFile("/proc/meminfo")
+	if err == nil {
+		lines := strings.Split(string(memData), "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "MemTotal:") {
+				fmt.Sscanf(line, "MemTotal: %d", &memTotal)
+			} else if strings.HasPrefix(line, "MemFree:") {
+				fmt.Sscanf(line, "MemFree: %d", &memFree)
+			} else if strings.HasPrefix(line, "MemAvailable:") {
+				fmt.Sscanf(line, "MemAvailable: %d", &memAvailable)
+			}
+		}
+	}
+	memUsed := memTotal - memAvailable
+	if memAvailable == 0 {
+		memUsed = memTotal - memFree
+	}
+
 	status := SystemStatus{
-		Hostname:  hostname,
-		OS:        fmt.Sprintf("%s (%s)", runtime.GOOS, runtime.GOARCH),
-		Uptime:    uptime,
-		Timestamp: time.Now(),
+		Hostname:    hostname,
+		OS:          fmt.Sprintf("%s (%s)", runtime.GOOS, runtime.GOARCH),
+		Uptime:      uptime,
+		CPUUsage:    cpuUsage,
+		MemoryUsed:  memUsed,
+		MemoryTotal: memTotal,
+		Timestamp:   time.Now(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
