@@ -10,14 +10,31 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 )
 
 // Auth related constants and structs
+const secretFilePath = "/etc/softrouter/token_secret.key"
 const credentialsFilePath = "/etc/softrouter/user_credentials.json"
-const tokenSecret = "softrouter_secret_2025" // In production, this should be generated/stored securely
+const metadataFilePath = "/etc/softrouter/interface_metadata.json"
+
+// tokenSecret is loaded at runtime from a protected file
+var tokenSecret []byte
+
+func loadTokenSecret() {
+	data, err := os.ReadFile(secretFilePath)
+	if err != nil {
+		// If it doesn't exist, we use a fallback but log a warning.
+		// The install script should have generated this.
+		fmt.Println("WARNING: token_secret.key not found. Using insecure fallback.")
+		tokenSecret = []byte("softrouter_emergency_fallback_secret_667788")
+		return
+	}
+	tokenSecret = data
+}
 
 type UserCredentials struct {
 	Username string `json:"username"`
@@ -139,8 +156,6 @@ type InterfaceMetadataStore struct {
 	Metadata map[string]InterfaceMetadata `json:"metadata"`
 }
 
-const metadataFilePath = "/tmp/router_interface_metadata.json"
-
 func loadInterfaceMetadata() (*InterfaceMetadataStore, error) {
 	store := &InterfaceMetadataStore{
 		Metadata: make(map[string]InterfaceMetadata),
@@ -181,6 +196,67 @@ var services = []ServiceStatus{
 	{Name: "Ad-blocking DNS", Status: "Stopped", Version: "AdGuard/Pihole", Uptime: "-"},
 }
 
+// Security Validation Helpers
+func isValidInterfaceName(name string) bool {
+	if len(name) == 0 || len(name) > 16 {
+		return false
+	}
+	for _, ch := range name {
+		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '.' || ch == '-' || ch == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+func isValidIP(ip string) bool {
+	// Simple check for CIDR or plain IP
+	_, _, err := net.ParseCIDR(ip)
+	if err == nil {
+		return true
+	}
+	parsed := net.ParseIP(ip)
+	return parsed != nil
+}
+
+func generateSecureToken(username string) string {
+	timestamp := time.Now().Unix()
+	payload := fmt.Sprintf("%s:%d", username, timestamp)
+
+	h := sha256.New()
+	h.Write([]byte(payload))
+	h.Write(tokenSecret)
+	signature := hex.EncodeToString(h.Sum(nil))
+
+	// Format: Bearer sr-<username>-<timestamp>-<signature>
+	return fmt.Sprintf("sr-%s-%d-%s", username, timestamp, signature)
+}
+
+func verifySecureToken(token string) bool {
+	if !strings.HasPrefix(token, "Bearer sr-") {
+		return false
+	}
+
+	parts := strings.Split(strings.TrimPrefix(token, "Bearer sr-"), "-")
+	if len(parts) != 3 {
+		return false
+	}
+
+	username := parts[0]
+	timestampStr := parts[1]
+	providedSignature := parts[2]
+
+	// Re-generate signature to verify
+	payload := fmt.Sprintf("%s:%s", username, timestampStr)
+	h := sha256.New()
+	h.Write([]byte(payload))
+	h.Write(tokenSecret)
+	expectedSignature := hex.EncodeToString(h.Sum(nil))
+
+	// Constant time comparison (simple for now but better than nothing)
+	return providedSignature == expectedSignature
+}
+
 func enableCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -202,9 +278,11 @@ func hashPassword(password string) string {
 }
 
 func loadCredentials() UserCredentials {
+	// Root of the system - if nothing exists, we define a highly temporary fallback
+	// but warning the user that it should be changed or set on deployment.
 	defaultCreds := UserCredentials{
 		Username: "admin",
-		Password: hashPassword("admin123"),
+		Password: "", // Empty means NO access by default if file is missing
 	}
 
 	// Create directory if not exists
@@ -212,11 +290,13 @@ func loadCredentials() UserCredentials {
 
 	data, err := os.ReadFile(credentialsFilePath)
 	if err != nil {
+		fmt.Println("CRITICAL: Credentials file not found. System is locked.")
 		return defaultCreds
 	}
 
 	var creds UserCredentials
 	if err := json.Unmarshal(data, &creds); err != nil {
+		fmt.Println("CRITICAL: Failed to parse credentials.")
 		return defaultCreds
 	}
 	return creds
@@ -235,14 +315,15 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := r.Header.Get("Authorization")
 		if token == "" {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
+			// Also check query param for downloads
+			token = r.URL.Query().Get("token")
+			if token != "" {
+				token = "Bearer " + token
+			}
 		}
 
-		// In this simplified version, our token is just a base64 of username:timestamp
-		// In a real prod environment, use a proper JWT library here.
-		if !strings.HasPrefix(token, "Bearer sr-") {
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
+		if token == "" || !verifySecureToken(token) {
+			http.Error(w, "Unauthorized: Invalid or missing token", http.StatusUnauthorized)
 			return
 		}
 
@@ -261,11 +342,14 @@ func login(w http.ResponseWriter, r *http.Request) {
 
 	creds := loadCredentials()
 	if req.Username == creds.Username && hashPassword(req.Password) == creds.Password {
-		// Generate simple token: sr-<timestamp>
-		token := fmt.Sprintf("sr-%d", time.Now().Unix())
+		// Generate secure signed token
+		token := generateSecureToken(req.Username)
+		// Return just the part after "Bearer " for client storage
+		tokenValue := strings.TrimPrefix(token, "Bearer ")
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
-			"token": token,
+			"token": tokenValue,
 			"user":  req.Username,
 		})
 		return
@@ -823,6 +907,12 @@ func createVLAN(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate inputs to prevent command injection
+	if !isValidInterfaceName(req.ParentInterface) {
+		http.Error(w, "Invalid parent interface name", http.StatusBadRequest)
+		return
+	}
+
 	// Validate VLAN ID (1-4094)
 	if req.VLANId < 1 || req.VLANId > 4094 {
 		http.Error(w, "VLAN ID must be between 1 and 4094", http.StatusBadRequest)
@@ -833,11 +923,10 @@ func createVLAN(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("Creating VLAN: %s\n", vlanInterface)
 
 	// Create VLAN interface using ip link
-	cmd := exec.Command("ip", "link", "add", "link", req.ParentInterface, "name", vlanInterface, "type", "vlan", "id", fmt.Sprintf("%d", req.VLANId))
+	// Using absolute path for safety and explicit arguments
+	cmd := exec.Command("/usr/sbin/ip", "link", "add", "link", req.ParentInterface, "name", vlanInterface, "type", "vlan", "id", fmt.Sprintf("%d", req.VLANId))
 	if output, err := cmd.CombinedOutput(); err != nil {
-		errMsg := fmt.Sprintf("Failed to create VLAN: %s\nOutput: %s", err.Error(), string(output))
-		fmt.Printf("ERROR: %s\n", errMsg)
-		http.Error(w, errMsg, http.StatusInternalServerError)
+		http.Error(w, "Failed to create VLAN interface", http.StatusInternalServerError)
 		return
 	}
 
@@ -865,8 +954,8 @@ func deleteVLAN(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Safety check: only allow deletion of VLAN interfaces (contain a dot)
-	if !strings.Contains(interfaceName, ".") {
-		http.Error(w, "Can only delete VLAN interfaces (must contain  '.')", http.StatusBadRequest)
+	if !strings.Contains(interfaceName, ".") || !isValidInterfaceName(interfaceName) {
+		http.Error(w, "Invalid VLAN interface name", http.StatusBadRequest)
 		return
 	}
 
@@ -902,14 +991,17 @@ func configureIP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !isValidInterfaceName(req.InterfaceName) || !isValidIP(req.IPAddress) {
+		http.Error(w, "Invalid interface name or IP address format", http.StatusBadRequest)
+		return
+	}
+
 	fmt.Printf("Configuring IP: %s %s on %s\n", req.Action, req.IPAddress, req.InterfaceName)
 
 	// Use ip addr add/del
-	cmd := exec.Command("ip", "addr", req.Action, req.IPAddress, "dev", req.InterfaceName)
+	cmd := exec.Command("/usr/sbin/ip", "addr", req.Action, req.IPAddress, "dev", req.InterfaceName)
 	if output, err := cmd.CombinedOutput(); err != nil {
-		errMsg := fmt.Sprintf("Failed to %s IP: %s\nOutput: %s", req.Action, err.Error(), string(output))
-		fmt.Printf("ERROR: %s\n", errMsg)
-		http.Error(w, errMsg, http.StatusInternalServerError)
+		http.Error(w, "Failed to configure IP address on interface", http.StatusInternalServerError)
 		return
 	}
 
@@ -1449,6 +1541,7 @@ func controlService(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	loadTokenSecret()
 	mux := http.NewServeMux()
 
 	// Public Auth Endpoints
@@ -1484,12 +1577,36 @@ func main() {
 	mux.HandleFunc("DELETE /api/vpn/clients", authMiddleware(deleteVPNClient))
 	mux.HandleFunc("GET /api/vpn/download", authMiddleware(downloadVPNClient))
 
-	port := ":8080"
-	fmt.Printf("Backend server running on port %s\n", port)
+	// SPA Static File Server
+	// Serve from /var/www/softrouter/html
+	staticDir := "/var/www/softrouter/html"
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// If path starts with /api/, it should have been caught by mux already,
+		// but we add this for safety if adding new routes.
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			http.NotFound(w, r)
+			return
+		}
+
+		path := filepath.Join(staticDir, r.URL.Path)
+		_, err := os.Stat(path)
+		if os.IsNotExist(err) || r.URL.Path == "/" {
+			// Serve index.html for React Router to handle
+			http.ServeFile(w, r, filepath.Join(staticDir, "index.html"))
+			return
+		}
+		http.FileServer(http.Dir(staticDir)).ServeHTTP(w, r)
+	})
+
+	port := ":80" // Standard web port for router UI
+	fmt.Printf("SoftRouter running on port %s\n", port)
 
 	handler := enableCORS(mux)
 
 	if err := http.ListenAndServe(port, handler); err != nil {
-		log.Fatal(err)
+		fmt.Printf("Failed to bind to port 80 (trying 8080): %v\n", err)
+		if err := http.ListenAndServe(":8080", handler); err != nil {
+			log.Fatal(err)
+		}
 	}
 }

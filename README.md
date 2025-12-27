@@ -56,89 +56,51 @@ A modern, feature-rich web-based router management interface built with React (f
 - Lucide React (icons)
 - Vite (development server)
 
-## 🚀 Installation
+## 🚀 Deployment & Installation
 
-### Simplified Setup (Recommended)
-The easiest way to get started on a new machine or headless server is to use the master installation script:
-
-```bash
-cd /home/tim/Documents/SoftwareRouter
-sudo ./install.sh
-```
-This script handles all system dependencies, frontend packages, and backend compilation.
-
-### Manual Installation (Optional)
-
-#### 1. Install System Dependencies
-
-```bash
-# Update package list
-sudo apt update
-
-# Install required tools
-sudo apt install -y nftables iproute2 golang-go nodejs npm
-
-# Verify installations
-nft --version
-ip -V
-go version
-node --version
-```
-
-### 2. Clone/Setup Project
+### Master Installation (Recommended)
+SoftRouter is designed for rapid deployment as a self-contained network appliance. Use the master installation script for a production-ready, security-hardened setup:
 
 ```bash
 cd /home/tim/Documents/SoftwareRouter
+sudo chmod +x master-install.sh
+sudo ./master-install.sh
 ```
 
-### 3. Setup Frontend
+**What this script does:**
+1. **Dependency Management**: Installs Go, Node.js, NFTables, and all system tools.
+2. **Interactive Security Setup**: Prompts you to set a unique administrative username and password.
+3. **Automated Builds**: Compiles the Go backend and builds the React production assets.
+4. **Appliance Configuration**: Sets up the web server structure at `/var/www/softrouter`.
+5. **Systemd Integration**: Creates and enables a `softrouter.service` to start automatically on boot.
+6. **Firewall Baseline**: Applies a secure input filtering policy.
 
+### Accessing the Interface
+Once installed, the dashboard is accessible on standard web ports:
+- **URL**: `http://<YOUR_ROUTER_IP>`
+- **Port**: 80 (Standard Web)
+- **Status**: `systemctl status softrouter`
+
+---
+
+## ⚙️ Development Guide
+
+If you are modifying the code and want to run in development mode:
+
+### 1. Backend (Go)
+```bash
+cd backend
+go run main.go
+```
+*Note: Backend will now serve static files if found in `/var/www/softrouter/html`, but API remains available.*
+
+### 2. Frontend (React)
 ```bash
 cd frontend
 npm install
+npm run dev -- --host
 ```
-
-### 4. Setup Backend
-
-The backend uses Go standard library only - no additional dependencies needed.
-
-```bash
-cd backend
-# Test compilation
-go build main.go
-```
-
-## ⚙️ Configuration
-
-### Backend Configuration
-
-The backend requires **sudo privileges** to execute system commands. You have two options:
-
-#### Option 1: Run with sudo password (Current Setup)
-```bash
-cd backend
-echo "YOUR_SUDO_PASSWORD" | sudo -S go run main.go >> backend.log 2>&1 &
-```
-
-#### Option 2: Configure Passwordless Sudo (Recommended for Production)
-
-Create a sudoers rule for specific commands:
-
-```bash
-sudo visudo -f /etc/sudoers.d/softrouter
-```
-
-Add these lines (replace `tim` with your username):
-```
-tim ALL=(ALL) NOPASSWD: /usr/sbin/nft
-tim ALL=(ALL) NOPASSWD: /usr/sbin/ip
-tim ALL=(ALL) NOPASSWD: /usr/bin/systemctl
-```
-
-Then run backend without password:
-```bash
-sudo go run main.go >> backend.log 2>&1 &
-```
+The frontend is configured to find the backend automatically. In development mode (Vite), it expects the backend on port 80/8080.
 
 ### Frontend Configuration
 

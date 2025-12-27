@@ -55,8 +55,44 @@ else
 fi
 cd ..
 
-# 5. Set Permissions
-echo -e "${GREEN}[4/5] Configuring Permissions...${NC}"
+# 5. Setup Administrative Access
+echo -e "${GREEN}[4/5] Configuring Administrative Access...${NC}"
+mkdir -p /etc/softrouter
+
+if [ ! -f "/etc/softrouter/user_credentials.json" ]; then
+    echo -e "${BLUE}Please set up your initial administrative credentials:${NC}"
+    read -p "Username (default: admin): " ADMIN_USER
+    ADMIN_USER=${ADMIN_USER:-admin}
+    
+    # Securely read password
+    read -sp "Password: " ADMIN_PASS
+    echo ""
+    read -sp "Confirm Password: " ADMIN_PASS_CONFIRM
+    echo ""
+    
+    if [ "$ADMIN_PASS" != "$ADMIN_PASS_CONFIRM" ]; then
+        echo -e "${RED}Error: Passwords do not match. Manual configuration required.${NC}"
+        # We'll create a dummy but locked config
+        echo '{"username":"admin","password":""}' > /etc/softrouter/user_credentials.json
+    else
+        # Hash the password using SHA256 (compatible with Go backend)
+        HASHED_PASS=$(echo -n "$ADMIN_PASS" | sha256sum | awk '{print $1}')
+        echo "{\"username\":\"$ADMIN_USER\",\"password\":\"$HASHED_PASS\"}" > /etc/softrouter/user_credentials.json
+        echo -e "${GREEN}Credentials set successfully.${NC}"
+    fi
+else
+    echo -e "Credentials already exist, skipping setup."
+fi
+
+# 6. Generate Secret Key for API Security
+if [ ! -f "/etc/softrouter/token_secret.key" ]; then
+    echo -e "${GREEN}Generating secure token secret...${NC}"
+    head -c 32 /dev/urandom | base64 > /etc/softrouter/token_secret.key
+    chmod 600 /etc/softrouter/token_secret.key
+fi
+
+# 7. Set Permissions
+echo -e "${GREEN}[5/5] Configuring Script Permissions...${NC}"
 chmod +x install-security.sh
 chmod +x github-upload-guide.sh
 chmod +x PUSH-TO-GITHUB.sh

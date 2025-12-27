@@ -5,14 +5,20 @@
 // it will set the API base to http://192.168.1.50:8080.
 
 const getApiBaseUrl = () => {
-    // Check if we are in a browser environment
     if (typeof window !== 'undefined') {
         const hostname = window.location.hostname;
-        // Port 8080 is where our Go backend is running
-        return `http://${hostname}:8080`;
+        const port = window.location.port;
+
+        // If we are running on port 5173 (Vite dev), use the backend port 80/8080
+        // Otherwise, use the same port as the UI (for production)
+        if (port === '5173') {
+            return `http://${hostname}:80`;
+        }
+
+        // Return blank for relative paths or current origin
+        return `${window.location.protocol}//${window.location.host}`;
     }
-    // Fallback for non-browser environments
-    return 'http://localhost:8080';
+    return 'http://localhost:80';
 };
 
 export const API_BASE_URL = getApiBaseUrl();
