@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -12,6 +14,25 @@ import (
 	"strings"
 	"time"
 )
+
+// Auth related constants and structs
+const credentialsFilePath = "/etc/softrouter/user_credentials.json"
+const tokenSecret = "softrouter_secret_2025" // In production, this should be generated/stored securely
+
+type UserCredentials struct {
+	Username string `json:"username"`
+	Password string `json:"password"` // SHA256 hashed
+}
+
+type LoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+type UpdateCredsRequest struct {
+	NewUsername string `json:"newUsername"`
+	NewPassword string `json:"newPassword"`
+}
 
 // SystemStatus represents the basic health and info
 type SystemStatus struct {
@@ -110,6 +131,9 @@ var services = []ServiceStatus{
 	{Name: "DNS Resolver (Unbound)", Status: "Running", Version: "1.19", Uptime: "2d 4h"},
 	{Name: "WireGuard VPN", Status: "Stopped", Version: "1.0", Uptime: "-"},
 	{Name: "Suricata (IDS/IPS)", Status: "Stopped", Version: "7.0", Uptime: "-"},
+	{Name: "OpenVPN Server", Status: "Stopped", Version: "2.6", Uptime: "-"},
+	{Name: "Cloudflare Tunnel", Status: "Stopped", Version: "2024", Uptime: "-"},
+	{Name: "Ad-blocking DNS", Status: "Stopped", Version: "AdGuard/Pihole", Uptime: "-"},
 }
 
 func enableCORS(next http.Handler) http.Handler {
@@ -123,6 +147,106 @@ func enableCORS(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// --- Auth Helpers ---
+
+func hashPassword(password string) string {
+	hash := sha256.Sum256([]byte(password))
+	return hex.EncodeToString(hash[:])
+}
+
+func loadCredentials() UserCredentials {
+	defaultCreds := UserCredentials{
+		Username: "admin",
+		Password: hashPassword("admin123"),
+	}
+
+	// Create directory if not exists
+	os.MkdirAll("/etc/softrouter", 0755)
+
+	data, err := os.ReadFile(credentialsFilePath)
+	if err != nil {
+		return defaultCreds
+	}
+
+	var creds UserCredentials
+	if err := json.Unmarshal(data, &creds); err != nil {
+		return defaultCreds
+	}
+	return creds
+}
+
+func saveCredentials(creds UserCredentials) error {
+	data, err := json.MarshalIndent(creds, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(credentialsFilePath, data, 0644)
+}
+
+// Simple token based auth middleware
+func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := r.Header.Get("Authorization")
+		if token == "" {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		// In this simplified version, our token is just a base64 of username:timestamp
+		// In a real prod environment, use a proper JWT library here.
+		if !strings.HasPrefix(token, "Bearer sr-") {
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	}
+}
+
+// --- Handlers ---
+
+func login(w http.ResponseWriter, r *http.Request) {
+	var req LoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	creds := loadCredentials()
+	if req.Username == creds.Username && hashPassword(req.Password) == creds.Password {
+		// Generate simple token: sr-<timestamp>
+		token := fmt.Sprintf("sr-%d", time.Now().Unix())
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"token": token,
+			"user":  req.Username,
+		})
+		return
+	}
+
+	http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+}
+
+func updateCredentials(w http.ResponseWriter, r *http.Request) {
+	var req UpdateCredsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	newCreds := UserCredentials{
+		Username: req.NewUsername,
+		Password: hashPassword(req.NewPassword),
+	}
+
+	if err := saveCredentials(newCreds); err != nil {
+		http.Error(w, "Failed to save credentials", http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 
 func getSystemStatus(w http.ResponseWriter, r *http.Request) {
@@ -1005,6 +1129,10 @@ func controlService(w http.ResponseWriter, r *http.Request) {
 		"wg-quick@wg0": true,
 		"wg-quick@wg1": true,
 		"unbound":      true,
+		"openvpn":      true,
+		"cloudflared":  true,
+		"adguardhome":  true,
+		"pihole-FTL":   true,
 	}
 	if !validServices[req.ServiceName] {
 		http.Error(w, "Invalid service name", http.StatusBadRequest)
@@ -1035,24 +1163,31 @@ func controlService(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/status", getSystemStatus)
-	mux.HandleFunc("GET /api/interfaces", getInterfaces)
-	mux.HandleFunc("POST /api/interfaces/vlan", createVLAN)
-	mux.HandleFunc("DELETE /api/interfaces/vlan", deleteVLAN)
-	mux.HandleFunc("POST /api/interfaces/ip", configureIP)
-	mux.HandleFunc("POST /api/interfaces/state", setInterfaceState)
-	mux.HandleFunc("GET /api/interfaces/metadata", getInterfaceMetadata)
-	mux.HandleFunc("POST /api/interfaces/label", setInterfaceLabel)
-	mux.HandleFunc("GET /api/firewall", getFirewallRules)
-	mux.HandleFunc("POST /api/firewall", addFirewallRule)
-	mux.HandleFunc("DELETE /api/firewall", deleteFirewallRule)
-	mux.HandleFunc("GET /api/services", getServices)
-	mux.HandleFunc("POST /api/services/control", controlService)
-	mux.HandleFunc("GET /api/traffic/stats", getTrafficStats)
-	mux.HandleFunc("GET /api/traffic/connections", getActiveConnections)
-	mux.HandleFunc("GET /api/security/suricata/alerts", getSuricataAlerts)
-	mux.HandleFunc("GET /api/security/crowdsec/decisions", getCrowdSecDecisions)
-	mux.HandleFunc("GET /api/security/stats", getSecurityStats)
+
+	// Public Auth Endpoints
+	mux.HandleFunc("POST /api/login", login)
+
+	// Protected Endpoints
+	mux.HandleFunc("GET /api/status", authMiddleware(getSystemStatus))
+	mux.HandleFunc("POST /api/auth/update-credentials", authMiddleware(updateCredentials))
+
+	mux.HandleFunc("GET /api/interfaces", authMiddleware(getInterfaces))
+	mux.HandleFunc("POST /api/interfaces/vlan", authMiddleware(createVLAN))
+	mux.HandleFunc("DELETE /api/interfaces/vlan", authMiddleware(deleteVLAN))
+	mux.HandleFunc("POST /api/interfaces/ip", authMiddleware(configureIP))
+	mux.HandleFunc("POST /api/interfaces/state", authMiddleware(setInterfaceState))
+	mux.HandleFunc("GET /api/interfaces/metadata", authMiddleware(getInterfaceMetadata))
+	mux.HandleFunc("POST /api/interfaces/label", authMiddleware(setInterfaceLabel))
+	mux.HandleFunc("GET /api/firewall", authMiddleware(getFirewallRules))
+	mux.HandleFunc("POST /api/firewall", authMiddleware(addFirewallRule))
+	mux.HandleFunc("DELETE /api/firewall", authMiddleware(deleteFirewallRule))
+	mux.HandleFunc("GET /api/services", authMiddleware(getServices))
+	mux.HandleFunc("POST /api/services/control", authMiddleware(controlService))
+	mux.HandleFunc("GET /api/traffic/stats", authMiddleware(getTrafficStats))
+	mux.HandleFunc("GET /api/traffic/connections", authMiddleware(getActiveConnections))
+	mux.HandleFunc("GET /api/security/suricata/alerts", authMiddleware(getSuricataAlerts))
+	mux.HandleFunc("GET /api/security/crowdsec/decisions", authMiddleware(getCrowdSecDecisions))
+	mux.HandleFunc("GET /api/security/stats", authMiddleware(getSecurityStats))
 
 	port := ":8080"
 	fmt.Printf("Backend server running on port %s\n", port)

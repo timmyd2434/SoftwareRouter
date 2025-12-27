@@ -1,15 +1,15 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Network, Shield, Activity, Settings, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Network, ShieldCheck, Activity, Settings, Menu, X, LogOut, Lock } from 'lucide-react';
 import './Sidebar.css';
 
-const Sidebar = ({ isOpen, toggleSidebar }) => {
+const Sidebar = ({ isOpen, toggleSidebar, onLogout }) => {
     const navItems = [
         { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
         { icon: Network, label: 'Interfaces', path: '/interfaces' },
-        { icon: Shield, label: 'Firewall', path: '/firewall' },
+        { icon: ShieldCheck, label: 'Firewall', path: '/firewall' },
         { icon: Activity, label: 'Traffic', path: '/traffic' },
-        { icon: Shield, label: 'Security', path: '/security' },
+        { icon: Lock, label: 'Security', path: '/security' },
         { icon: Settings, label: 'Settings', path: '/settings' },
     ];
 
@@ -40,6 +40,10 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
                 </nav>
 
                 <div className="sidebar-footer">
+                    <button className="logout-btn" onClick={onLogout}>
+                        <LogOut size={20} />
+                        <span>Sign Out</span>
+                    </button>
                     <div className="status-indicator online">
                         <span className="dot"></span>
                         System Online

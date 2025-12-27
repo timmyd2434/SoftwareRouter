@@ -3,12 +3,17 @@ import Sidebar from './Sidebar';
 import { Menu, Bell, User } from 'lucide-react';
 import './MainLayout.css';
 
-const MainLayout = ({ children }) => {
+const MainLayout = ({ children, onLogout }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const currentUser = localStorage.getItem('sr_user') || 'Admin';
 
     return (
         <div className="layout-container">
-            <Sidebar isOpen={sidebarOpen} toggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
+            <Sidebar
+                isOpen={sidebarOpen}
+                toggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+                onLogout={onLogout}
+            />
 
             <main className="main-wrapper">
                 <header className="top-header">
@@ -26,8 +31,12 @@ const MainLayout = ({ children }) => {
                             <Bell size={20} />
                             <span className="badge">2</span>
                         </button>
-                        <div className="user-profile">
-                            <div className="avatar">A</div>
+                        <div className="user-profile" onClick={onLogout} title="Click to Logout">
+                            <div className="user-info">
+                                <span className="username">{currentUser}</span>
+                                <span className="role">Administrator</span>
+                            </div>
+                            <div className="avatar">{currentUser.charAt(0).toUpperCase()}</div>
                         </div>
                     </div>
                 </header>

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Shield, AlertTriangle, Ban, TrendingUp, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react';
 import './Security.css';
-import { API_ENDPOINTS } from '../apiConfig';
+import { API_ENDPOINTS, authFetch } from '../apiConfig';
 
 const Security = () => {
     const [stats, setStats] = useState(null);
@@ -11,14 +11,14 @@ const Security = () => {
     const [filter, setFilter] = useState('all'); // all, high, medium, low
 
     const fetchStats = () => {
-        fetch(API_ENDPOINTS.SECURITY_STATS)
+        authFetch(API_ENDPOINTS.SECURITY_STATS)
             .then(res => res.json())
             .then(data => setStats(data))
             .catch(err => console.error(err));
     };
 
     const fetchAlerts = () => {
-        fetch(API_ENDPOINTS.SECURITY_ALERTS)
+        authFetch(API_ENDPOINTS.SECURITY_ALERTS)
             .then(res => res.json())
             .then(data => {
                 setAlerts(data || []);
@@ -31,7 +31,7 @@ const Security = () => {
     };
 
     const fetchDecisions = () => {
-        fetch(API_ENDPOINTS.SECURITY_DECISIONS)
+        authFetch(API_ENDPOINTS.SECURITY_DECISIONS)
             .then(res => res.json())
             .then(data => setDecisions(data || []))
             .catch(err => console.error(err));

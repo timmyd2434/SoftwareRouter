@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Shield, Plus, RefreshCw, X, Trash2 } from 'lucide-react';
 import './Firewall.css';
-import { API_ENDPOINTS } from '../apiConfig';
+import { API_ENDPOINTS, authFetch } from '../apiConfig';
 
 const Firewall = () => {
     const [rules, setRules] = useState([]);
@@ -135,7 +135,7 @@ const Firewall = () => {
 
     const fetchRules = () => {
         setLoading(true);
-        fetch(API_ENDPOINTS.FIREWALL)
+        authFetch(API_ENDPOINTS.FIREWALL)
             .then(res => {
                 if (res.headers.get("X-Start-Warning")) {
                     setErrorHeader(res.headers.get("X-Start-Warning"));
@@ -172,7 +172,7 @@ const Firewall = () => {
                     chain: newRule.chain,
                     handle: editingHandle
                 });
-                await fetch(`${API_ENDPOINTS.FIREWALL}?${params}`, { method: 'DELETE' });
+                await authFetch(`${API_ENDPOINTS.FIREWALL}?${params}`, { method: 'DELETE' });
                 addLog("Delete success.");
             } catch (err) {
                 console.error("Failed to delete while editing:", err);
@@ -184,7 +184,7 @@ const Firewall = () => {
         // Add the new rule
         try {
             addLog("Sending POST request to backend...");
-            const res = await fetch(API_ENDPOINTS.FIREWALL, {
+            const res = await authFetch(API_ENDPOINTS.FIREWALL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(newRule)
@@ -228,7 +228,7 @@ const Firewall = () => {
                 chain: deleteTarget.chain,
                 handle: deleteTarget.handle
             });
-            const res = await fetch(`${API_ENDPOINTS.FIREWALL}?${params}`, {
+            const res = await authFetch(`${API_ENDPOINTS.FIREWALL}?${params}`, {
                 method: 'DELETE'
             });
             if (res.ok) {

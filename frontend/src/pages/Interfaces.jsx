@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Network, Plus, Trash2, Settings, Power, RefreshCw, X, AlertCircle } from 'lucide-react';
 import './Interfaces.css';
-import { API_ENDPOINTS } from '../apiConfig';
+import { API_ENDPOINTS, authFetch } from '../apiConfig';
 
 const Interfaces = () => {
     const [interfaces, setInterfaces] = useState([]);
@@ -41,7 +41,7 @@ const Interfaces = () => {
 
     const fetchInterfaces = () => {
         setLoading(true);
-        fetch(API_ENDPOINTS.INTERFACES)
+        authFetch(API_ENDPOINTS.INTERFACES)
             .then(res => res.json())
             .then(data => {
                 setInterfaces(data);
@@ -54,7 +54,7 @@ const Interfaces = () => {
     };
 
     const fetchMetadata = () => {
-        fetch(API_ENDPOINTS.INTERFACE_METADATA)
+        authFetch(API_ENDPOINTS.INTERFACE_METADATA)
             .then(res => res.json())
             .then(data => {
                 setMetadata(data || {});
@@ -77,7 +77,7 @@ const Interfaces = () => {
         }
 
         try {
-            const res = await fetch(API_ENDPOINTS.INTERFACE_VLAN, {
+            const res = await authFetch(API_ENDPOINTS.INTERFACE_VLAN, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -133,7 +133,7 @@ const Interfaces = () => {
         }
 
         try {
-            const res = await fetch(API_ENDPOINTS.INTERFACE_IP, {
+            const res = await authFetch(API_ENDPOINTS.INTERFACE_IP, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(ipForm)
@@ -160,7 +160,7 @@ const Interfaces = () => {
         if (!confirm(`Set ${interfaceName} to ${newState.toUpperCase()}?`)) return;
 
         try {
-            const res = await fetch(API_ENDPOINTS.INTERFACE_STATE, {
+            const res = await authFetch(API_ENDPOINTS.INTERFACE_STATE, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -193,7 +193,7 @@ const Interfaces = () => {
 
     const handleSetLabel = async () => {
         try {
-            const res = await fetch(API_ENDPOINTS.INTERFACE_LABEL, {
+            const res = await authFetch(API_ENDPOINTS.INTERFACE_LABEL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(labelForm)
