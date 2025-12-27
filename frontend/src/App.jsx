@@ -9,6 +9,7 @@ import Traffic from './pages/Traffic';
 import Security from './pages/Security';
 import Login from './pages/Login';
 import Settings from './pages/Settings';
+import RemoteAccess from './pages/RemoteAccess';
 import './App.css';
 
 function App() {
@@ -37,6 +38,7 @@ function App() {
           <Route path="/firewall" element={<Firewall />} />
           <Route path="/traffic" element={<Traffic />} />
           <Route path="/security" element={<Security />} />
+          <Route path="/remote-access" element={<RemoteAccess />} />
           <Route path="/services" element={<Services />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" />} />

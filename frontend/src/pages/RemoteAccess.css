@@ -1,0 +1,268 @@
+.vpn-container {
+    padding: var(--space-6);
+    animation: fadeIn 0.4s ease-out;
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--space-8);
+}
+
+.add-btn {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    background: var(--primary);
+    color: white;
+    border: none;
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.add-btn:hover {
+    background: var(--primary-hover);
+    transform: translateY(-1px);
+}
+
+.vpn-grid {
+    display: grid;
+    grid-template-columns: 1.5fr 1fr;
+    gap: var(--space-6);
+}
+
+@media (max-width: 1024px) {
+    .vpn-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.clients-section {
+    padding: var(--space-6);
+    min-height: 400px;
+}
+
+.client-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.client-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-4);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    transition: all 0.2s;
+}
+
+.client-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.client-info {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+}
+
+.client-avatar {
+    width: 40px;
+    height: 40px;
+    background: var(--primary);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    color: white;
+}
+
+.client-details {
+    display: flex;
+    flex-direction: column;
+}
+
+.client-details strong {
+    font-size: 1rem;
+}
+
+.client-details span {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.client-actions {
+    display: flex;
+    gap: var(--space-2);
+}
+
+.action-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--glass-border);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.action-btn.download:hover {
+    color: var(--primary);
+    border-color: var(--primary);
+    background: rgba(99, 102, 241, 0.1);
+}
+
+.action-btn.delete:hover {
+    color: #ef4444;
+    border-color: #ef4444;
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.vpn-info-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+}
+
+.info-card {
+    padding: var(--space-6);
+}
+
+.status-stats {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+}
+
+.stat-row {
+    display: flex;
+    justify-content: space-between;
+    padding-bottom: var(--space-3);
+    border-bottom: 1px solid var(--glass-border);
+}
+
+.stat-row span {
+    color: var(--text-muted);
+}
+
+.instruction-card h3 {
+    margin-bottom: var(--space-4);
+}
+
+.instruction-card ol {
+    padding-left: var(--space-5);
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.instruction-card li {
+    margin-bottom: var(--space-2);
+}
+
+/* Modal */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    width: 100%;
+    max-width: 450px;
+    padding: var(--space-8);
+}
+
+.modal-actions {
+    display: flex;
+    gap: var(--space-3);
+    margin-top: var(--space-6);
+}
+
+.modal-actions button {
+    flex: 1;
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.cancel-btn {
+    background: none;
+    border: 1px solid var(--glass-border);
+    color: var(--text-muted);
+}
+
+.confirm-btn {
+    background: var(--primary);
+    color: white;
+    border: none;
+}
+
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-12);
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.empty-state svg {
+    margin-bottom: var(--space-4);
+    opacity: 0.2;
+}
+
+.empty-state p {
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: var(--text-main);
+    margin-bottom: 4px;
+}
+
+.empty-state span {
+    font-size: 0.85rem;
+}
+
+.status-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 24px;
+    border-radius: 12px;
+    margin-bottom: 24px;
+    font-weight: 500;
+}
+
+.status-banner.success {
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    color: #10b981;
+}
+
+.status-banner.error {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+}

@@ -55,5 +55,7 @@ export const API_ENDPOINTS = {
     SECURITY_ALERTS: `${API_BASE_URL}/api/security/suricata/alerts`,
     SECURITY_DECISIONS: `${API_BASE_URL}/api/security/crowdsec/decisions`,
     SECURITY_STATS: `${API_BASE_URL}/api/security/stats`,
+    VPN_CLIENTS: `${API_BASE_URL}/api/vpn/clients`,
+    VPN_DOWNLOAD: `${API_BASE_URL}/api/vpn/download`,
 };
 

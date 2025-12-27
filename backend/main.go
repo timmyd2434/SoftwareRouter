@@ -89,6 +89,13 @@ type InterfaceMetadata struct {
 	Color         string `json:"color"`       // Color for UI display
 }
 
+// VPNClientConfig represents a generated OpenVPN client profile
+type VPNClientConfig struct {
+	ClientName string `json:"client_name"`
+	Config     string `json:"config"`
+	CreatedAt  string `json:"created_at"`
+}
+
 // AppConfig handles persistent settings for advanced modules
 type AppConfig struct {
 	CloudflareToken string `json:"cf_token"`
@@ -403,6 +410,84 @@ func updateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+// --- VPN Handlers ---
+
+func listVPNClients(w http.ResponseWriter, r *http.Request) {
+	clientsDir := "/etc/softrouter/vpn_clients"
+	os.MkdirAll(clientsDir, 0755)
+
+	files, err := os.ReadDir(clientsDir)
+	var clients []VPNClientConfig
+	if err == nil {
+		for _, f := range files {
+			if strings.HasSuffix(f.Name(), ".ovpn") {
+				info, _ := f.Info()
+				clients = append(clients, VPNClientConfig{
+					ClientName: strings.TrimSuffix(f.Name(), ".ovpn"),
+					CreatedAt:  info.ModTime().Format(time.RFC3339),
+				})
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(clients)
+}
+
+func addVPNClient(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	clientsDir := "/etc/softrouter/vpn_clients"
+	os.MkdirAll(clientsDir, 0755)
+
+	ovpnPath := fmt.Sprintf("%s/%s.ovpn", clientsDir, req.Name)
+	dummyConfig := fmt.Sprintf("client\ndev tun\nproto udp\nremote [SERVER_IP] 1194\n# Generated for %s\n<ca>\n...\n</ca>", req.Name)
+
+	err := os.WriteFile(ovpnPath, []byte(dummyConfig), 0600)
+	if err != nil {
+		http.Error(w, "Failed to generate config", http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+func deleteVPNClient(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		http.Error(w, "Name required", http.StatusBadRequest)
+		return
+	}
+
+	clientsDir := "/etc/softrouter/vpn_clients"
+	ovpnPath := fmt.Sprintf("%s/%s.ovpn", clientsDir, name)
+	os.Remove(ovpnPath)
+
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+func downloadVPNClient(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	clientsDir := "/etc/softrouter/vpn_clients"
+	ovpnPath := fmt.Sprintf("%s/%s.ovpn", clientsDir, name)
+
+	data, err := os.ReadFile(ovpnPath)
+	if err != nil {
+		http.Error(w, "File not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.ovpn", name))
+	w.Header().Set("Content-Type", "application/x-openvpn-profile")
+	w.Write(data)
 }
 
 func getSystemStatus(w http.ResponseWriter, r *http.Request) {
@@ -1392,6 +1477,12 @@ func main() {
 	mux.HandleFunc("GET /api/security/suricata/alerts", authMiddleware(getSuricataAlerts))
 	mux.HandleFunc("GET /api/security/crowdsec/decisions", authMiddleware(getCrowdSecDecisions))
 	mux.HandleFunc("GET /api/security/stats", authMiddleware(getSecurityStats))
+
+	// VPN Endpoints
+	mux.HandleFunc("GET /api/vpn/clients", authMiddleware(listVPNClients))
+	mux.HandleFunc("POST /api/vpn/clients", authMiddleware(addVPNClient))
+	mux.HandleFunc("DELETE /api/vpn/clients", authMiddleware(deleteVPNClient))
+	mux.HandleFunc("GET /api/vpn/download", authMiddleware(downloadVPNClient))
 
 	port := ":8080"
 	fmt.Printf("Backend server running on port %s\n", port)

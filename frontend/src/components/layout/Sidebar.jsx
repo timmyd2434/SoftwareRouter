@@ -10,6 +10,7 @@ const Sidebar = ({ isOpen, toggleSidebar, onLogout }) => {
         { icon: ShieldCheck, label: 'Firewall', path: '/firewall' },
         { icon: Activity, label: 'Traffic', path: '/traffic' },
         { icon: Lock, label: 'Security', path: '/security' },
+        { icon: Globe, label: 'Remote Access', path: '/remote-access' },
         { icon: Server, label: 'Services', path: '/services' },
         { icon: Settings, label: 'Settings', path: '/settings' },
     ];
