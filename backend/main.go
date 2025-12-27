@@ -293,6 +293,39 @@ func getConfig(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(cfg)
 }
 
+func applyCloudflareConfig(cfg AppConfig) error {
+	if cfg.CloudflareToken == "" {
+		return nil
+	}
+
+	fmt.Println("Applying Cloudflare Tunnel configuration...")
+
+	// 1. Check if cloudflared is installed
+	_, err := exec.LookPath("cloudflared")
+	if err != nil {
+		fmt.Println("Installing cloudflared...")
+		// Download and install (Debian/Ubuntu specific)
+		installCmd := "curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb && sudo dpkg -i cloudflared.deb && rm cloudflared.deb"
+		err := exec.Command("bash", "-c", installCmd).Run()
+		if err != nil {
+			return fmt.Errorf("failed to install cloudflared: %v", err)
+		}
+	}
+
+	// 2. Install/Update the service with the token
+	// First, try to uninstall existing service to ensure clean state
+	exec.Command("cloudflared", "service", "uninstall").Run()
+
+	// Install service
+	err = exec.Command("cloudflared", "service", "install", cfg.CloudflareToken).Run()
+	if err != nil {
+		return fmt.Errorf("failed to install cloudflared service: %v", err)
+	}
+
+	fmt.Println("Cloudflare Tunnel service installed and started.")
+	return nil
+}
+
 func updateConfig(w http.ResponseWriter, r *http.Request) {
 	var cfg AppConfig
 	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
@@ -300,9 +333,22 @@ func updateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Load old config to see what changed
+	oldCfg := loadConfig()
+
 	if err := saveConfig(cfg); err != nil {
 		http.Error(w, "Failed to save config", http.StatusInternalServerError)
 		return
+	}
+
+	// Trigger Cloudflare setup if token changed
+	if cfg.CloudflareToken != "" && cfg.CloudflareToken != oldCfg.CloudflareToken {
+		go func() {
+			err := applyCloudflareConfig(cfg)
+			if err != nil {
+				fmt.Printf("ERROR applying Cloudflare config: %v\n", err)
+			}
+		}()
 	}
 
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
@@ -539,10 +585,25 @@ func getServiceStatus(name, serviceName string) ServiceStatus {
 	if name == "DHCP Server (dnsmasq)" {
 		out, _ := exec.Command("dnsmasq", "-v").Output()
 		if len(out) > 0 {
-			// Parse first line: "Dnsmasq version 2.89 ..."
 			parts := strings.Fields(string(out))
 			if len(parts) >= 3 {
 				version = parts[2]
+			}
+		}
+	} else if name == "Cloudflare Tunnel" {
+		out, _ := exec.Command("cloudflared", "--version").Output()
+		if len(out) > 0 {
+			parts := strings.Fields(string(out))
+			if len(parts) >= 3 {
+				version = parts[2]
+			}
+		}
+	} else if name == "OpenVPN Server" {
+		out, _ := exec.Command("openvpn", "--version").Output()
+		if len(out) > 0 {
+			parts := strings.Fields(string(out))
+			if len(parts) >= 2 {
+				version = parts[1]
 			}
 		}
 	} else if name == "WireGuard VPN" {
@@ -559,14 +620,26 @@ func getServiceStatus(name, serviceName string) ServiceStatus {
 }
 
 func getServices(w http.ResponseWriter, r *http.Request) {
-	realServices := []ServiceStatus{
-		getServiceStatus("DHCP Server (dnsmasq)", "dnsmasq"),
-		getServiceStatus("WireGuard VPN", "wg-quick@wg0"), // Example interface
-		// getServiceStatus("Unbound DNS", "unbound"),
+	servicesToMonitor := []struct {
+		displayName string
+		serviceName string
+	}{
+		{"DHCP Server (dnsmasq)", "dnsmasq"},
+		{"DNS Resolver (Unbound)", "unbound"},
+		{"WireGuard VPN", "wg-quick@wg0"},
+		{"Suricata (IDS/IPS)", "suricata"},
+		{"OpenVPN Server", "openvpn"},
+		{"Cloudflare Tunnel", "cloudflared"},
+		{"Ad-blocking DNS", "adguardhome"},
+	}
+
+	var results []ServiceStatus
+	for _, s := range servicesToMonitor {
+		results = append(results, getServiceStatus(s.displayName, s.serviceName))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(realServices)
+	json.NewEncoder(w).Encode(results)
 }
 
 // VLANCreateRequest represents a request to create a VLAN interface
