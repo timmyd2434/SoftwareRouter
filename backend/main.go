@@ -89,6 +89,44 @@ type InterfaceMetadata struct {
 	Color         string `json:"color"`       // Color for UI display
 }
 
+// AppConfig handles persistent settings for advanced modules
+type AppConfig struct {
+	CloudflareToken string `json:"cf_token"`
+	ProtectedSubnet string `json:"protected_subnet"`
+	AdBlocker       string `json:"ad_blocker"` // "none", "adguard", "pihole"
+	OpenVPNPort     int    `json:"openvpn_port"`
+}
+
+const configFilePath = "/etc/softrouter/config.json"
+
+func loadConfig() AppConfig {
+	defaultCfg := AppConfig{
+		CloudflareToken: "",
+		ProtectedSubnet: "10.0.0.0/24",
+		AdBlocker:       "none",
+		OpenVPNPort:     1194,
+	}
+
+	data, err := os.ReadFile(configFilePath)
+	if err != nil {
+		return defaultCfg
+	}
+
+	var cfg AppConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return defaultCfg
+	}
+	return cfg
+}
+
+func saveConfig(cfg AppConfig) error {
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(configFilePath, data, 0644)
+}
+
 // InterfaceMetadataStore manages interface metadata
 type InterfaceMetadataStore struct {
 	Metadata map[string]InterfaceMetadata `json:"metadata"`
@@ -243,6 +281,27 @@ func updateCredentials(w http.ResponseWriter, r *http.Request) {
 
 	if err := saveCredentials(newCreds); err != nil {
 		http.Error(w, "Failed to save credentials", http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+func getConfig(w http.ResponseWriter, r *http.Request) {
+	cfg := loadConfig()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(cfg)
+}
+
+func updateConfig(w http.ResponseWriter, r *http.Request) {
+	var cfg AppConfig
+	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	if err := saveConfig(cfg); err != nil {
+		http.Error(w, "Failed to save config", http.StatusInternalServerError)
 		return
 	}
 
@@ -1169,6 +1228,8 @@ func main() {
 
 	// Protected Endpoints
 	mux.HandleFunc("GET /api/status", authMiddleware(getSystemStatus))
+	mux.HandleFunc("GET /api/config", authMiddleware(getConfig))
+	mux.HandleFunc("POST /api/config", authMiddleware(updateConfig))
 	mux.HandleFunc("POST /api/auth/update-credentials", authMiddleware(updateCredentials))
 
 	mux.HandleFunc("GET /api/interfaces", authMiddleware(getInterfaces))

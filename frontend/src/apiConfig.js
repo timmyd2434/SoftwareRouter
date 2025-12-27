@@ -39,6 +39,7 @@ export const authFetch = async (url, options = {}) => {
 export const API_ENDPOINTS = {
     LOGIN: `${API_BASE_URL}/api/login`,
     UPDATE_CREDS: `${API_BASE_URL}/api/auth/update-credentials`,
+    CONFIG: `${API_BASE_URL}/api/config`,
     STATUS: `${API_BASE_URL}/api/status`,
     INTERFACES: `${API_BASE_URL}/api/interfaces`,
     INTERFACE_STATE: `${API_BASE_URL}/api/interfaces/state`,
