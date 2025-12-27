@@ -62,6 +62,7 @@ A modern, feature-rich web-based router management interface built with React (f
 SoftRouter is designed for rapid deployment as a self-contained network appliance. Use the master installation script for a production-ready, security-hardened setup:
 
 ```bash
+git clone -b Dev https://www.github.com/timmyd2434/SoftwareRouter.git
 cd ~/SoftwareRouter
 sudo chmod +x master-install.sh
 sudo ./master-install.sh
