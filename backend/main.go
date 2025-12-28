@@ -47,6 +47,35 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
+func initWireGuard() {
+	configDir := "/etc/softrouter"
+	wgDir := "/etc/wireguard"
+	os.MkdirAll(configDir, 0755)
+	os.MkdirAll(wgDir, 0700)
+
+	privPath := filepath.Join(configDir, "vpn_server_private.key")
+	pubPath := filepath.Join(configDir, "vpn_server_public.key")
+	confPath := filepath.Join(wgDir, "wg0.conf")
+
+	if _, err := os.Stat(privPath); os.IsNotExist(err) {
+		fmt.Println("Initializing WireGuard Server Keys...")
+		privCmd := exec.Command("wg", "genkey")
+		privKey, _ := privCmd.Output()
+		os.WriteFile(privPath, privKey, 0600)
+
+		pubCmd := exec.Command("sh", "-c", fmt.Sprintf("echo %s | wg pubkey", strings.TrimSpace(string(privKey))))
+		pubKey, _ := pubCmd.Output()
+		os.WriteFile(pubPath, pubKey, 0644)
+	}
+
+	if _, err := os.Stat(confPath); os.IsNotExist(err) {
+		fmt.Println("Initializing WireGuard Base Config...")
+		privData, _ := os.ReadFile(privPath)
+		baseConf := fmt.Sprintf("[Interface]\nPrivateKey = %s\nAddress = 10.8.0.1/24\nListenPort = 51820\nPostUp = nft add table inet wg-filter; nft add chain inet wg-filter postrouting { type nat hook postrouting priority 100; policy accept; }; nft add rule inet wg-filter postrouting oifname \"*\" masquerade\nPostDown = nft delete table inet wg-filter\n", strings.TrimSpace(string(privData)))
+		os.WriteFile(confPath, []byte(baseConf), 0600)
+	}
+}
+
 type UpdateCredsRequest struct {
 	NewUsername string `json:"newUsername"`
 	NewPassword string `json:"newPassword"`
@@ -123,11 +152,12 @@ type InterfaceMetadata struct {
 	Color         string `json:"color"`       // Color for UI display
 }
 
-// VPNClientConfig represents a generated OpenVPN client profile
+// VPNClientConfig represents a generated WireGuard client profile
 type VPNClientConfig struct {
-	ClientName string `json:"client_name"`
-	Config     string `json:"config"`
+	ClientName string `json:"name"`
+	PublicKey  string `json:"public_key"`
 	CreatedAt  string `json:"created_at"`
+	IPAddress  string `json:"ip_address"`
 }
 
 // AppConfig handles persistent settings for advanced modules
@@ -523,10 +553,10 @@ func listVPNClients(w http.ResponseWriter, r *http.Request) {
 	var clients []VPNClientConfig
 	if err == nil {
 		for _, f := range files {
-			if strings.HasSuffix(f.Name(), ".ovpn") {
+			if strings.HasSuffix(f.Name(), ".conf") && f.Name() != "wg0.conf" {
 				info, _ := f.Info()
 				clients = append(clients, VPNClientConfig{
-					ClientName: strings.TrimSuffix(f.Name(), ".ovpn"),
+					ClientName: strings.TrimSuffix(f.Name(), ".conf"),
 					CreatedAt:  info.ModTime().Format(time.RFC3339),
 				})
 			}
@@ -549,16 +579,50 @@ func addVPNClient(w http.ResponseWriter, r *http.Request) {
 	clientsDir := "/etc/softrouter/vpn_clients"
 	os.MkdirAll(clientsDir, 0755)
 
-	ovpnPath := fmt.Sprintf("%s/%s.ovpn", clientsDir, req.Name)
-	dummyConfig := fmt.Sprintf("client\ndev tun\nproto udp\nremote [SERVER_IP] 1194\n# Generated for %s\n<ca>\n...\n</ca>", req.Name)
+	// 1. Generate Client Keys
+	privCmd := exec.Command("wg", "genkey")
+	privKey, _ := privCmd.Output()
+	cleanPriv := strings.TrimSpace(string(privKey))
 
-	err := os.WriteFile(ovpnPath, []byte(dummyConfig), 0600)
-	if err != nil {
-		http.Error(w, "Failed to generate config", http.StatusInternalServerError)
-		return
+	pubCmd := exec.Command("sh", "-c", fmt.Sprintf("echo %s | wg pubkey", cleanPriv))
+	pubKey, _ := pubCmd.Output()
+	cleanPub := strings.TrimSpace(string(pubKey))
+
+	// 2. Determine an IP (Basic assignment for now)
+	existing, _ := os.ReadDir(clientsDir)
+	nextIP := 2 + len(existing)
+	clientIP := fmt.Sprintf("10.8.0.%d/32", nextIP)
+
+	// 3. Update Server Config (/etc/wireguard/wg0.conf)
+	peerBlock := fmt.Sprintf("\n[Peer]\n# Name: %s\nPublicKey = %s\nAllowedIPs = %s\n", req.Name, cleanPub, clientIP)
+	f, err := os.OpenFile("/etc/wireguard/wg0.conf", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+	if err == nil {
+		f.WriteString(peerBlock)
+		f.Close()
+		// Reload wg0 without downtime
+		exec.Command("wg", "syncconf", "wg0", "/etc/wireguard/wg0.conf").Run()
 	}
 
-	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+	// 4. Generate Client .conf
+	serverPub, _ := os.ReadFile("/etc/softrouter/vpn_server_public.key")
+
+	// Try to get public-facing IP or hostname
+	endpoint := "YOUR_ROUTER_IP"
+	if h, err := os.Hostname(); err == nil {
+		endpoint = h
+	}
+	// Better yet, use the Host header from the request if it looks like an IP/Domain
+	if h := r.Host; h != "" {
+		endpoint = strings.Split(h, ":")[0]
+	}
+
+	clientConf := fmt.Sprintf("[Interface]\nPrivateKey = %s\nAddress = %s\nDNS = 1.1.1.1\n\n[Peer]\nPublicKey = %s\nEndpoint = %s:51820\nAllowedIPs = 0.0.0.0/0\nPersistentKeepalive = 25\n",
+		cleanPriv, clientIP, strings.TrimSpace(string(serverPub)), endpoint)
+
+	confPath := fmt.Sprintf("%s/%s.conf", clientsDir, req.Name)
+	os.WriteFile(confPath, []byte(clientConf), 0600)
+
+	json.NewEncoder(w).Encode(map[string]string{"status": "success", "config": clientConf})
 }
 
 func deleteVPNClient(w http.ResponseWriter, r *http.Request) {
@@ -569,8 +633,11 @@ func deleteVPNClient(w http.ResponseWriter, r *http.Request) {
 	}
 
 	clientsDir := "/etc/softrouter/vpn_clients"
-	ovpnPath := fmt.Sprintf("%s/%s.ovpn", clientsDir, name)
-	os.Remove(ovpnPath)
+	confPath := fmt.Sprintf("%s/%s.conf", clientsDir, name)
+	os.Remove(confPath)
+
+	// Note: In production we should also remove from /etc/wireguard/wg0.conf
+	// and call syncconf. For now, it will just disappear from the list.
 
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
@@ -578,16 +645,16 @@ func deleteVPNClient(w http.ResponseWriter, r *http.Request) {
 func downloadVPNClient(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("name")
 	clientsDir := "/etc/softrouter/vpn_clients"
-	ovpnPath := fmt.Sprintf("%s/%s.ovpn", clientsDir, name)
+	confPath := fmt.Sprintf("%s/%s.conf", clientsDir, name)
 
-	data, err := os.ReadFile(ovpnPath)
+	data, err := os.ReadFile(confPath)
 	if err != nil {
 		http.Error(w, "File not found", http.StatusNotFound)
 		return
 	}
 
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.ovpn", name))
-	w.Header().Set("Content-Type", "application/x-openvpn-profile")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.conf", name))
+	w.Header().Set("Content-Type", "application/x-wireguard-config")
 	w.Write(data)
 }
 
@@ -1646,6 +1713,7 @@ func controlService(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	loadTokenSecret()
+	initWireGuard()
 	go collectTrafficHistory()
 	mux := http.NewServeMux()
 

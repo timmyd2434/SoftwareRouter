@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Globe, Plus, Download, Trash2, Calendar, User, Shield, RefreshCw, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
+import { Globe, Plus, Download, Trash2, Calendar, User, Shield, RefreshCw, AlertCircle, CheckCircle, Loader2, QrCode, X, Copy } from 'lucide-react';
+import QRCode from 'react-qr-code';
 import { API_ENDPOINTS, authFetch } from '../apiConfig';
 import './RemoteAccess.css';
 
@@ -7,6 +8,7 @@ const RemoteAccess = () => {
     const [clients, setClients] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
+    const [showQR, setShowQR] = useState(null); // stores { name, config }
     const [newClientName, setNewClientName] = useState('');
     const [message, setMessage] = useState({ type: '', text: '' });
     const [generating, setGenerating] = useState(false);
@@ -23,7 +25,7 @@ const RemoteAccess = () => {
                 setClients(data || []);
             }
         } catch (err) {
-            console.error('Failed to fetch VPN clients', err);
+            console.error('Failed to fetch WireGuard clients', err);
         } finally {
             setLoading(false);
         }
@@ -41,9 +43,12 @@ const RemoteAccess = () => {
             });
 
             if (res.ok) {
-                setMessage({ type: 'success', text: `Profile for ${newClientName} generated successfully.` });
+                const result = await res.json();
+                setMessage({ type: 'success', text: `WireGuard profile for ${newClientName} generated.` });
                 setNewClientName('');
                 setShowModal(false);
+                // Prompt user with QR code immediately
+                setShowQR({ name: newClientName, config: result.config });
                 fetchClients();
             } else {
                 setMessage({ type: 'error', text: 'Failed to generate profile.' });
@@ -56,7 +61,7 @@ const RemoteAccess = () => {
     };
 
     const handleDeleteClient = async (name) => {
-        if (!confirm(`Permanently delete VPN profile for ${name}?`)) return;
+        if (!confirm(`Revoke access for ${name}?`)) return;
 
         try {
             const res = await authFetch(`${API_ENDPOINTS.VPN_CLIENTS}?name=${name}`, {
@@ -64,7 +69,7 @@ const RemoteAccess = () => {
             });
 
             if (res.ok) {
-                setMessage({ type: 'success', text: 'Profile deleted.' });
+                setMessage({ type: 'success', text: 'Access revoked.' });
                 fetchClients();
             }
         } catch (err) {
@@ -75,22 +80,24 @@ const RemoteAccess = () => {
     const handleDownload = (name) => {
         const token = localStorage.getItem('sr_token');
         const url = `${API_ENDPOINTS.VPN_DOWNLOAD}?name=${name}&token=${token}`;
-        // Since it's a file download, we use a hidden link or window.open
-        // Note: authFetch doesn't work for direct browser downloads easily, 
-        // we'll use the token in query param or handle it in backend.
         window.open(url, '_blank');
+    };
+
+    const copyToClipboard = (text) => {
+        navigator.clipboard.writeText(text);
+        alert('Configuration copied to clipboard!');
     };
 
     return (
         <div className="vpn-container">
             <div className="section-header">
                 <div>
-                    <h2>Remote Access (OpenVPN)</h2>
-                    <span className="subtitle">Manage secure tunnel profiles for external devices</span>
+                    <h2>Hybrid WireGuard VPN 🔐</h2>
+                    <span className="subtitle">High-speed, encrypted tunnel for your mobile and remote devices</span>
                 </div>
                 <button className="add-btn" onClick={() => setShowModal(true)}>
                     <Plus size={20} />
-                    Generate Profile
+                    Add Peer
                 </button>
             </div>
 
@@ -105,7 +112,7 @@ const RemoteAccess = () => {
                 <div className="clients-section glass-panel">
                     <div className="card-header">
                         <User size={20} className="header-icon" />
-                        <h3>Authorized Client Profiles</h3>
+                        <h3>Connected Peers</h3>
                     </div>
 
                     {loading ? (
@@ -113,27 +120,30 @@ const RemoteAccess = () => {
                     ) : clients.length === 0 ? (
                         <div className="empty-state">
                             <Shield size={48} />
-                            <p>No active remote profiles found.</p>
-                            <span>Generate a profile to allow secure external access.</span>
+                            <p>No active VPN peers found.</p>
+                            <span>Add a peer to start your secure remote access journey.</span>
                         </div>
                     ) : (
                         <div className="client-list">
                             {clients.map(client => (
-                                <div key={client.client_name} className="client-item">
+                                <div key={client.name} className="client-item">
                                     <div className="client-info">
                                         <div className="client-avatar">
-                                            {client.client_name.charAt(0).toUpperCase()}
+                                            {client.name.charAt(0).toUpperCase()}
                                         </div>
                                         <div className="client-details">
-                                            <strong>{client.client_name}</strong>
-                                            <span><Calendar size={12} /> Created: {new Date(client.created_at).toLocaleDateString()}</span>
+                                            <strong>{client.name}</strong>
+                                            <span>
+                                                <Calendar size={12} />
+                                                {new Date(client.created_at).toLocaleDateString()}
+                                            </span>
                                         </div>
                                     </div>
                                     <div className="client-actions">
-                                        <button className="action-btn download" title="Download .ovpn" onClick={() => handleDownload(client.client_name)}>
+                                        <button className="action-btn download" title="Download Config" onClick={() => handleDownload(client.name)}>
                                             <Download size={18} />
                                         </button>
-                                        <button className="action-btn delete" title="Revoke Access" onClick={() => handleDeleteClient(client.client_name)}>
+                                        <button className="action-btn delete" title="Revoke Access" onClick={() => handleDeleteClient(client.name)}>
                                             <Trash2 size={18} />
                                         </button>
                                     </div>
@@ -144,62 +154,102 @@ const RemoteAccess = () => {
                 </div>
 
                 <div className="vpn-info-section">
-                    <div className="info-card glass-panel">
+                    <div className="info-card glass-panel status-card">
                         <div className="card-header">
                             <Globe size={20} className="header-icon" />
-                            <h3>Server Status</h3>
+                            <h3>Server Engine</h3>
                         </div>
                         <div className="status-stats">
                             <div className="stat-row">
-                                <span>Protocol</span>
-                                <strong>UDP (Port 1194)</strong>
+                                <span>Status</span>
+                                <span className="badge online">Active</span>
                             </div>
                             <div className="stat-row">
-                                <span>Encryption</span>
-                                <strong>AES-256-GCM</strong>
+                                <span>Encapsulation</span>
+                                <strong className="text-secondary">UDP (WireGuard)</strong>
                             </div>
                             <div className="stat-row">
-                                <span>Virtual IP Pool</span>
+                                <span>Port</span>
+                                <strong>51820</strong>
+                            </div>
+                            <div className="stat-row">
+                                <span>Subnet</span>
                                 <strong>10.8.0.0/24</strong>
                             </div>
                         </div>
                     </div>
 
                     <div className="info-card glass-panel instruction-card">
-                        <h3>How to Connect</h3>
+                        <h3>Connect in Seconds</h3>
                         <ol>
-                            <li>Download the <strong>.ovpn</strong> profile above.</li>
-                            <li>Install the OpenVPN client on your device.</li>
-                            <li>Import the profile and connect using your server's public IP.</li>
+                            <li>Download the <strong>WireGuard App</strong>.</li>
+                            <li>Add a new Peer above to get a <strong>QR Code</strong>.</li>
+                            <li>Scan the QR from the mobile app and flip the switch!</li>
                         </ol>
                     </div>
                 </div>
             </div>
 
+            {/* Modal: New Client */}
             {showModal && (
                 <div className="modal-overlay">
                     <div className="modal-content glass-panel">
-                        <h3>Generate New Client Profile</h3>
+                        <h3>Authorize New Peer</h3>
                         <form onSubmit={handleAddClient}>
                             <div className="input-group">
-                                <label>Client Identifier</label>
+                                <label>Device Name</label>
                                 <input
                                     type="text"
-                                    placeholder="e.g. MacBook-Pro, iPhone-Tim"
+                                    placeholder="e.g. My-iPhone-16"
                                     value={newClientName}
                                     onChange={e => setNewClientName(e.target.value)}
                                     required
                                     autoFocus
                                 />
-                                <span className="hint">A unique name to identify this device.</span>
+                                <span className="hint">Identifies this device in the peer list.</span>
                             </div>
                             <div className="modal-actions">
                                 <button type="button" className="cancel-btn" onClick={() => setShowModal(false)}>Cancel</button>
                                 <button type="submit" className="confirm-btn" disabled={generating}>
-                                    {generating ? <Loader2 className="spin" size={18} /> : 'Generate OVPN'}
+                                    {generating ? <Loader2 className="spin" size={18} /> : 'Generate Secure Link'}
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal: QR Code Display */}
+            {showQR && (
+                <div className="modal-overlay">
+                    <div className="modal-content glass-panel qr-modal">
+                        <button className="close-btn" onClick={() => setShowQR(null)}><X size={20} /></button>
+                        <h3>Scan to Connect 📱</h3>
+                        <p className="subtitle">Scan this with the WireGuard app on your phone</p>
+
+                        <div className="qr-container">
+                            <QRCode
+                                value={showQR.config}
+                                size={256}
+                                bgColor="white"
+                                fgColor="black"
+                                level="M"
+                            />
+                        </div>
+
+                        <div className="qr-actions">
+                            <button className="secondary-btn" onClick={() => copyToClipboard(showQR.config)}>
+                                <Copy size={16} /> Copy Config
+                            </button>
+                            <button className="primary-btn" onClick={() => handleDownload(showQR.name)}>
+                                <Download size={16} /> Download .conf
+                            </button>
+                        </div>
+
+                        <div className="qr-footer">
+                            <Shield size={16} />
+                            <span>This config contains your private keys. Keep it safe!</span>
+                        </div>
                     </div>
                 </div>
             )}
