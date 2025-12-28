@@ -153,9 +153,10 @@ if [[ "$INSTALL_UNIFI" =~ ^[Yy]$ ]]; then
     echo "deb [signed-by=/usr/share/keyrings/ubiquiti-archive-keyring.gpg] https://www.ui.com/downloads/unifi/debian stable ubiquiti" | tee /etc/apt/sources.list.d/100-ubnt-unifi.list
     
     echo -e "Installing MongoDB (Required for UniFi)..."
-    # UniFi 8.0+ supports MongoDB 7.0. Adding official MongoDB repo for Ubuntu.
+    # MongoDB doesn't have a 'noble' repo yet. Jammy repo is fully compatible with 24.04.
+    apt install -y gnupg
     curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-7.0.gpg --yes
-    echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/7.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+    echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list
     
     apt update
     apt install -y mongodb-org
