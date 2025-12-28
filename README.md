@@ -81,6 +81,8 @@ Once installed, the dashboard is accessible on standard web ports:
 - **URL**: `http://<YOUR_ROUTER_IP>`
 - **Port**: 80 (Standard Web)
 - **Status**: `systemctl status softrouter`
+- **Default Username**: admin
+- **Default Password**: password
 
 ---
 
