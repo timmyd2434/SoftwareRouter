@@ -120,6 +120,9 @@ fi
 # 5. Build Phase
 echo -e "${CYAN}[4/8] Building Software Components...${NC}"
 
+# Stop existing service if running to avoid 'Text file busy' during binary overwrite
+systemctl stop softrouter 2>/dev/null || true
+
 # Backend
 echo -e "Compiling Go Backend..."
 cd backend
