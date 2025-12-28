@@ -8,6 +8,7 @@ import { API_ENDPOINTS, authFetch } from '../apiConfig';
 const Dashboard = () => {
     const [systemStatus, setSystemStatus] = useState(null);
     const [trafficHistory, setTrafficHistory] = useState([]);
+    const [securityAlerts, setSecurityAlerts] = useState([]);
     const [loading, setLoading] = useState(true);
 
     const fetchStatus = async () => {
@@ -27,7 +28,6 @@ const Dashboard = () => {
             const res = await authFetch(API_ENDPOINTS.TRAFFIC_HISTORY);
             if (res.ok) {
                 const data = await res.json();
-                // Ensure we have data
                 setTrafficHistory(data || []);
             }
         } catch (err) {
@@ -37,16 +37,31 @@ const Dashboard = () => {
         }
     };
 
+    const fetchSecurityAlerts = async () => {
+        try {
+            const res = await authFetch(API_ENDPOINTS.SECURITY_ALERTS);
+            if (res.ok) {
+                const data = await res.json();
+                setSecurityAlerts(data || []);
+            }
+        } catch (err) {
+            console.error("Failed to fetch security alerts", err);
+        }
+    };
+
     useEffect(() => {
         fetchStatus();
         fetchTrafficHistory();
+        fetchSecurityAlerts();
 
         const statusInterval = setInterval(fetchStatus, 5000);
-        const trafficInterval = setInterval(fetchTrafficHistory, 1000); // Live update every second
+        const trafficInterval = setInterval(fetchTrafficHistory, 1000);
+        const securityInterval = setInterval(fetchSecurityAlerts, 10000); // 10s security updates
 
         return () => {
             clearInterval(statusInterval);
             clearInterval(trafficInterval);
+            clearInterval(securityInterval);
         };
     }, []);
 
@@ -62,6 +77,24 @@ const Dashboard = () => {
         const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
         const i = Math.floor(Math.log(bytesPerSec) / Math.log(k));
         return parseFloat((bytesPerSec / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    };
+
+    const getSeverityLabel = (severity) => {
+        switch (severity) {
+            case 1: return 'HIGH';
+            case 2: return 'MEDIUM';
+            case 3: return 'LOW';
+            default: return 'INFO';
+        }
+    };
+
+    const getSeverityClass = (severity) => {
+        switch (severity) {
+            case 1: return 'high';
+            case 2: return 'medium';
+            case 3: return 'low';
+            default: return 'info';
+        }
     };
 
     const currentTraffic = trafficHistory.length > 0 ? trafficHistory[trafficHistory.length - 1] : { rx_bps: 0, tx_bps: 0 };
@@ -181,9 +214,27 @@ const Dashboard = () => {
                 </div>
 
                 <div className="section-panel glass-panel">
-                    <h3>Recent Alerts</h3>
+                    <h3>Recent Security Threats</h3>
                     <div className="panel-content">
-                        <div className="empty-state">No active alerts</div>
+                        {securityAlerts.length === 0 ? (
+                            <div className="empty-state">No active threats detected</div>
+                        ) : (
+                            <div className="mini-alert-list">
+                                {securityAlerts.slice(0, 5).map((alert, idx) => (
+                                    <div key={idx} className={`mini-alert-item ${getSeverityClass(alert.severity)}`}>
+                                        <div className="alert-meta">
+                                            <span className="alert-time">{new Date(alert.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                            <span className={`alert-badge ${getSeverityClass(alert.severity)}`}>{getSeverityLabel(alert.severity)}</span>
+                                        </div>
+                                        <div className="alert-body">
+                                            <strong>{alert.signature}</strong>
+                                            <span>From: {alert.src_ip}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        <a href="/security" className="view-all-link">View Full Security Monitor →</a>
                     </div>
                 </div>
             </div>
