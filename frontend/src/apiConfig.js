@@ -64,5 +64,6 @@ export const API_ENDPOINTS = {
     SECURITY_STATS: `${API_BASE_URL}/api/security/stats`,
     VPN_CLIENTS: `${API_BASE_URL}/api/vpn/clients`,
     VPN_DOWNLOAD: `${API_BASE_URL}/api/vpn/download`,
+    DNS_STATS: `${API_BASE_URL}/api/dns/stats`,
 };
 

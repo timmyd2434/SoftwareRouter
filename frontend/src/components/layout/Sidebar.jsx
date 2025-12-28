@@ -12,6 +12,7 @@ const Sidebar = ({ isOpen, toggleSidebar, onLogout }) => {
         { icon: Lock, label: 'Security', path: '/security' },
         { icon: Globe, label: 'Remote Access', path: '/remote-access' },
         { icon: Server, label: 'Services', path: '/services' },
+        { icon: ShieldCheck, label: 'DNS Analytics', path: '/dns-analytics' },
         { icon: Settings, label: 'Settings', path: '/settings' },
         {
             icon: Box,

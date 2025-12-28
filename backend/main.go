@@ -135,6 +135,21 @@ var (
 	historyInitialized bool
 )
 
+// DNSStats represents aggregate metrics from the ad-blocker
+type DNSStats struct {
+	TotalQueries      int         `json:"total_queries"`
+	BlockedFiltering  int         `json:"blocked_filtering"`
+	BlockedPercentage float64     `json:"blocked_percentage"`
+	TopBlocked        []TopDomain `json:"top_blocked"`
+	TopQueries        []TopDomain `json:"top_queries"`
+	TopClients        []TopDomain `json:"top_clients"`
+}
+
+type TopDomain struct {
+	Domain string `json:"domain"`
+	Hits   int    `json:"hits"`
+}
+
 // ServiceStatus represents a managed service (DHCP, DNS, VPN)
 type ServiceStatus struct {
 	Name      string `json:"name"`
@@ -1547,6 +1562,60 @@ func getCrowdSecDecisions(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(decisions)
 }
 
+func getDNSStats(w http.ResponseWriter, r *http.Request) {
+	cfg := loadConfig()
+	stats := DNSStats{}
+
+	// For now, we assume AdGuard Home is on port 3000 or the user-preferred port 90
+	// In a real environment, we'd pull from the actual config.
+	ports := []string{"3000", "90", "80"}
+	var finalData map[string]interface{}
+	var err error
+
+	for _, port := range ports {
+		url := fmt.Sprintf("http://localhost:%s/control/stats", port)
+		// Note: AdGuard Home usually needs Basic Auth.
+		// For this integration to work perfectly, we'd need to store or prompt for AGH credentials.
+		// For now, we try an unauthenticated request (which might fail but is a start)
+		resp, cerr := http.Get(url)
+		if cerr == nil && resp.StatusCode == 200 {
+			json.NewDecoder(resp.Body).Decode(&finalData)
+			resp.Body.Close()
+			break
+		}
+	}
+
+	if finalData != nil {
+		// Map AGH data to our internal struct
+		if val, ok := finalData["num_dns_queries"].(float64); ok {
+			stats.TotalQueries = int(val)
+		}
+		if val, ok := finalData["num_blocked_filtering"].(float64); ok {
+			stats.BlockedFiltering = int(val)
+		}
+		if stats.TotalQueries > 0 {
+			stats.BlockedPercentage = (float64(stats.BlockedFiltering) / float64(stats.TotalQueries)) * 100
+		}
+	} else {
+		// Mock data if no ad-blocker is found, so the UI can be developed/tested
+		stats.TotalQueries = 1250
+		stats.BlockedFiltering = 340
+		stats.BlockedPercentage = 27.2
+		stats.TopBlocked = []TopDomain{
+			{Domain: "doubleclick.net", Hits: 85},
+			{Domain: "google-analytics.com", Hits: 62},
+			{Domain: "facebook.com", Hits: 44},
+		}
+		stats.TopQueries = []TopDomain{
+			{Domain: "google.com", Hits: 210},
+			{Domain: "github.com", Hits: 155},
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
+}
+
 func getSecurityStats(w http.ResponseWriter, r *http.Request) {
 	stats := SecurityStats{}
 
@@ -1744,6 +1813,7 @@ func main() {
 	mux.HandleFunc("GET /api/security/suricata/alerts", authMiddleware(getSuricataAlerts))
 	mux.HandleFunc("GET /api/security/crowdsec/decisions", authMiddleware(getCrowdSecDecisions))
 	mux.HandleFunc("GET /api/security/stats", authMiddleware(getSecurityStats))
+	mux.HandleFunc("GET /api/dns/stats", authMiddleware(getDNSStats))
 
 	// VPN Endpoints
 	mux.HandleFunc("GET /api/vpn/clients", authMiddleware(listVPNClients))

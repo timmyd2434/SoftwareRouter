@@ -10,6 +10,7 @@ import Security from './pages/Security';
 import Login from './pages/Login';
 import Settings from './pages/Settings';
 import RemoteAccess from './pages/RemoteAccess';
+import DNSAnalytics from './pages/DNSAnalytics';
 import './App.css';
 
 function App() {
@@ -40,6 +41,7 @@ function App() {
           <Route path="/security" element={<Security />} />
           <Route path="/remote-access" element={<RemoteAccess />} />
           <Route path="/services" element={<Services />} />
+          <Route path="/dns-analytics" element={<DNSAnalytics />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
