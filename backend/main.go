@@ -92,10 +92,11 @@ type FirewallRule struct {
 
 // ServiceStatus represents a managed service (DHCP, DNS, VPN)
 type ServiceStatus struct {
-	Name    string `json:"name"`
-	Status  string `json:"status"` // Running, Stopped, Error
-	Version string `json:"version"`
-	Uptime  string `json:"uptime"`
+	Name      string `json:"name"`
+	ServiceID string `json:"service_id"`
+	Status    string `json:"status"` // Running, Stopped, Error
+	Version   string `json:"version"`
+	Uptime    string `json:"uptime"`
 }
 
 // InterfaceMetadata stores custom labels and descriptions for interfaces
@@ -798,6 +799,15 @@ func getServiceStatus(name, serviceName string) ServiceStatus {
 	cmd := exec.Command("systemctl", "is-active", serviceName)
 	if err := cmd.Run(); err == nil {
 		status = "Running"
+	} else {
+		// Try fallback for AdGuard if the standard lowercase doesn't match
+		if serviceName == "adguardhome" {
+			fallbackCmd := exec.Command("systemctl", "is-active", "AdGuardHome")
+			if err := fallbackCmd.Run(); err == nil {
+				status = "Running"
+				serviceName = "AdGuardHome" // Use the correctly case-matched name
+			}
+		}
 	}
 
 	// Try to get version (generic approach, might need tailoring)
@@ -845,10 +855,11 @@ func getServiceStatus(name, serviceName string) ServiceStatus {
 	}
 
 	return ServiceStatus{
-		Name:    name,
-		Status:  status,
-		Version: version,
-		Uptime:  "-", // Complex to parse from systemctl show without more work
+		Name:      name,
+		ServiceID: serviceName,
+		Status:    status,
+		Version:   version,
+		Uptime:    "-", // Complex to parse from systemctl show without more work
 	}
 }
 
@@ -1511,10 +1522,14 @@ func controlService(w http.ResponseWriter, r *http.Request) {
 		"openvpn":      true,
 		"cloudflared":  true,
 		"adguardhome":  true,
+		"AdGuardHome":  true,
 		"pihole-FTL":   true,
+		"suricata":     true,
+		"crowdsec":     true,
+		"softrouter":   true,
 	}
 	if !validServices[req.ServiceName] {
-		http.Error(w, "Invalid service name", http.StatusBadRequest)
+		http.Error(w, "Invalid service name: "+req.ServiceName, http.StatusBadRequest)
 		return
 	}
 
