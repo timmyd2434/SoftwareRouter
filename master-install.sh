@@ -170,8 +170,8 @@ User=root
 Restart=always
 RestartSec=5
 # Security hardening for service
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN
-AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN CAP_NET_BIND_SERVICE
 
 [Install]
 WantedBy=multi-user.target
@@ -179,6 +179,8 @@ EOF
 
 # 8. Finalize
 echo -e "${CYAN}[7/8] Launching System...${NC}"
+# Kill existing processes on target ports to avoid 'address already in use'
+fuser -k 80/tcp 8080/tcp 2>/dev/null || true
 systemctl daemon-reload
 systemctl enable softrouter
 systemctl restart softrouter
