@@ -15,7 +15,7 @@ const Login = ({ onLogin }) => {
         setError('');
 
         try {
-            const res = await fetch(`${window.location.protocol}//${window.location.hostname}:8080/api/login`, {
+            const res = await fetch(API_ENDPOINTS.LOGIN, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password })
