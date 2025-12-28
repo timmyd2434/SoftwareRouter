@@ -1598,15 +1598,16 @@ func main() {
 		http.FileServer(http.Dir(staticDir)).ServeHTTP(w, r)
 	})
 
-	port := ":80" // Standard web port for router UI
-	fmt.Printf("SoftRouter running on port %s\n", port)
+	port := ":80"
+	log.Printf("SoftRouter Governance Service starting on port %s", port)
 
 	handler := enableCORS(mux)
 
-	if err := http.ListenAndServe(port, handler); err != nil {
-		fmt.Printf("Failed to bind to port 80 (trying 8080): %v\n", err)
-		if err := http.ListenAndServe(":8080", handler); err != nil {
-			log.Fatal(err)
+	// Attempt to bind to standard port 80, fallback to 8080 if needed
+	if err := http.ListenAndServe("0.0.0.0:80", handler); err != nil {
+		log.Printf("Primary port 80 binding failed: %v. Attempting fallback to 8080...", err)
+		if err := http.ListenAndServe("0.0.0.0:8080", handler); err != nil {
+			log.Fatalf("Critical Failure: Could not bind to any port: %v", err)
 		}
 	}
 }
