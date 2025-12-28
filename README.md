@@ -1,353 +1,88 @@
-# SoftRouter - Web-Based Software Router
+# SoftRouter - Web-Based Software Router 🛡️🚀
 
-A modern, feature-rich web-based router management interface built with React (frontend) and Go (backend) for Debian-based Linux systems.
+A modern, high-performance web-based router management interface built with **React** (frontend) and **Go** (backend). Designed to turn any Debian or Ubuntu server into a powerful, security-hardened network appliance.
 
-## 🌟 Features
+## 🌟 Key Features
 
-### ✅ Firewall Management (NFTables)
-- **Full CRUD operations** for firewall rules
-- **Human-readable rule display** - automatically parses complex NFTables JSON into readable format
-- **Add/Edit/Delete rules** with real-time validation
-- **Live rule status** from `nft -j list ruleset`
-- **Status log** in modal for debugging rule submission
-- Intelligent default selection for Family/Table/Chain
+### 🛡️ Integrated Security Stack
+- **IDS/IPS (Suricata)**: Real-time network intrusion detection and prevention.
+- **Threat Intelligence (CrowdSec)**: Community-driven IP reputation and automated blocking.
+- **Firewall (NFTables)**: Full GUI for managing kernel-level network filtering with human-readable parsing.
+- **Ad-Blocking**: Native support and management for **AdGuard Home** and **Pi-hole**.
 
-### ✅ Network Interface Management
-- **VLAN Creation & Deletion** - Create VLANs on any physical interface (e.g., eth0.10, eth0.20)
-- **IP Address Configuration** - Add/remove IP addresses with CIDR notation
-- **Interface State Control** - Bring interfaces up/down
-- **Interface Labeling** - Label interfaces as WAN, LAN, DMZ, Guest, Management, or Trunk
-- **Color-coded labels** with optional descriptions
-- **Physical and VLAN separation** - Organized display of interface types
-- **Real-time status** - Live MAC, MTU, and IP address display
+### 🌐 Network & Interfaces
+- **VLAN Management**: Create and manage 802.1Q VLANs on physical interfaces.
+- **L3 Configuration**: Dynamic IP/CIDR assignment and interface state (Up/Down) control.
+- **Smart Labeling**: Organize ports as WAN, LAN, DMZ, or Trunk with custom descriptions.
+- **Live Monitoring**: Real-time traffic stats, interface status, and connection tracking.
 
-### ✅ System Services Management
-- **Start/Stop/Restart** systemd services (dnsmasq, WireGuard, etc.)
-- **Real-time status updates** - Auto-refresh every 10 seconds
-- **Service version detection**
-- **Loading indicators** during service operations
-- **Error handling** with helpful debug suggestions
+### ⚙️ System Management
+- **Service Governance**: Unified dashboard to Start/Stop/Restart critical services (dnsmasq, WireGuard, OpenVPN, etc.).
+- **Credential Security**: SHA-256 password hashing and secure token-based session management.
+- **Appliance Deployment**: Single-script installation that converts a fresh OS into a router in minutes.
 
-### ✅ Dashboard
-- **System status overview**
-- **Network statistics**
-- **Quick access** to all features
+---
 
-## 📋 Requirements
-
-### System Requirements
-- **Operating System**: Debian-based Linux (Debian, Ubuntu, etc.)
-- **Privileges**: Root/sudo access for network operations
-- **Network Tools**:
-  - `nftables` - For firewall management
-  - `iproute2` - For interface/VLAN/IP management
-  - `systemd` - For service management
-
-### Software Dependencies
-
-**Backend (Go)**:
-- Go 1.21 or higher
-- Standard library packages (no external dependencies)
-
-**Frontend (React + Vite)**:
-- Node.js 18+ and npm
-- React 18.3
-- React Router 7
-- Lucide React (icons)
-- Vite (development server)
-
-## 🚀 Deployment & Installation
+## 🚀 Installation & Deployment
 
 ### Master Installation (Recommended)
-SoftRouter is designed for rapid deployment as a self-contained network appliance. Use the master installation script for a production-ready, security-hardened setup:
+SoftRouter is optimized for headless servers. Run the comprehensive installer to set up the entire stack:
 
 ```bash
-git clone -b Dev https://www.github.com/timmyd2434/SoftwareRouter.git
+git clone -b Dev https://github.com/timmyd2434/SoftwareRouter.git
 cd SoftwareRouter
-sudo chmod +x master-install.sh
 sudo ./master-install.sh
 ```
 
-**What this script does:**
-1. **Dependency Management**: Installs Go, Node.js, NFTables, and all system tools.
-2. **Interactive Security Setup**: Prompts you to set a unique administrative username and password.
-3. **Automated Builds**: Compiles the Go backend and builds the React production assets.
-4. **Appliance Configuration**: Sets up the web server structure at `/var/www/softrouter`.
-5. **Systemd Integration**: Creates and enables a `softrouter.service` to start automatically on boot.
-6. **Firewall Baseline**: Applies a secure input filtering policy.
+**What the installer handles:**
+1.  **Core Toolchain**: Installs Go, Node.js, NFTables, and network utilities.
+2.  **Security Setup**: configures your admin account and API secrets.
+3.  **IDS/IPS Integration**: Optional one-click setup for Suricata & CrowdSec.
+4.  **DNS Optimization**: Automatically resolves Port 53 conflicts (disables `systemd-resolved` stub).
+5.  **Production Build**: Compiles the Go binary and builds the optimized React frontend.
+6.  **Persistence**: Installs a `softrouter.service` for automated startup on boot.
 
 ### Accessing the Interface
-Once installed, the dashboard is accessible on standard web ports:
 - **URL**: `http://<YOUR_ROUTER_IP>`
-- **Port**: 80 (Standard Web)
-- **Status**: `systemctl status softrouter`
-- **Default Username**: admin
-- **Default Password**: password
+- **Admin Port**: 80
+- **Default Credentials**: Set during installation (Step 2/8).
 
 ---
 
-## ⚙️ Development Guide
+## 💡 Professional Tips & Config
 
-If you are modifying the code and want to run in development mode:
-
-### 1. Backend (Go)
+### Reclaiming Port 53
+If you install **AdGuard Home** or **Pi-hole**, you must free up port 53 which Ubuntu occupies by default. The `master-install.sh` handles this, but you can do it manually:
 ```bash
-cd backend
-go run main.go
+# Disable Ubuntu's internal listener
+echo -e "[Resolve]\nDNSStubListener=no" | sudo tee /etc/systemd/resolved.conf.d/softrouter.conf
+sudo ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+sudo systemctl restart systemd-resolved
 ```
-*Note: Backend will now serve static files if found in `/var/www/softrouter/html`, but API remains available.*
 
-### 2. Frontend (React)
+### Managing Security
+Verify your security stance via CLI:
 ```bash
-cd frontend
-npm install
-npm run dev -- --host
-```
-The frontend is configured to find the backend automatically. In development mode (Vite), it expects the backend on port 80/8080.
+# View CrowdSec active bans
+sudo cscli decisions list
 
-### Frontend Configuration
-
-The frontend is configured to connect to `localhost:8080` for the backend API. If you need to change this:
-
-1. Edit API endpoints in each page component (Dashboard.jsx, Firewall.jsx, etc.)
-2. Change `http://localhost:8080` to your backend URL
-
-### CORS Configuration
-
-**Development**: CORS is set to allow all origins (`*`)  
-**Production**: Update `enableCORS()` in `backend/main.go` to restrict origins:
-
-```go
-w.Header().Set("Access-Control-Allow-Origin", "https://yourdomain.com")
-```
-
-## 🎯 Usage
-
-### Starting the Application
-
-**Terminal 1 - Backend:**
-```bash
-cd backend
-echo "Your_Password" | sudo -S go run main.go >> backend.log 2>&1 &
-
-# Monitor logs
-tail -f backend.log
-```
-
-**Terminal 2 - Frontend:**
-```bash
-cd frontend
-npm run dev -- --host
-```
-
-**Access the Web Interface:**
-- Local: `http://localhost:5173`
-- Network: `http://YOUR_IP:5173`
-
-### Using Features
-
-#### Creating a VLAN
-1. Navigate to **Interfaces** page
-2. Click **"Create VLAN"** button
-3. Select parent interface (e.g., `eth0`)
-4. Enter VLAN ID (1-4094)
-5. Click **"Create VLAN"**
-6. Result: `eth0.10` interface created
-
-#### Configuring IP Address/Subnet
-1. On any interface card, click **"IP"** button
-2. Select **"Add IP Address"**
-3. Enter IP with CIDR notation: `192.168.10.1/24`
-4. Click **"Apply"**
-
-#### Labeling Interfaces
-1. Click **"Label"** button on interface
-2. Select label type (WAN, LAN, DMZ, etc.)
-3. Optional: Add description
-4. Click **"Set Label"**
-
-#### Managing Firewall Rules
-1. Navigate to **Firewall** page
-2. Click **"Add Rule"** button
-3. Select Family, Table, and Chain
-4. Enter rule statement (e.g., `tcp dport 8080 accept`)
-5. Click **"CONFIRM ADD"**
-
-#### Managing Services
-1. Navigate to **Settings** page
-2. Click **Start/Stop/Restart** buttons on service cards
-
-## 📁 Project Structure
-
-```
-SoftwareRouter/
-├── backend/
-│   ├── main.go              # Go backend server
-│   └── backend.log          # Backend logs
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   └── layout/      # Sidebar, MainLayout
-│   │   ├── pages/
-│   │   │   ├── Dashboard.jsx
-│   │   │   ├── Interfaces.jsx
-│   │   │   ├── Firewall.jsx
-│   │   │   └── Services.jsx
-│   │   ├── App.jsx
-│   │   └── index.css        # Global styles
-│   ├── package.json
-│   └── vite.config.js
-└── README.md
-```
-
-## 🔒 Security Considerations
-
-### ⚠️ Important Security Notes
-
-1. **Sudo Access**: The backend requires root privileges to modify network configuration and firewall rules.
-   - **Testing**: Running with sudo password is acceptable
-   - **Production**: Use passwordless sudo with specific command whitelisting
-
-2. **CORS**: Currently set to allow all origins (`*`)
-   - **Development**: This is fine
-   - **Production**: Restrict to your domain only
-
-3. **Authentication**: 
-   - **Current**: No authentication implemented
-   - **Production**: Implement authentication/authorization before deploying
-
-4. **Firewall Rule Validation**: The backend performs basic validation but accepts raw `nft` commands
-   - Be careful with rule syntax
-   - Test rules in a safe environment first
-
-5. **Network Access**: 
-   - Backend runs on `:8080`
-   - Frontend runs on `:5173`
-   - Consider firewall rules to restrict access
-
-## 🐛 Troubleshooting
-
-### Backend Issues
-
-**"Permission denied" errors:**
-- Ensure backend is running with sudo
-- Check sudoers configuration for passwordless sudo
-
-**NFTables errors:**
-```bash
-# Check if nft Tables are initialized
-sudo nft list ruleset
-
-# If empty, create basic structure
-sudo nft add table inet filter
-sudo nft add chain inet filter INPUT
-```
-
-**Service control failures:**
-- Check if service exists: `systemctl status dnsmasq`
-- View service logs: `sudo journalctl -xeu dnsmasq`
-
-### Frontend Issues
-
-**"Network Error" or "Failed to fetch":**
-- Ensure backend is running on port 8080
-- Check browser console for CORS errors
-- Verify backend logs for errors
-
-**Interfaces not showing:**
-- Backend needs root access to read interface info
-- Check that backend is running with sudo
-
-### DHCP/DNS Service Won't Start
-
-This is normal in a laptop testing environment:
-- **Reason**: Conflicts with NetworkManager or other network services
-- **Solution**: For testing, use WireGuard or create minimal dnsmasq config
-- **Production**: Disable conflicting services
-
-## 📝 File Locations
-
-### Data Storage
-- **Interface Metadata**: `/tmp/router_interface_metadata.json`
-  - Stores interface labels and descriptions
-  - **Note**: `/tmp` is cleared on reboot
-  - For persistent storage, move to `/etc/softrouter/` or similar
-
-### Logs
-- **Backend**: `backend/backend.log`
-- **Systemd Services**: `journalctl -xeu <service-name>`
-- **NFTables**: Check with `sudo nft list ruleset`
-
-## 🔮 Known Limitations
-
-1. **No Authentication**: Anyone with network access can control the router
-2. **Temporary Metadata Storage**: Interface labels stored in `/tmp` (lost on reboot)
-3. **IPv4 Focus**: IPv6 support exists but not extensively tested
-4. **Basic Error Handling**: Some edge cases may not be handled gracefully
-5. **No Rollback**: Changes to firewall/network are immediate with no undo
-
-## 🚧 Future Enhancements
-
-Potential features for future development:
-- [ ] User authentication and authorization
-- [ ] DHCP server configuration UI
-- [ ] DNS server configuration UI
-- [ ] Routing table management
-- [ ] NAT/Masquerade configuration
-- [ ] Traffic monitoring and graphs
-- [ ] Configuration backup/restore
-- [ ] Rule templates and presets
-- [ ] Persistent interface metadata storage
-- [ ] IPv6 firewall management
-- [ ] WireGuard tunnel configuration UI
-- [ ] System logs viewer
-
-## 🤝 Contributing
-
-This is a personal project, but suggestions and improvements are welcome!
-
-## 📄 License
-
-This project is for personal/educational use.
-
-## ⚡ Quick Reference
-
-### Default Ports
-- **Frontend**: `http://localhost:5173`
-- **Backend API**: `http://localhost:8080`
-
-### Common Commands
-
-**Start Backend:**
-```bash
-cd backend && echo "YOUR_PASSWORD" | sudo -S go run main.go >> backend.log 2>&1 &
-```
-
-**Start Frontend:**
-```bash
-cd frontend && npm run dev -- --host
-```
-
-**View Backend Logs:**
-```bash
-tail -f backend/backend.log
-```
-
-**Stop Backend:**
-```bash
-sudo kill -9 $(sudo lsof -t -i:8080)
-```
-
-**Check NFTables:**
-```bash
-sudo nft list ruleset
-```
-
-**Check Interfaces:**
-```bash
-ip addr show
+# Check Suricata logs
+tail -f /var/log/suricata/eve.json | jq
 ```
 
 ---
 
-**Built with ❤️ using React, Go, and modern web technologies**
+## 📂 Project Structure
+- `backend/`: Go API server (Port 80). Handles kernel interactions (IP, NFT, systemd).
+- `frontend/`: React + Vite SPA. Modern, glassmorphism-based UI.
+- `master-install.sh`: The "glue" script for full appliance deployment.
+- `/etc/softrouter/`: Secure persistent storage for credentials and configuration.
+
+## 🛠️ Development
+To run in development mode with live-reloading:
+1.  **Backend**: `cd backend && sudo go run main.go`
+2.  **Frontend**: `cd frontend && npm install && npm run dev -- --host`
+
+---
+
+Built with ❤️ for secure, open-source networking.

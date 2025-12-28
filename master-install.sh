@@ -117,8 +117,32 @@ else
     echo -e "Skipping IDS/IPS installation."
 fi
 
-# 5. Build Phase
-echo -e "${CYAN}[4/8] Building Software Components...${NC}"
+# 5. DNS Optimization (Port 53 Cleanup)
+echo -e "${CYAN}[4/8] DNS Optimization...${NC}"
+read -p "Disable systemd-resolved stub listener to free up port 53? (Required for AdGuard/Pi-hole) [y/N]: " FREE_PORT_53
+if [[ "$FREE_PORT_53" =~ ^[Yy]$ ]]; then
+    echo -e "Configuring systemd-resolved..."
+    mkdir -p /etc/systemd/resolved.conf.d
+    echo -e "[Resolve]\nDNSStubListener=no" > /etc/systemd/resolved.conf.d/softrouter.conf
+    if [ -L /etc/resolv.conf ]; then
+        ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+    fi
+    systemctl restart systemd-resolved
+    echo -e "${GREEN}Port 53 is now free for custom DNS servers.${NC}"
+fi
+
+# 6. Optional Ad-Blocker (AdGuard Home)
+echo -e "${CYAN}[5/8] Ad-Blocking DNS (Optional)${NC}"
+read -p "Would you like to install AdGuard Home now? [y/N]: " INSTALL_AGH
+if [[ "$INSTALL_AGH" =~ ^[Yy]$ ]]; then
+    echo -e "Installing AdGuard Home..."
+    curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh -s -- -v
+    # The setup wizard will be on port 3000 by default
+    echo -e "${GREEN}AdGuard Home installed. Complete setup at http://$(hostname -I | awk '{print $1}'):3000${NC}"
+fi
+
+# 7. Build Phase
+echo -e "${CYAN}[6/8] Building Software Components...${NC}"
 
 # Stop existing service if running to avoid 'Text file busy' during binary overwrite
 systemctl stop softrouter 2>/dev/null || true
@@ -140,8 +164,8 @@ mkdir -p /var/www/softrouter/html
 cp -r dist/* /var/www/softrouter/html/
 cd ..
 
-# 6. Firewall Baseline
-echo -e "${CYAN}[5/8] Applying Firewall Baseline (nftables)...${NC}"
+# 8. Firewall Baseline
+echo -e "${CYAN}[7/8] Applying Firewall Baseline (nftables)...${NC}"
 cat <<EOF > /etc/nftables.conf
 flush ruleset
 
@@ -158,8 +182,8 @@ EOF
 systemctl enable nftables
 systemctl restart nftables
 
-# 7. Service Installation
-echo -e "${CYAN}[6/8] Creating Systemd Service...${NC}"
+# 9. Service Installation
+echo -e "${CYAN}[8/8] Creating Systemd Service...${NC}"
 
 cat <<EOF > /etc/systemd/system/softrouter.service
 [Unit]
@@ -180,7 +204,7 @@ AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN CAP_NET_BIND_SERVICE
 WantedBy=multi-user.target
 EOF
 
-# 8. Finalize
+# 10. Finalize
 echo -e "${CYAN}[7/8] Launching System...${NC}"
 # Kill existing processes on target ports to avoid 'address already in use'
 fuser -k 80/tcp 8080/tcp 2>/dev/null || true
@@ -201,6 +225,9 @@ echo -e "Tips:"
 echo -e "- Configure VLANs and Firewalls via the UI."
 if [[ "$INSTALL_SEC" =~ ^[Yy]$ ]]; then
     echo -e "- Monitor Security: sudo cscli decisions list"
+fi
+if [[ "$INSTALL_AGH" =~ ^[Yy]$ ]]; then
+    echo -e "- AdGuard Setup: http://${CORE_IP}:3000"
 fi
 echo -e "- Monitor logs: journalctl -u softrouter -f"
 echo -e "${BLUE}=========================================${NC}"
