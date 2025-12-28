@@ -878,6 +878,7 @@ func getServices(w http.ResponseWriter, r *http.Request) {
 		{"DNS Resolver (Unbound)", "unbound"},
 		{"WireGuard VPN", "wg-quick@wg0"},
 		{"Suricata (IDS/IPS)", "suricata"},
+		{"UniFi Controller", "unifi"},
 		{"OpenVPN Server", "openvpn"},
 		{"Cloudflare Tunnel", "cloudflared"},
 		{"Ad-blocking DNS", adBlockerService},
@@ -1526,6 +1527,7 @@ func controlService(w http.ResponseWriter, r *http.Request) {
 		"pihole-FTL":   true,
 		"suricata":     true,
 		"crowdsec":     true,
+		"unifi":        true,
 		"softrouter":   true,
 	}
 	if !validServices[req.ServiceName] {

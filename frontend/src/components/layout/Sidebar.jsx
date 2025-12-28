@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Network, ShieldCheck, Activity, Settings, Menu, X, LogOut, Lock, Server, Globe } from 'lucide-react';
+import { LayoutDashboard, Network, ShieldCheck, Activity, Settings, Menu, X, LogOut, Lock, Server, Globe, ExternalLink, Box } from 'lucide-react';
 import './Sidebar.css';
 
 const Sidebar = ({ isOpen, toggleSidebar, onLogout }) => {
@@ -13,6 +13,12 @@ const Sidebar = ({ isOpen, toggleSidebar, onLogout }) => {
         { icon: Globe, label: 'Remote Access', path: '/remote-access' },
         { icon: Server, label: 'Services', path: '/services' },
         { icon: Settings, label: 'Settings', path: '/settings' },
+        {
+            icon: Box,
+            label: 'UniFi Controller',
+            path: `https://${window.location.hostname}:8443`,
+            external: true
+        },
     ];
 
     return (
@@ -30,14 +36,28 @@ const Sidebar = ({ isOpen, toggleSidebar, onLogout }) => {
 
                 <nav className="sidebar-nav">
                     {navItems.map((item) => (
-                        <NavLink
-                            key={item.path}
-                            to={item.path}
-                            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-                        >
-                            <item.icon size={20} className="nav-icon" />
-                            <span className="nav-label">{item.label}</span>
-                        </NavLink>
+                        item.external ? (
+                            <a
+                                key={item.label}
+                                href={item.path}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="nav-item external"
+                            >
+                                <item.icon size={20} className="nav-icon" />
+                                <span className="nav-label">{item.label}</span>
+                                <ExternalLink size={14} className="external-indicator" />
+                            </a>
+                        ) : (
+                            <NavLink
+                                key={item.path}
+                                to={item.path}
+                                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                            >
+                                <item.icon size={20} className="nav-icon" />
+                                <span className="nav-label">{item.label}</span>
+                            </NavLink>
+                        )
                     ))}
                 </nav>
 

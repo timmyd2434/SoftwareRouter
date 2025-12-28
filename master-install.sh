@@ -141,8 +141,31 @@ if [[ "$INSTALL_AGH" =~ ^[Yy]$ ]]; then
     echo -e "${GREEN}AdGuard Home installed. Complete setup at http://$(hostname -I | awk '{print $1}'):3000${NC}"
 fi
 
-# 7. Build Phase
-echo -e "${CYAN}[6/8] Building Software Components...${NC}"
+# 7. Optional UniFi Controller
+echo -e "${CYAN}[6/9] UniFi Network Server (Optional)${NC}"
+read -p "Would you like to install the UniFi Controller for your U6 AP? [y/N]: " INSTALL_UNIFI
+if [[ "$INSTALL_UNIFI" =~ ^[Yy]$ ]]; then
+    echo -e "Installing UniFi Controller dependencies..."
+    apt install -y openjdk-17-jre-headless libcap2
+    
+    echo -e "Adding UniFi Repository..."
+    curl -s https://dl.ui.com/unifi/unifi-repo.gpg | tee /usr/share/keyrings/ubiquiti-archive-keyring.gpg > /dev/null
+    echo "deb [signed-by=/usr/share/keyrings/ubiquiti-archive-keyring.gpg] https://www.ui.com/downloads/unifi/debian stable ubiquiti" | tee /etc/apt/sources.list.d/100-ubnt-unifi.list
+    
+    echo -e "Installing MongoDB (Required for UniFi)..."
+    # Note: UniFi requires MongoDB, often older versions. This is a simplified install.
+    apt update
+    apt install -y mongodb-org || apt install -y mongodb
+    
+    echo -e "Installing UniFi Controller..."
+    apt install -y unifi
+    systemctl enable unifi
+    systemctl start unifi
+    echo -e "${GREEN}UniFi Controller installed. Access at https://$(hostname -I | awk '{print $1}'):8443${NC}"
+fi
+
+# 8. Build Phase
+echo -e "${CYAN}[7/9] Building Software Components...${NC}"
 
 # Stop existing service if running to avoid 'Text file busy' during binary overwrite
 systemctl stop softrouter 2>/dev/null || true
@@ -164,8 +187,8 @@ mkdir -p /var/www/softrouter/html
 cp -r dist/* /var/www/softrouter/html/
 cd ..
 
-# 8. Firewall Baseline
-echo -e "${CYAN}[7/8] Applying Firewall Baseline (nftables)...${NC}"
+# 9. Firewall Baseline
+echo -e "${CYAN}[8/9] Applying Firewall Baseline (nftables)...${NC}"
 cat <<EOF > /etc/nftables.conf
 flush ruleset
 
@@ -182,8 +205,8 @@ EOF
 systemctl enable nftables
 systemctl restart nftables
 
-# 9. Service Installation
-echo -e "${CYAN}[8/8] Creating Systemd Service...${NC}"
+# 10. Service Installation
+echo -e "${CYAN}[9/9] Creating Systemd Service...${NC}"
 
 cat <<EOF > /etc/systemd/system/softrouter.service
 [Unit]
@@ -227,7 +250,10 @@ if [[ "$INSTALL_SEC" =~ ^[Yy]$ ]]; then
     echo -e "- Monitor Security: sudo cscli decisions list"
 fi
 if [[ "$INSTALL_AGH" =~ ^[Yy]$ ]]; then
-    echo -e "- AdGuard Setup: http://${CORE_IP}:3000"
+    echo -e "- AdGuard Setup: http://${CORE_IP}:90"
+fi
+if [[ "$INSTALL_UNIFI" =~ ^[Yy]$ ]]; then
+    echo -e "- UniFi Controller: https://${CORE_IP}:8443"
 fi
 echo -e "- Monitor logs: journalctl -u softrouter -f"
 echo -e "${BLUE}=========================================${NC}"

@@ -82,6 +82,22 @@
     opacity: 0.8;
 }
 
+.nav-item.external {
+    position: relative;
+    border: 1px dashed rgba(99, 102, 241, 0.2);
+    margin-top: var(--space-4);
+}
+
+.external-indicator {
+    margin-left: auto;
+    opacity: 0.4;
+    transition: opacity 0.2s;
+}
+
+.nav-item.external:hover .external-indicator {
+    opacity: 1;
+}
+
 .nav-item.active .nav-icon {
     opacity: 1;
 }
