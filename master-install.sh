@@ -80,12 +80,23 @@ if [[ "$INSTALL_SEC" =~ ^[Yy]$ ]]; then
     # Configure Suricata
     echo -e "Configuring Suricata..."
     cp /etc/suricata/suricata.yaml /etc/suricata/suricata.yaml.backup
+    
+    # Detect primary interface
+    PRIMARY_IFACE=$(ip -4 route show default | awk '{print $5}' | head -n1)
+    PRIMARY_IFACE=${PRIMARY_IFACE:-eth0}
+    echo -e "Detected primary interface: ${CYAN}$PRIMARY_IFACE${NC}"
+    
     read -p "Enter your LAN network in CIDR (e.g., 192.168.1.0/24): " USER_LAN
+    
+    # Apply configurations
     sed -i "s|HOME_NET:.*|HOME_NET: \"[$USER_LAN]\"|" /etc/suricata/suricata.yaml
     sed -i 's|EXTERNAL_NET:.*|EXTERNAL_NET: "!$HOME_NET"|' /etc/suricata/suricata.yaml
+    sed -i "s/interface: eth0/interface: $PRIMARY_IFACE/g" /etc/suricata/suricata.yaml
     
-    # Enable eve-log
-    sed -i 's/eve-log:/eve-log:\n    enabled: yes/' /etc/suricata/suricata.yaml
+    # Enable eve-log (robust approach)
+    # First ensure we don't have multiple 'enabled:' lines right after eve-log
+    sed -i '/- eve-log:/,/enabled:/ { /enabled:/d }' /etc/suricata/suricata.yaml
+    sed -i 's/- eve-log:/- eve-log:\n      enabled: yes/' /etc/suricata/suricata.yaml
     
     echo -e "Updating IDS rules..."
     suricata-update || true
