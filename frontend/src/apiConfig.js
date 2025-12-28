@@ -57,6 +57,7 @@ export const API_ENDPOINTS = {
     SERVICES: `${API_BASE_URL}/api/services`,
     SERVICES_CONTROL: `${API_BASE_URL}/api/services/control`,
     TRAFFIC_STATS: `${API_BASE_URL}/api/traffic/stats`,
+    TRAFFIC_HISTORY: `${API_BASE_URL}/api/traffic/history`,
     TRAFFIC_CONNECTIONS: `${API_BASE_URL}/api/traffic/connections`,
     SECURITY_ALERTS: `${API_BASE_URL}/api/security/suricata/alerts`,
     SECURITY_DECISIONS: `${API_BASE_URL}/api/security/crowdsec/decisions`,
