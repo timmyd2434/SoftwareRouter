@@ -925,7 +925,7 @@ func createVLAN(w http.ResponseWriter, r *http.Request) {
 	// Create VLAN interface using ip link
 	// Using absolute path for safety and explicit arguments
 	cmd := exec.Command("/usr/sbin/ip", "link", "add", "link", req.ParentInterface, "name", vlanInterface, "type", "vlan", "id", fmt.Sprintf("%d", req.VLANId))
-	if output, err := cmd.CombinedOutput(); err != nil {
+	if _, err := cmd.CombinedOutput(); err != nil {
 		http.Error(w, "Failed to create VLAN interface", http.StatusInternalServerError)
 		return
 	}
@@ -1000,7 +1000,7 @@ func configureIP(w http.ResponseWriter, r *http.Request) {
 
 	// Use ip addr add/del
 	cmd := exec.Command("/usr/sbin/ip", "addr", req.Action, req.IPAddress, "dev", req.InterfaceName)
-	if output, err := cmd.CombinedOutput(); err != nil {
+	if _, err := cmd.CombinedOutput(); err != nil {
 		http.Error(w, "Failed to configure IP address on interface", http.StatusInternalServerError)
 		return
 	}
