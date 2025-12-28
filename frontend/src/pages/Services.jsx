@@ -8,12 +8,6 @@ const Services = () => {
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState({});
 
-    // Map display name to systemd service name
-    const serviceNameMap = {
-        'DHCP Server (dnsmasq)': 'dnsmasq',
-        'WireGuard VPN': 'wg-quick@wg0'
-    };
-
     const fetchServices = () => {
         setLoading(true);
         authFetch(API_ENDPOINTS.SERVICES)
@@ -28,10 +22,9 @@ const Services = () => {
             });
     };
 
-    const handleServiceAction = async (displayName, action) => {
-        const serviceName = serviceNameMap[displayName];
+    const handleServiceAction = async (serviceName, displayName, action) => {
         if (!serviceName) {
-            alert('Unknown service');
+            alert('Unknown service ID for ' + displayName);
             return;
         }
 
@@ -121,7 +114,7 @@ const Services = () => {
                                 <div className="svc-controls">
                                     <button
                                         className={`control-btn ${isRunning ? 'stop' : 'start'}`}
-                                        onClick={() => handleServiceAction(svc.name, isRunning ? 'stop' : 'start')}
+                                        onClick={() => handleServiceAction(svc.service_id, svc.name, isRunning ? 'stop' : 'start')}
                                         disabled={isLoading}
                                     >
                                         {isLoading === 'start' || isLoading === 'stop' ? (
@@ -135,7 +128,7 @@ const Services = () => {
                                     </button>
                                     <button
                                         className="control-btn icon-only"
-                                        onClick={() => handleServiceAction(svc.name, 'restart')}
+                                        onClick={() => handleServiceAction(svc.service_id, svc.name, 'restart')}
                                         disabled={isLoading || !isRunning}
                                         title="Restart Service"
                                     >
