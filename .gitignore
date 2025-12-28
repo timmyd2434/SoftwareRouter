@@ -1,0 +1,62 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+backend/vendor/
+
+# Build outputs
+frontend/dist/
+frontend/build/
+backend/main
+*.exe
+
+# Logs
+*.log
+backend/backend.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# Temporary files
+/tmp/
+*.tmp
+*.temp
+
+# Metadata storage (contains runtime data)
+/tmp/router_interface_metadata.json
+
+# Package manager locks (optional - remove if you want to commit them)
+# frontend/package-lock.json
+# frontend/yarn.lock
+
+# Go specific
+*.test
+*.out
+go.work
+
+# Suricata/Security logs (large files)
+/var/log/suricata/
+eve.json
+fast.log
+
+# Testing
+coverage/
+.nyc_output/

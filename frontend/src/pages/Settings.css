@@ -1,0 +1,237 @@
+.settings-container {
+    padding: var(--space-6);
+    animation: fadeIn 0.4s ease-out;
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--space-8);
+}
+
+.subtitle {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    margin-top: var(--space-1);
+}
+
+.status-banner {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-6);
+    border-radius: var(--radius-lg);
+    font-weight: 500;
+}
+
+.status-banner.success {
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    color: var(--success);
+}
+
+.status-banner.error {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+}
+
+.settings-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: var(--space-6);
+}
+
+.settings-card {
+    padding: var(--space-6);
+    display: flex;
+    flex-direction: column;
+}
+
+.card-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    margin-bottom: var(--space-6);
+}
+
+.header-icon {
+    width: 40px;
+    height: 40px;
+    padding: 10px;
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.header-icon.cloud {
+    color: #f6821f;
+    background: rgba(246, 130, 31, 0.1);
+}
+
+.header-icon.shield {
+    color: #10b981;
+    background: rgba(16, 185, 129, 0.1);
+}
+
+.header-icon.vpn {
+    color: #3b82f6;
+    background: rgba(59, 130, 246, 0.1);
+}
+
+.card-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+}
+
+.input-group label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: var(--space-2);
+}
+
+.field-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.field-wrapper svg {
+    position: absolute;
+    left: var(--space-3);
+    color: var(--text-muted);
+    opacity: 0.6;
+}
+
+.field-wrapper input {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4) var(--space-3) var(--space-10);
+    color: white;
+    font-size: 0.95rem;
+    outline: none;
+    transition: all 0.2s;
+}
+
+.field-wrapper input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.1);
+}
+
+.hint {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: var(--space-1);
+    line-height: 1.4;
+}
+
+.save-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    background: var(--primary);
+    color: white;
+    border: none;
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-top: var(--space-2);
+}
+
+.save-btn:hover:not(:disabled) {
+    background: var(--primary-hover);
+    transform: translateY(-1px);
+}
+
+.save-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* DNS Selection Grid */
+.dns-selection {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.dns-option {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-4);
+    padding: var(--space-4);
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.dns-option:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.dns-option.active {
+    background: rgba(99, 102, 241, 0.05);
+    border-color: var(--primary);
+}
+
+.dns-option input[type="radio"] {
+    margin-top: 4px;
+}
+
+.option-content {
+    display: flex;
+    flex-direction: column;
+}
+
+.option-content strong {
+    font-size: 1rem;
+    color: var(--text-main);
+}
+
+.option-content span {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.card-info {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+}
+
+.info-stat {
+    display: flex;
+    justify-content: space-between;
+    padding: var(--space-3);
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: var(--radius-md);
+}
+
+.note {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+    font-style: italic;
+}
+
+.settings-loading {
+    height: 60vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-4);
+    color: var(--text-muted);
+}

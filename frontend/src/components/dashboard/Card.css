@@ -1,0 +1,71 @@
+/* Card.css */
+.glass-panel {
+    background: var(--bg-panel);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-6);
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.glass-panel:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+    border-color: rgba(255, 255, 255, 0.15);
+}
+
+.stat-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--text-muted);
+}
+
+.card-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.card-icon {
+    color: var(--primary);
+    opacity: 0.8;
+}
+
+.card-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--text-main);
+    line-height: 1.2;
+}
+
+.card-subtext {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    margin-top: var(--space-1);
+}
+
+.card-trend {
+    font-size: 0.875rem;
+    margin-top: var(--space-2);
+    display: inline-flex;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: 500;
+}
+
+.card-trend.up {
+    background-color: rgba(16, 185, 129, 0.1);
+    color: var(--success);
+}
+
+.card-trend.down {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: var(--danger);
+}

@@ -1,0 +1,338 @@
+/* Firewall.css */
+.firewall-container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+    height: 100%;
+    /* Ensure it fills space */
+    position: relative;
+}
+
+.fw-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.fw-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+}
+
+.fw-title h2 {
+    font-size: 1.5rem;
+    margin: 0;
+}
+
+.primary-btn {
+    background-color: var(--primary);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    padding: 0.6rem 1.2rem;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-weight: 500;
+    font-size: 0.95rem;
+    transition: background-color 0.2s;
+}
+
+.primary-btn:hover {
+    background-color: var(--primary-hover);
+}
+
+.firewall-table-container {
+    padding: 0;
+    /* Scroll handling */
+    overflow: auto;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    background: var(--bg-panel);
+    width: 100%;
+    /* Limit height so scrollbars are always visible on screen */
+    max-height: calc(100vh - 200px);
+}
+
+.fw-table {
+    width: 100%;
+    min-width: 900px;
+    /* Ensure enough width for columns */
+    border-collapse: separate;
+    /* Required for sticky to work well */
+    border-spacing: 0;
+    text-align: left;
+    table-layout: fixed;
+}
+
+/* Sticky Header */
+.fw-table th {
+    position: sticky;
+    top: 0;
+    background-color: #1e293b;
+    /* Match bg-panel, hardcoded for opacity */
+    z-index: 20;
+    padding: var(--space-4) var(--space-6);
+    color: var(--text-muted);
+    font-weight: 500;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+    border-bottom: 2px solid var(--glass-border);
+}
+
+.fw-table td {
+    padding: var(--space-4) var(--space-6);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    color: var(--text-main);
+    font-size: 0.95rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Sticky Actions Column (Right side) */
+.fw-table th:last-child,
+.fw-table td:last-child {
+    /* DISABLED STICKY TO FIX CLICK ISSUE */
+    position: relative;
+    background-color: transparent;
+    border-left: none;
+    z-index: 10;
+    text-align: center;
+    pointer-events: auto;
+}
+
+/* Ensure header z-index is higher than column z-index */
+.fw-table th:last-child {
+    z-index: 25;
+}
+
+/* Specific column widths */
+.col-table {
+    width: 120px;
+}
+
+.col-chain {
+    width: 140px;
+}
+
+.col-handle {
+    width: 80px;
+}
+
+.col-rule {
+    width: 300px;
+}
+
+.col-comment {
+    width: 200px;
+}
+
+.col-actions {
+    width: 80px;
+}
+
+.fw-table tr:hover td {
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+.fw-table tr:hover td:last-child {
+    background-color: #232e42;
+    /* Slightly lighter than panel for hover effect */
+}
+
+.text-secondary {
+    color: var(--secondary);
+}
+
+.alert-box.warning {
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    color: #fbbf24;
+    padding: var(--space-4);
+    border-radius: var(--radius-md);
+    font-size: 0.9rem;
+    margin-bottom: var(--space-2);
+}
+
+.header-actions {
+    display: flex;
+    gap: var(--space-3);
+    align-items: center;
+}
+
+.spin {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+.chain-badge {
+    background-color: rgba(255, 255, 255, 0.1);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+
+.code-block {
+    font-family: monospace;
+    color: #a5b4fc;
+}
+
+.empty-state-cell {
+    text-align: center;
+    padding: var(--space-8) !important;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.fw-table-cell {
+    vertical-align: middle;
+}
+
+.monospace {
+    font-family: monospace;
+    opacity: 0.9;
+}
+
+.icon-btn-sm {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-weight: bold;
+    padding: 4px;
+    cursor: pointer;
+}
+
+.icon-btn-sm:hover {
+    color: var(--text-main);
+}
+
+.icon-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-weight: bold;
+    padding: 4px;
+    cursor: pointer;
+}
+
+.icon-btn:hover {
+    color: var(--text-main);
+}
+
+/* Modal Styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+}
+
+.modal-content {
+    background: var(--bg-panel);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    width: 500px;
+    max-width: 90%;
+    box-shadow: var(--shadow-xl);
+    animation: modalSlide 0.3s ease-out;
+}
+
+@keyframes modalSlide {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.modal-header {
+    padding: var(--space-6);
+    border-bottom: 1px solid var(--glass-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+.modal-body {
+    padding: var(--space-6);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.form-group label {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+.form-input,
+.form-select {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--glass-border);
+    padding: var(--space-3);
+    border-radius: var(--radius-sm);
+    color: var(--text-main);
+    font-family: inherit;
+}
+
+.form-input:focus,
+.form-select:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.modal-footer {
+    padding: var(--space-6);
+    border-top: 1px solid var(--glass-border);
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-3);
+}
+
+.cancel-btn {
+    background: transparent;
+    border: 1px solid var(--glass-border);
+    color: var(--text-main);
+    padding: 0.6rem 1.2rem;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+}
