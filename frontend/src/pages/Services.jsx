@@ -87,7 +87,7 @@ const Services = () => {
                 <div className="loading-state">Loading services...</div>
             ) : (
                 <div className="services-grid">
-                    {services.map((svc, idx) => {
+                    {services.filter(svc => svc.name !== "OpenVPN Client").map((svc, idx) => {
                         const isLoading = actionLoading[svc.name];
                         const isRunning = svc.status === 'Running';
 
