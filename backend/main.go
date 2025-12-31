@@ -1563,14 +1563,12 @@ func getCrowdSecDecisions(w http.ResponseWriter, r *http.Request) {
 }
 
 func getDNSStats(w http.ResponseWriter, r *http.Request) {
-	cfg := loadConfig()
 	stats := DNSStats{}
 
 	// For now, we assume AdGuard Home is on port 3000 or the user-preferred port 90
 	// In a real environment, we'd pull from the actual config.
 	ports := []string{"3000", "90", "80"}
 	var finalData map[string]interface{}
-	var err error
 
 	for _, port := range ports {
 		url := fmt.Sprintf("http://localhost:%s/control/stats", port)
