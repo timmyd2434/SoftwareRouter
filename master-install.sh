@@ -27,7 +27,7 @@ fi
 # 2. System Dependencies
 echo -e "${CYAN}[1/10] Installing System Dependencies...${NC}"
 apt update
-apt install -y curl git golang-go nftables iproute2 systemd jq wget bsdmainutils wireguard openvpn easy-rsa qrencode
+apt install -y curl git golang-go nftables iproute2 systemd jq wget bsdmainutils wireguard openvpn easy-rsa qrencode unbound
 
 # Install Node.js LTS if not present
 if ! command -v node &> /dev/null; then
