@@ -4,6 +4,8 @@
 # Author: Antigravity AI
 
 set -e
+VERSION="0.11"
+
 
 # Colors for output
 RED='\033[0;31m'
@@ -14,7 +16,7 @@ NC='\033[0m'
 
 clear
 echo -e "${BLUE}=========================================${NC}"
-echo -e "${BLUE}    SoftRouter Master Installation       ${NC}"
+echo -e "${BLUE}    SoftRouter Master Installer v${VERSION}    ${NC}"
 echo -e "${BLUE}    Security Hardened & Automated        ${NC}"
 echo -e "${BLUE}=========================================${NC}"
 
