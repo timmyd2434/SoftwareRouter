@@ -185,13 +185,19 @@ const RemoteAccess = () => {
                     className={`tab-btn ${activeTab === 'server' ? 'active' : ''}`}
                     onClick={() => setActiveTab('server')}
                 >
-                    <Shield size={18} /> VPN Server (WireGuard)
+                    <Shield size={18} /> WireGuard Server
+                </button>
+                <button
+                    className={`tab-btn ${activeTab === 'openvpn-server' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('openvpn-server')}
+                >
+                    <Shield size={18} /> OpenVPN Server
                 </button>
                 <button
                     className={`tab-btn ${activeTab === 'client' ? 'active' : ''}`}
                     onClick={() => setActiveTab('client')}
                 >
-                    <Globe size={18} /> VPN Client (PIA/OpenVPN)
+                    <Globe size={18} /> OpenVPN Client
                 </button>
             </div>
 
@@ -249,6 +255,13 @@ const RemoteAccess = () => {
                             </div>
                         </div>
                     </div>
+                </div>
+            ) : activeTab === 'openvpn-server' ? (
+                // --- OPENVPN SERVER TAB CONTENT ---
+                <div className="empty-state">
+                    <Shield size={48} />
+                    <h3>OpenVPN Server</h3>
+                    <p>Configuration interface coming soon.</p>
                 </div>
             ) : (
                 // --- CLIENT TAB CONTENT ---
