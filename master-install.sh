@@ -25,7 +25,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # 2. System Dependencies
-echo -e "${CYAN}[1/8] Installing System Dependencies...${NC}"
+echo -e "${CYAN}[1/10] Installing System Dependencies...${NC}"
 apt update
 apt install -y curl git golang-go nftables iproute2 systemd jq wget bsdmainutils wireguard openvpn qrencode
 
@@ -37,7 +37,7 @@ if ! command -v node &> /dev/null; then
 fi
 
 # 3. Interactive Security Setup
-echo -e "${CYAN}[2/8] Security Configuration...${NC}"
+echo -e "${CYAN}[2/10] Security Configuration...${NC}"
 mkdir -p /etc/softrouter
 chmod 700 /etc/softrouter
 
@@ -71,7 +71,7 @@ if [ ! -f "/etc/softrouter/token_secret.key" ]; then
 fi
 
 # 4. IDS/IPS Stack (Suricata + CrowdSec)
-echo -e "${CYAN}[3/8] Integrated Security Stack (Optional)${NC}"
+echo -e "${CYAN}[3/10] Integrated Security Stack (Optional)${NC}"
 read -p "Would you like to install the IDS/IPS stack (Suricata + CrowdSec)? [y/N]: " INSTALL_SEC
 if [[ "$INSTALL_SEC" =~ ^[Yy]$ ]]; then
     echo -e "${CYAN}Installing Suricata & CrowdSec...${NC}"
@@ -118,7 +118,7 @@ else
 fi
 
 # 5. DNS Optimization (Port 53 Cleanup)
-echo -e "${CYAN}[4/8] DNS Optimization...${NC}"
+echo -e "${CYAN}[4/10] DNS Optimization...${NC}"
 read -p "Disable systemd-resolved stub listener to free up port 53? (Required for AdGuard/Pi-hole) [y/N]: " FREE_PORT_53
 if [[ "$FREE_PORT_53" =~ ^[Yy]$ ]]; then
     echo -e "Configuring systemd-resolved..."
@@ -132,7 +132,7 @@ if [[ "$FREE_PORT_53" =~ ^[Yy]$ ]]; then
 fi
 
 # 6. Optional Ad-Blocker (AdGuard Home)
-echo -e "${CYAN}[5/8] Ad-Blocking DNS (Optional)${NC}"
+echo -e "${CYAN}[5/10] Ad-Blocking DNS (Optional)${NC}"
 read -p "Would you like to install AdGuard Home now? [y/N]: " INSTALL_AGH
 if [[ "$INSTALL_AGH" =~ ^[Yy]$ ]]; then
     echo -e "Installing AdGuard Home..."
@@ -142,7 +142,7 @@ if [[ "$INSTALL_AGH" =~ ^[Yy]$ ]]; then
 fi
 
 # 7. Optional UniFi Controller
-echo -e "${CYAN}[6/9] UniFi Network Server (Optional)${NC}"
+echo -e "${CYAN}[6/10] UniFi Network Server (Optional)${NC}"
 read -p "Would you like to install the UniFi Controller for your U6 AP? [y/N]: " INSTALL_UNIFI
 if [[ "$INSTALL_UNIFI" =~ ^[Yy]$ ]]; then
     echo -e "Installing UniFi Controller dependencies..."
@@ -204,7 +204,7 @@ if [[ "$INSTALL_UNIFI" =~ ^[Yy]$ ]]; then
 fi
 
 # 8. Build Phase
-echo -e "${CYAN}[7/9] Building Software Components...${NC}"
+echo -e "${CYAN}[7/10] Building Software Components...${NC}"
 
 # Stop existing service if running to avoid 'Text file busy' during binary overwrite
 systemctl stop softrouter 2>/dev/null || true
@@ -227,7 +227,7 @@ cp -r dist/* /var/www/softrouter/html/
 cd ..
 
 # 9. Firewall Baseline
-echo -e "${CYAN}[8/9] Applying Firewall Baseline (nftables)...${NC}"
+echo -e "${CYAN}[8/10] Applying Firewall Baseline (nftables)...${NC}"
 cat <<EOF > /etc/nftables.conf
 flush ruleset
 
@@ -245,7 +245,7 @@ systemctl enable nftables
 systemctl restart nftables
 
 # 10. Service Installation
-echo -e "${CYAN}[9/9] Creating Systemd Service...${NC}"
+echo -e "${CYAN}[9/10] Creating Systemd Service...${NC}"
 
 cat <<EOF > /etc/systemd/system/softrouter.service
 [Unit]
@@ -267,7 +267,7 @@ WantedBy=multi-user.target
 EOF
 
 # 10. Finalize
-echo -e "${CYAN}[7/8] Launching System...${NC}"
+echo -e "${CYAN}[10/10] Launching System...${NC}"
 # Kill existing processes on target ports to avoid 'address already in use'
 fuser -k 80/tcp 8080/tcp 2>/dev/null || true
 systemctl daemon-reload
