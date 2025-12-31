@@ -28,17 +28,95 @@ const RemoteAccess = () => {
     const [uploading, setUploading] = useState(false);
     const [refreshingClient, setRefreshingClient] = useState(false);
 
+    // --- OpenVPN Server State ---
+    const [ovpnStatus, setOvpnStatus] = useState({ installed: false, running: false, client_count: 0 });
+    const [ovpnClients, setOvpnClients] = useState([]);
+    const [loadingOvpn, setLoadingOvpn] = useState(false);
+    const [newOvpnClientName, setNewOvpnClientName] = useState('');
+    const [showOvpnModal, setShowOvpnModal] = useState(false);
+
     useEffect(() => {
         if (activeTab === 'server') {
             fetchClients();
+        } else if (activeTab === 'openvpn-server') {
+            fetchOvpnServerData();
         } else {
             fetchClientStatus();
             fetchPolicies();
-            // Poll status every 5 seconds when in client tab
             const interval = setInterval(fetchClientStatus, 5000);
             return () => clearInterval(interval);
         }
     }, [activeTab]);
+
+    // --- OpenVPN Server Handlers ---
+    const fetchOvpnServerData = async () => {
+        setLoadingOvpn(true);
+        try {
+            const res = await authFetch(API_ENDPOINTS.OVPN_SERVER_STATUS);
+            if (res.ok) {
+                const status = await res.json();
+                setOvpnStatus(status);
+                if (status.installed) {
+                    fetchOvpnClients();
+                }
+            }
+        } catch (err) { console.error(err); }
+        finally { setLoadingOvpn(false); }
+    };
+
+    const fetchOvpnClients = async () => {
+        try {
+            const res = await authFetch(API_ENDPOINTS.OVPN_SERVER_CLIENTS);
+            if (res.ok) setOvpnClients(await res.json() || []);
+        } catch (err) { console.error(err); }
+    };
+
+    const handleSetupOvpn = async () => {
+        if (!confirm("This will initialize the PKI and generate certificates. It may take a minute. Continue?")) return;
+        setLoadingOvpn(true);
+        try {
+            const res = await authFetch(API_ENDPOINTS.OVPN_SERVER_SETUP, { method: 'POST' });
+            if (res.ok) {
+                alert("OpenVPN Server Setup Complete!");
+                fetchOvpnServerData();
+            } else {
+                alert("Setup Failed. Check logs.");
+            }
+        } catch (err) { alert("Network Error"); }
+        finally { setLoadingOvpn(false); }
+    };
+
+    const handleAddOvpnClient = async (e) => {
+        e.preventDefault();
+        setGenerating(true);
+        try {
+            const res = await authFetch(API_ENDPOINTS.OVPN_SERVER_CLIENTS, {
+                method: 'POST',
+                body: JSON.stringify({ name: newOvpnClientName })
+            });
+            if (res.ok) {
+                setShowOvpnModal(false);
+                setNewOvpnClientName('');
+                fetchOvpnClients();
+                fetchOvpnServerData(); // Update count
+                alert("Client Generated Successfully!");
+            } else { alert("Failed to generate client"); }
+        } catch (err) { alert("Error"); }
+        finally { setGenerating(false); }
+    };
+
+    const handleRevokeOvpnClient = async (name) => {
+        if (!confirm(`Revoke certificate for ${name}?`)) return;
+        try {
+            await authFetch(`${API_ENDPOINTS.OVPN_SERVER_CLIENTS}?name=${name}`, { method: 'DELETE' });
+            fetchOvpnClients();
+        } catch (err) { alert("Error revoking"); }
+    };
+
+    const handleDownloadOvpn = (name) => {
+        const token = localStorage.getItem('sr_token');
+        window.open(`${API_ENDPOINTS.OVPN_SERVER_DOWNLOAD}?name=${name}&token=${token}`, '_blank');
+    };
 
     // --- Server Handlers ---
     const fetchClients = async () => {
@@ -258,10 +336,72 @@ const RemoteAccess = () => {
                 </div>
             ) : activeTab === 'openvpn-server' ? (
                 // --- OPENVPN SERVER TAB CONTENT ---
-                <div className="empty-state">
-                    <Shield size={48} />
-                    <h3>OpenVPN Server</h3>
-                    <p>Configuration interface coming soon.</p>
+                <div className="vpn-grid">
+                    {!ovpnStatus.installed ? (
+                        <div className="empty-state glass-panel">
+                            <Shield size={64} className="icon-blue" />
+                            <h3>OpenVPN Server Setup</h3>
+                            <p>Initialize the PKI (Public Key Infrastructure) and CA to start.</p>
+                            <button className="primary-btn lg-btn" onClick={handleSetupOvpn} disabled={loadingOvpn}>
+                                {loadingOvpn ? <Loader2 className="spin" /> : 'Initialize Server & PKI'}
+                            </button>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="clients-section glass-panel">
+                                <div className="card-header">
+                                    <h3>OpenVPN Clients</h3>
+                                    <button className="sm-btn" onClick={() => setShowOvpnModal(true)}>
+                                        <Plus size={16} /> New Client
+                                    </button>
+                                </div>
+
+                                {ovpnClients.length === 0 ? (
+                                    <div className="empty-state">
+                                        <p>No certificates issued.</p>
+                                    </div>
+                                ) : (
+                                    <div className="client-list">
+                                        {ovpnClients.map(c => (
+                                            <div key={c.name} className="client-item">
+                                                <div className="client-info">
+                                                    <div className="client-avatar">{c.name.charAt(0).toUpperCase()}</div>
+                                                    <div className="client-details">
+                                                        <strong>{c.name}</strong>
+                                                        <span>Expires: {c.expires_at}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="client-actions">
+                                                    <button className="action-btn download" onClick={() => handleDownloadOvpn(c.name)} title="Download .ovpn">
+                                                        <Download size={18} />
+                                                    </button>
+                                                    <button className="action-btn delete" onClick={() => handleRevokeOvpnClient(c.name)} title="Revoke">
+                                                        <Trash2 size={18} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="vpn-info-section">
+                                <div className="info-card glass-panel status-card">
+                                    <h3>Server Status</h3>
+                                    <div className="status-stats">
+                                        <div className="stat-row">
+                                            <span>State</span>
+                                            <span className={`badge ${ovpnStatus.running ? 'online' : 'offline'}`}>
+                                                {ovpnStatus.running ? 'Running' : 'Stopped'}
+                                            </span>
+                                        </div>
+                                        <div className="stat-row"><span>Port</span><strong>{ovpnStatus.port} ({ovpnStatus.protocol})</strong></div>
+                                        <div className="stat-row"><span>Active Certs</span><strong>{ovpnStatus.client_count}</strong></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </>
+                    )}
                 </div>
             ) : (
                 // --- CLIENT TAB CONTENT ---
@@ -389,6 +529,30 @@ const RemoteAccess = () => {
                             <button className="secondary-btn" onClick={() => copyToClipboard(showQR.config)}><Copy size={16} /> Copy</button>
                             <button className="primary-btn" onClick={() => handleDownload(showQR.name)}><Download size={16} /> Download</button>
                         </div>
+                    </div>
+                </div>
+            )}
+            {showOvpnModal && (
+                <div className="modal-overlay">
+                    <div className="modal-content glass-panel">
+                        <h3>Create OpenVPN Peer</h3>
+                        <form onSubmit={handleAddOvpnClient}>
+                            <div className="input-group">
+                                <label>Client Name (No spaces)</label>
+                                <input 
+                                    type="text" 
+                                    autoFocus 
+                                    placeholder="laptop-user"
+                                    value={newOvpnClientName} 
+                                    onChange={e => setNewOvpnClientName(e.target.value.replace(/\s/g, ''))} 
+                                    required 
+                                />
+                            </div>
+                            <div className="modal-actions">
+                                <button type="button" className="cancel-btn" onClick={() => setShowOvpnModal(false)}>Cancel</button>
+                                <button type="submit" className="confirm-btn" disabled={generating}>{generating ? <Loader2 className="spin" /> : 'Generate Cert'}</button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}

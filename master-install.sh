@@ -27,7 +27,7 @@ fi
 # 2. System Dependencies
 echo -e "${CYAN}[1/10] Installing System Dependencies...${NC}"
 apt update
-apt install -y curl git golang-go nftables iproute2 systemd jq wget bsdmainutils wireguard openvpn qrencode
+apt install -y curl git golang-go nftables iproute2 systemd jq wget bsdmainutils wireguard openvpn easy-rsa qrencode
 
 # Install Node.js LTS if not present
 if ! command -v node &> /dev/null; then
@@ -212,7 +212,7 @@ systemctl stop softrouter 2>/dev/null || true
 # Backend
 echo -e "Compiling Go Backend..."
 cd backend
-go build -o softrouter-backend main.go vpn_client_utils.go
+go build -o softrouter-backend main.go vpn_client_utils.go openvpn_server_utils.go
 cp softrouter-backend /usr/local/bin/softrouter-backend
 chmod +x /usr/local/bin/softrouter-backend
 cd ..
