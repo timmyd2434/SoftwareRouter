@@ -8,7 +8,6 @@
 .main-wrapper {
     flex: 1;
     margin-left: 260px;
-    /* Sidebar width */
     display: flex;
     flex-direction: column;
     transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -17,7 +16,6 @@
 .top-header {
     height: 70px;
     background-color: rgba(15, 23, 42, 0.8);
-    /* Semi-transparent bg */
     backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--glass-border);
     display: flex;
@@ -50,6 +48,10 @@
     gap: var(--space-4);
 }
 
+.alerts-wrapper {
+    position: relative;
+}
+
 .icon-btn {
     background: none;
     border: none;
@@ -62,6 +64,7 @@
     align-items: center;
     justify-content: center;
     transition: all 0.2s;
+    cursor: pointer;
 }
 
 .icon-btn:hover {
@@ -71,25 +74,171 @@
 
 .badge {
     position: absolute;
-    top: 8px;
-    right: 8px;
+    top: 4px;
+    right: 4px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    background-color: #ef4444;
+    /* Alert Red */
+    border-radius: 999px;
+    font-size: 10px;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    border: 2px solid rgba(15, 23, 42, 0.9);
+    /* Header bg color match */
+}
+
+/* --- Dropdown / Tooltip Styles --- */
+.alerts-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 8px;
+    width: 320px;
+    background: #1e293b;
+    /* Dark Slate */
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.5);
+    z-index: 100;
+    overflow: hidden;
+    animation: fadeIn 0.15s ease-out;
+}
+
+.dropdown-header {
+    padding: 12px 16px;
+    background: rgba(255, 255, 255, 0.03);
+    border-bottom: 1px solid var(--glass-border);
+    font-size: 0.9rem;
+    color: var(--text-main);
+}
+
+.dropdown-content {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.dropdown-item {
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    transition: background 0.2s;
+}
+
+.alert-preview:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.alert-preview:last-child {
+    border-bottom: none;
+}
+
+.severity-dot {
     width: 8px;
     height: 8px;
-    background-color: var(--secondary);
     border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.sev-1 {
+    background-color: #ef4444;
+    box-shadow: 0 0 6px #ef4444;
+}
+
+/* High */
+.sev-2 {
+    background-color: #f59e0b;
+}
+
+/* Medium */
+.sev-3 {
+    background-color: #3b82f6;
+}
+
+/* Low */
+
+.alert-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow: hidden;
+}
+
+.alert-sig {
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 500;
+}
+
+.alert-time {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+.dropdown-footer {
+    padding: 8px;
+    text-align: center;
+    background: rgba(0, 0, 0, 0.2);
+    font-size: 0.75rem;
+    color: var(--primary);
+    border-top: 1px solid var(--glass-border);
+}
+
+/* --------------------------------- */
+
+.user-profile {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: var(--radius-full);
+    transition: background 0.2s;
+}
+
+.user-profile:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.user-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+
+.username {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-main);
+}
+
+.role {
+    font-size: 0.75rem;
+    color: var(--text-muted);
 }
 
 .avatar {
     width: 36px;
     height: 36px;
-    background: linear-gradient(135deg, #eee, #ddd);
+    background: linear-gradient(135deg, var(--primary), var(--secondary));
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #333;
+    color: #fff;
     font-weight: 700;
     font-size: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.1);
 }
 
 .content-area {
@@ -112,5 +261,21 @@
 
     .content-area {
         padding: var(--space-4);
+    }
+
+    .user-info {
+        display: none;
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
     }
 }
