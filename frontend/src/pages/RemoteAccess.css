@@ -308,6 +308,13 @@
     border: none;
 }
 
+.primary-btn.full-width {
+    width: 100%;
+    margin-top: var(--space-4);
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+}
+
 .secondary-btn {
     background: rgba(255, 255, 255, 0.05);
     color: var(--text-main);
@@ -345,4 +352,120 @@
 .badge.online {
     background: rgba(16, 185, 129, 0.2);
     color: #10b981;
+}
+
+.badge.offline {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+}
+
+/* ----- New Tab Styles ----- */
+.tabs-container {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 24px;
+    border-bottom: 1px solid var(--glass-border);
+    padding-bottom: 1px;
+}
+
+.tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    padding: 12px 20px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+}
+
+.tab-btn:hover {
+    color: var(--text-main);
+}
+
+.tab-btn.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+}
+
+/* ----- New Client Styles ----- */
+.status-card.connected {
+    border-color: #10b981;
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.1);
+}
+
+.card-actions {
+    margin-top: var(--space-6);
+}
+
+.control-btn {
+    width: 100%;
+    padding: 12px;
+    border-radius: var(--radius-md);
+    border: none;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.2s;
+}
+
+.control-btn.start {
+    background: var(--primary);
+    color: white;
+}
+
+.control-btn.stop {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.config-form .form-group {
+    margin-bottom: 16px;
+}
+
+.config-form label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.config-form input[type="text"],
+.config-form input[type="password"],
+.config-form input[type="file"] {
+    width: 100%;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    color: white;
+}
+
+.policy-add-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.policy-add-row input {
+    flex: 1;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    color: white;
+}
+
+.icon-blue {
+    color: #3b82f6;
 }

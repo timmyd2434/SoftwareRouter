@@ -1821,6 +1821,14 @@ func main() {
 	mux.HandleFunc("DELETE /api/vpn/clients", authMiddleware(deleteVPNClient))
 	mux.HandleFunc("GET /api/vpn/download", authMiddleware(downloadVPNClient))
 
+	// OpenVPN Client & PBR
+	mux.HandleFunc("GET /api/vpn/client/status", authMiddleware(getVPNClientStatus))
+	mux.HandleFunc("POST /api/vpn/client/config", authMiddleware(uploadVPNClientConfig))
+	mux.HandleFunc("POST /api/vpn/client/control", authMiddleware(controlVPNClient))
+	mux.HandleFunc("GET /api/vpn/client/policies", authMiddleware(getVPNPolicies))
+	mux.HandleFunc("POST /api/vpn/client/policies", authMiddleware(addVPNPolicy))
+	mux.HandleFunc("DELETE /api/vpn/client/policies", authMiddleware(deleteVPNPolicy))
+
 	// SPA Static File Server
 	// Serve from /var/www/softrouter/html
 	staticDir := "/var/www/softrouter/html"

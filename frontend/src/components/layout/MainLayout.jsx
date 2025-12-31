@@ -33,8 +33,7 @@ const MainLayout = ({ children, onLogout }) => {
                         </button>
                         <div className="user-profile" onClick={onLogout} title="Click to Logout">
                             <div className="user-info">
-                                <span className="username">{currentUser}</span>
-                                <span className="role">Administrator</span>
+                                <span className="username">Administrator - {currentUser}</span>
                             </div>
                             <div className="avatar">{currentUser.charAt(0).toUpperCase()}</div>
                         </div>
