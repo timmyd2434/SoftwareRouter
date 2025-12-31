@@ -9,6 +9,8 @@ const MainLayout = ({ children, onLogout }) => {
     const [recentAlerts, setRecentAlerts] = useState([]);
     const [alertsLoading, setAlertsLoading] = useState(true);
     const [showAlerts, setShowAlerts] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const currentUser = localStorage.getItem('sr_user') || 'Admin';
     const navigate = useNavigate();
 
     useEffect(() => {
