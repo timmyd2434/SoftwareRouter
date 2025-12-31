@@ -146,25 +146,60 @@ echo -e "${CYAN}[6/9] UniFi Network Server (Optional)${NC}"
 read -p "Would you like to install the UniFi Controller for your U6 AP? [y/N]: " INSTALL_UNIFI
 if [[ "$INSTALL_UNIFI" =~ ^[Yy]$ ]]; then
     echo -e "Installing UniFi Controller dependencies..."
-    apt install -y openjdk-17-jre-headless libcap2
+    apt install -y openjdk-17-jre-headless libcap2 gnupg
+
+    # Hardware Compatibility Check (AVX)
+    # MongoDB 5.0+ requires AVX instructions. Older CPUs (AMD A6/Atom) will crash with 'Illegal Instruction'.
+    HAS_AVX=$(grep -o 'avx' /proc/cpuinfo | head -n1)
     
     echo -e "Adding UniFi Repository..."
     curl -s https://dl.ui.com/unifi/unifi-repo.gpg | tee /usr/share/keyrings/ubiquiti-archive-keyring.gpg > /dev/null
     echo "deb [signed-by=/usr/share/keyrings/ubiquiti-archive-keyring.gpg] https://www.ui.com/downloads/unifi/debian stable ubiquiti" | tee /etc/apt/sources.list.d/100-ubnt-unifi.list
+
+    if [[ -z "$HAS_AVX" ]]; then
+        echo -e "${YELLOW}Warning: AVX instructions not detected. Downgrading to MongoDB 4.4 for compatibility...${NC}"
+        
+        # Remove any existing incompatible sources
+        rm -f /etc/apt/sources.list.d/mongodb-org-7.0.list
+        apt remove -y mongodb-org* >/dev/null 2>&1 || true
+
+        # Ubuntu 24.04 (Noble) removed libssl1.1, which Mongo 4.4 needs. Manual install required.
+        if ! dpkg -s libssl1.1 >/dev/null 2>&1; then
+             echo -e "Installing legacy libssl1.1 for MongoDB 4.4..."
+             wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb -O /tmp/libssl1.1.deb
+             dpkg -i /tmp/libssl1.1.deb || apt install -f -y
+             rm -f /tmp/libssl1.1.deb
+        fi
+
+        # Add MongoDB 4.4 Repo (Focal is the last stable 4.4 build, compatible with newer Ubuntu via libssl1.1)
+        curl -fsSL https://www.mongodb.org/static/pgp/server-4.4.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-4.4.gpg --yes
+        echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-4.4.gpg ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/4.4 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-4.4.list
+        
+        apt update
+        # Pin version to avoid accidental upgrades
+        echo -e "Installing MongoDB 4.4..."
+        apt install -y mongodb-org=4.4.29 mongodb-org-server=4.4.29 mongodb-org-shell=4.4.29 mongodb-org-mongos=4.4.29 mongodb-org-tools=4.4.29
+        
+        # Hold packages to prevent upgrading to crashing 7.0
+        apt-mark hold mongodb-org mongodb-org-server mongodb-org-shell mongodb-org-mongos mongodb-org-tools
+    else
+        echo -e "AVX Detected. Installing modern MongoDB 7.0 (Jammy Repo for Noble compatibility)..."
+        curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-7.0.gpg --yes
+        echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+        apt update
+        apt install -y mongodb-org
+    fi
     
-    echo -e "Installing MongoDB (Required for UniFi)..."
-    # MongoDB doesn't have a 'noble' repo yet. Jammy repo is fully compatible with 24.04.
-    apt install -y gnupg
-    curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-7.0.gpg --yes
-    echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list
-    
-    apt update
-    apt install -y mongodb-org
-    
+    # Increase systemd timeout for first-run initialization (common on slower hardware)
+    mkdir -p /etc/systemd/system/unifi.service.d
+    echo -e "[Service]\nTimeoutStartSec=600" > /etc/systemd/system/unifi.service.d/override.conf
+    systemctl daemon-reload
+
     echo -e "Installing UniFi Controller..."
     apt install -y unifi
     systemctl enable unifi
     systemctl start unifi
+    
     echo -e "${GREEN}UniFi Controller installed. Access at https://$(hostname -I | awk '{print $1}'):8443${NC}"
 fi
 
