@@ -17,7 +17,7 @@ Both systems work together to provide layered defense against network threats.
 Run the automated installation script:
 
 ```bash
-cd /home/tim/Documents/SoftwareRouter
+cd /path/to/SoftwareRouter
 sudo ./install-security.sh
 ```
 
@@ -337,12 +337,12 @@ sudo nft list ruleset | grep -A 10 crowdsec
 ```bash
 # Grant read permissions
 sudo chmod 644 /var/log/suricata/eve.json
-sudo usermod -aG suricata tim  # Add user to suricata group
+sudo usermod -aG suricata $USER  # Add current user to suricata group
 
 # Restart backend
-cd /home/tim/Documents/SoftwareRouter/backend
+cd /path/to/SoftwareRouter/backend
 sudo kill -9 $(sudo lsof -t -i:8080)
-echo "09_SEPT_1982td" | sudo -S go run main.go >> backend.log 2>&1 &
+sudo go run main.go >> backend.log 2>&1 &
 ```
 
 ---
@@ -492,6 +492,6 @@ Suricata can work alongside your NFTables firewall rules:
 
 ---
 
-**Installation script created:** `/home/tim/Documents/SoftwareRouter/install-security.sh`
+**Installation script created:** `./install-security.sh`
 
 **Run with:** `sudo ./install-security.sh`
