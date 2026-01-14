@@ -17,6 +17,13 @@ import (
 	"time"
 )
 
+// Security Globals
+var (
+	loginAttempts = make(map[string]int)
+	loginBanUntil = make(map[string]time.Time)
+	loginMu       sync.Mutex
+)
+
 // Auth related constants and structs
 const secretFilePath = "/etc/softrouter/token_secret.key"
 const credentialsFilePath = "/etc/softrouter/user_credentials.json"
@@ -321,9 +328,19 @@ func verifySecureToken(token string) bool {
 
 func enableCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// CORS
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		// Security Headers
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-XSS-Protection", "1; mode=block")
+		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
@@ -402,9 +419,29 @@ func login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	creds := loadCredentials()
-	if req.Username == creds.Username && hashPassword(req.Password) == creds.Password {
-		// Generate secure signed token
+	storedCreds := loadCredentials()
+
+	// Check Rate Limit
+	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	loginMu.Lock()
+	if banTime, banned := loginBanUntil[ip]; banned {
+		if time.Now().Before(banTime) {
+			loginMu.Unlock()
+			time.Sleep(2 * time.Second) // Tarpit
+			http.Error(w, "Too many failed attempts. Try again later.", http.StatusTooManyRequests)
+			return
+		}
+		delete(loginBanUntil, ip) // Expired ban
+		delete(loginAttempts, ip)
+	}
+	loginMu.Unlock()
+
+	if req.Username == storedCreds.Username && hashPassword(req.Password) == storedCreds.Password {
+		// Success
+		loginMu.Lock()
+		delete(loginAttempts, ip)
+		loginMu.Unlock()
+
 		token := generateSecureToken(req.Username)
 		// Return just the part after "Bearer " for client storage
 		tokenValue := strings.TrimPrefix(token, "Bearer ")
@@ -414,10 +451,19 @@ func login(w http.ResponseWriter, r *http.Request) {
 			"token": tokenValue,
 			"user":  req.Username,
 		})
-		return
-	}
+	} else {
+		// Failure
+		loginMu.Lock()
+		loginAttempts[ip]++
+		if loginAttempts[ip] >= 5 {
+			loginBanUntil[ip] = time.Now().Add(15 * time.Minute)
+			log.Printf("Banned IP %s due to excessive login failures", ip)
+		}
+		loginMu.Unlock()
 
-	http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		time.Sleep(500 * time.Millisecond) // Artificial delay
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+	}
 }
 
 func updateCredentials(w http.ResponseWriter, r *http.Request) {
@@ -839,6 +885,37 @@ func addFirewallRule(w http.ResponseWriter, r *http.Request) {
 	} // Default
 	if rule.Table == "" || rule.Chain == "" || rule.Raw == "" {
 		http.Error(w, "Missing required fields (table, chain, raw)", http.StatusBadRequest)
+		return
+	}
+
+	// Security: Sanitize firewall rule input to prevent command injection
+	// Block dangerous characters and command sequences
+	dangerousPatterns := []string{";", "|", "&", "$", "`", "$(", "||", "&&", "\n", "\r"}
+	for _, pattern := range dangerousPatterns {
+		if strings.Contains(rule.Raw, pattern) {
+			http.Error(w, "Invalid characters in firewall rule", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Whitelist allowed nftables keywords
+	allowedKeywords := []string{
+		"tcp", "udp", "icmp", "ip", "ip6", "accept", "drop", "reject", "dport", "sport",
+		"daddr", "saddr", "ct", "state", "established", "related", "new", "invalid",
+		"counter", "packets", "bytes", "limit", "rate", "log", "prefix", "to",
+	}
+
+	// Validate that rule contains at least one allowed keyword
+	hasValidKeyword := false
+	ruleLower := strings.ToLower(rule.Raw)
+	for _, keyword := range allowedKeywords {
+		if strings.Contains(ruleLower, keyword) {
+			hasValidKeyword = true
+			break
+		}
+	}
+	if !hasValidKeyword {
+		http.Error(w, "Firewall rule must contain valid nftables keywords", http.StatusBadRequest)
 		return
 	}
 

@@ -1,12 +1,22 @@
-# Security Stack Integration Guide
+# Security & Hardening Guide
 
 ## 🛡️ Overview
 
-This router now includes a comprehensive security stack combining:
-- **Suricata** - Signature-based IDS/IPS
-- **CrowdSec** - Behavioral analysis and community threat intelligence
+SoftRouter includes comprehensive multi-layered security:
 
-Both systems work together to provide layered defense against network threats.
+### **Built-in Protection** (Always Active)
+- **HTTP Security Headers** - HSTS, CSP, X-Frame-Options, XSS Protection
+- **Login Rate Limiting** - Automatic 15-minute IP ban after 5 failed attempts  
+- **Input Validation** - Command injection protection for firewall rules, VLAN/IP configs
+- **Session Management** - Secure JWT-style token authentication
+
+### **Optional Security Stack** (Recommended for Production)
+- **Suricata** - Signature-based IDS/IPS for threat detection
+- **CrowdSec** - Behavioral analysis and community threat intelligence
+- **Fail2Ban** - Log-based reactive banning (see [Fail2Ban Setup](./docs/FAIL2BAN_SETUP.md))
+- **HTTPS/TLS** - Encrypted web interface (see [TLS Setup](./docs/TLS_SETUP.md))
+
+All systems work together to provide defense-in-depth against network threats.
 
 ---
 
@@ -489,6 +499,20 @@ Suricata can work alongside your NFTables firewall rules:
 - **Disk:** ~50MB for database
 
 **Total:** Plan for ~1GB RAM and spare CPU capacity for optimal performance.
+
+---
+
+## 📚 Additional Security Guides
+
+### Web Interface Hardening
+- **[HTTPS/TLS Setup](./docs/TLS_SETUP.md)** - Secure your web UI with Let's Encrypt SSL certificates
+- **[Fail2Ban Integration](./docs/FAIL2BAN_SETUP.md)** - Add log-based IP banning for enhanced brute-force protection
+
+### Built-in Protections
+SoftRouter includes automatic security features:
+- **Login Rate Limiting**: 5 failed attempts = 15-minute IP ban
+- **Security Headers**: HSTS, CSP, X-Frame-Options automatically applied
+- **Input Validation**: Command injection protection for all system configurations
 
 ---
 
