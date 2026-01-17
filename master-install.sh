@@ -239,43 +239,40 @@ if [[ "$INSTALL_UNIFI" =~ ^[Yy]$ ]]; then
     echo "deb [signed-by=/usr/share/keyrings/ubiquiti-archive-keyring.gpg] https://www.ui.com/downloads/unifi/debian stable ubiquiti" | tee /etc/apt/sources.list.d/100-ubnt-unifi.list
 
     if [[ -z "$HAS_AVX" ]]; then
-        echo -e "${YELLOW}Warning: AVX instructions not detected. Downgrading to MongoDB 4.4 for compatibility...${NC}"
-        
-        rm -f /etc/apt/sources.list.d/mongodb-org-7.0.list
-        apt remove -y mongodb-org* > /dev/null 2>&1 || true
-
-        if ! dpkg -s libssl1.1 > /dev/null 2>&1; then
-             echo -e "Installing legacy libssl1.1 for MongoDB 4.4..."
-             wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb -O /tmp/libssl1.1.deb
-             dpkg -i /tmp/libssl1.1.deb || apt install -f -y
-             rm -f /tmp/libssl1.1.deb
-        fi
-
-        curl -fsSL https://www.mongodb.org/static/pgp/server-4.4.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-4.4.gpg --yes
-        echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-4.4.gpg ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/4.4 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-4.4.list
-        
-        apt update
-        echo -e "Installing MongoDB 4.4..."
-        apt install -y mongodb-org=4.4.29 mongodb-org-server=4.4.29 mongodb-org-shell=4.4.29 mongodb-org-mongos=4.4.29 mongodb-org-tools=4.4.29
-        apt-mark hold mongodb-org mongodb-org-server mongodb-org-shell mongodb-org-mongos mongodb-org-tools
+        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${RED}ERROR: AVX CPU instructions not detected${NC}"
+        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}UniFi Network Application 8.x requires MongoDB 5.0 or higher.${NC}"
+        echo -e "${YELLOW}MongoDB 5.0+ requires AVX CPU instruction set support.${NC}"
+        echo -e "${YELLOW}MongoDB 4.4 (last non-AVX version) reached EOL in February 2024.${NC}"
+        echo -e "${YELLOW}MongoDB 4.4 repositories have been removed and are no longer available.${NC}"
+        echo ""
+        echo -e "${CYAN}Skipping UniFi installation on this hardware.${NC}"
+        echo ""
+        echo -e "${BLUE}Recommendations:${NC}"
+        echo -e "  • Use a CPU with AVX support (Intel Sandy Bridge/AMD Bulldozer or newer)"
+        echo -e "  • Install UniFi on separate hardware with AVX support"
+        echo -e "  • Use UniFi Cloud Key, Dream Machine, or Dream Router instead"
+        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
     else
         echo -e "AVX Detected. Installing modern MongoDB 7.0..."
         curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-7.0.gpg --yes
         echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list
         apt update
         apt install -y mongodb-org
-    fi
-    
-    mkdir -p /etc/systemd/system/unifi.service.d
-    echo -e "[Service]\nTimeoutStartSec=600" > /etc/systemd/system/unifi.service.d/override.conf
-    systemctl daemon-reload
+        
+        mkdir -p /etc/systemd/system/unifi.service.d
+        echo -e "[Service]\nTimeoutStartSec=600" > /etc/systemd/system/unifi.service.d/override.conf
+        systemctl daemon-reload
 
-    echo -e "Installing UniFi Controller..."
-    apt install -y unifi
-    systemctl enable unifi
-    systemctl start unifi
-    
-    echo -e "${GREEN}UniFi Controller installed. Access at https://$(hostname -I | awk '{print $1}'):8443${NC}"
+        echo -e "Installing UniFi Controller..."
+        apt install -y unifi
+        systemctl enable unifi
+        systemctl start unifi
+        
+        echo -e "${GREEN}UniFi Controller installed. Access at https://$(hostname -I | awk '{print $1}'):8443${NC}"
+    fi
 else
     echo -e "Skipping UniFi Controller installation (user opted out)."
 fi
