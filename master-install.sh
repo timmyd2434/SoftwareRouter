@@ -187,14 +187,14 @@ if [[ "$INSTALL_SEC" =~ ^[Yy]$ ]]; then
     # Install CrowdSec
     echo -e "Installing CrowdSec..."
     curl -s https://packagecloud.io/install/repositories/crowdsec/crowdsec/script.deb.sh | bash
-    apt install -y crowdsec crowdsec-firewall-bouncer-nftables
+    apt install -y crowdsec crowdsec-firewall-bouncer
     
     # Install standard collections
     cscli collections install crowdsecurity/linux crowdsecurity/sshd crowdsecurity/http-cve crowdsecurity/iptables crowdsecurity/suricata
     
     # Start security services
-    systemctl enable suricata crowdsec crowdsec-firewall-bouncer-nftables
-    systemctl restart suricata crowdsec crowdsec-firewall-bouncer-nftables
+    systemctl enable suricata crowdsec crowdsec-firewall-bouncer
+    systemctl restart suricata crowdsec crowdsec-firewall-bouncer
     echo -e "${GREEN}IDS/IPS Stack successfully integrated.${NC}"
 else
     echo -e "Skipping IDS/IPS installation (user opted out)."
