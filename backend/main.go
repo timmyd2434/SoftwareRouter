@@ -1642,53 +1642,126 @@ func getCrowdSecDecisions(w http.ResponseWriter, r *http.Request) {
 func getDNSStats(w http.ResponseWriter, r *http.Request) {
 	stats := DNSStats{}
 
-	// For now, we assume AdGuard Home is on port 3000 or the user-preferred port 90
-	// In a real environment, we'd pull from the actual config.
-	ports := []string{"3000", "90", "80"}
-	var finalData map[string]interface{}
+	// Get AdGuard Home configuration from environment variables or use defaults
+	aghURL := os.Getenv("AGH_URL")
+	if aghURL == "" {
+		aghURL = "http://localhost:3000" // Default AdGuard Home URL
+	}
+	aghUsername := os.Getenv("AGH_USERNAME")
+	aghPassword := os.Getenv("AGH_PASSWORD")
 
-	for _, port := range ports {
-		url := fmt.Sprintf("http://localhost:%s/control/stats", port)
-		// Note: AdGuard Home usually needs Basic Auth.
-		// For this integration to work perfectly, we'd need to store or prompt for AGH credentials.
-		// For now, we try an unauthenticated request (which might fail but is a start)
-		resp, cerr := http.Get(url)
-		if cerr == nil && resp.StatusCode == 200 {
-			json.NewDecoder(resp.Body).Decode(&finalData)
-			resp.Body.Close()
-			break
+	// Try to fetch stats from AdGuard Home
+	client := &http.Client{Timeout: 5 * time.Second}
+	req, err := http.NewRequest("GET", aghURL+"/control/stats", nil)
+	if err != nil {
+		// Fall back to mock data
+		stats = getMockDNSStats()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(stats)
+		return
+	}
+
+	// Add Basic Auth if credentials are provided
+	if aghUsername != "" && aghPassword != "" {
+		req.SetBasicAuth(aghUsername, aghPassword)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil || resp.StatusCode != 200 {
+		// Fall back to mock data if AdGuard Home is not available
+		stats = getMockDNSStats()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(stats)
+		return
+	}
+	defer resp.Body.Close()
+
+	var aghData map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&aghData); err != nil {
+		stats = getMockDNSStats()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(stats)
+		return
+	}
+
+	// Parse basic statistics
+	if val, ok := aghData["num_dns_queries"].(float64); ok {
+		stats.TotalQueries = int(val)
+	}
+	if val, ok := aghData["num_blocked_filtering"].(float64); ok {
+		stats.BlockedFiltering = int(val)
+	}
+	if stats.TotalQueries > 0 {
+		stats.BlockedPercentage = (float64(stats.BlockedFiltering) / float64(stats.TotalQueries)) * 100
+	}
+
+	// Parse top blocked domains
+	if topBlocked, ok := aghData["top_blocked_domains"].([]interface{}); ok {
+		for i, item := range topBlocked {
+			if i >= 10 { // Limit to top 10
+				break
+			}
+			if domainData, ok := item.(map[string]interface{}); ok {
+				domain := TopDomain{}
+				if name, ok := domainData["name"].(string); ok {
+					domain.Domain = name
+				}
+				if count, ok := domainData["count"].(float64); ok {
+					domain.Hits = int(count)
+				}
+				if domain.Domain != "" {
+					stats.TopBlocked = append(stats.TopBlocked, domain)
+				}
+			}
 		}
 	}
 
-	if finalData != nil {
-		// Map AGH data to our internal struct
-		if val, ok := finalData["num_dns_queries"].(float64); ok {
-			stats.TotalQueries = int(val)
+	// Parse top queried domains
+	if topQueried, ok := aghData["top_queried_domains"].([]interface{}); ok {
+		for i, item := range topQueried {
+			if i >= 10 { // Limit to top 10
+				break
+			}
+			if domainData, ok := item.(map[string]interface{}); ok {
+				domain := TopDomain{}
+				if name, ok := domainData["name"].(string); ok {
+					domain.Domain = name
+				}
+				if count, ok := domainData["count"].(float64); ok {
+					domain.Hits = int(count)
+				}
+				if domain.Domain != "" {
+					stats.TopQueries = append(stats.TopQueries, domain)
+				}
+			}
 		}
-		if val, ok := finalData["num_blocked_filtering"].(float64); ok {
-			stats.BlockedFiltering = int(val)
-		}
-		if stats.TotalQueries > 0 {
-			stats.BlockedPercentage = (float64(stats.BlockedFiltering) / float64(stats.TotalQueries)) * 100
-		}
-	} else {
-		// Mock data if no ad-blocker is found, so the UI can be developed/tested
-		stats.TotalQueries = 1250
-		stats.BlockedFiltering = 340
-		stats.BlockedPercentage = 27.2
-		stats.TopBlocked = []TopDomain{
-			{Domain: "doubleclick.net", Hits: 85},
-			{Domain: "google-analytics.com", Hits: 62},
-			{Domain: "facebook.com", Hits: 44},
-		}
-		stats.TopQueries = []TopDomain{
-			{Domain: "google.com", Hits: 210},
-			{Domain: "github.com", Hits: 155},
-		}
+	}
+
+	// If no data was parsed successfully, use mock data
+	if stats.TotalQueries == 0 {
+		stats = getMockDNSStats()
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
+}
+
+// getMockDNSStats returns mock data for development/testing when AdGuard Home is not available
+func getMockDNSStats() DNSStats {
+	return DNSStats{
+		TotalQueries:      1250,
+		BlockedFiltering:  340,
+		BlockedPercentage: 27.2,
+		TopBlocked: []TopDomain{
+			{Domain: "doubleclick.net", Hits: 85},
+			{Domain: "google-analytics.com", Hits: 62},
+			{Domain: "facebook.com", Hits: 44},
+		},
+		TopQueries: []TopDomain{
+			{Domain: "google.com", Hits: 210},
+			{Domain: "github.com", Hits: 155},
+		},
+	}
 }
 
 func getSecurityStats(w http.ResponseWriter, r *http.Request) {
