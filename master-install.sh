@@ -12,6 +12,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
+YELLOW='\033[1;33m'
 NC='\033[0m'
 
 clear
@@ -26,7 +27,107 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# ============================================
+# PHASE 1: CONFIGURATION COLLECTION
+# ============================================
+echo ""
+echo -e "${GREEN}=========================================${NC}"
+echo -e "${GREEN}    Configuration Wizard    ${NC}"
+echo -e "${GREEN}=========================================${NC}"
+echo "Please answer the following questions."
+echo "Installation will begin automatically after."
+echo ""
+
+# Question 1: Admin Credentials (only if not exists)
+if [ ! -f "/etc/softrouter/user_credentials.json" ]; then
+    echo -e "${CYAN}[1/5] Administrative Account${NC}"
+    read -p "Username (default: admin): " ADMIN_USER
+    ADMIN_USER=${ADMIN_USER:-admin}
+    
+    while true; do
+        read -sp "Set Password: " ADMIN_PASS
+        echo ""
+        read -sp "Confirm Password: " ADMIN_PASS_CONFIRM
+        echo ""
+        
+        if [ "$ADMIN_PASS" == "$ADMIN_PASS_CONFIRM" ] && [ ! -z "$ADMIN_PASS" ]; then
+            break
+        else
+            echo -e "${RED}Passwords do not match or are empty. Try again.${NC}"
+        fi
+    done
+else
+    echo -e "${CYAN}[1/5] Administrative Account${NC}"
+    echo "Existing credentials found. Skipping."
+    ADMIN_USER="existing"
+    ADMIN_PASS="existing"
+fi
+
+# Question 2: Security Stack (IDS/IPS)
+echo ""
+echo -e "${CYAN}[2/5] Security Stack${NC}"
+read -p "Install IDS/IPS (Suricata + CrowdSec)? [y/N]: " INSTALL_SEC
+if [[ "$INSTALL_SEC" =~ ^[Yy]$ ]]; then
+    read -p "Enter your LAN network in CIDR (e.g., 192.168.1.0/24): " USER_LAN
+    while [ -z "$USER_LAN" ]; do
+        echo -e "${RED}LAN network is required for IDS/IPS setup.${NC}"
+        read -p "Enter your LAN network in CIDR: " USER_LAN
+    done
+fi
+
+# Question 3: DNS Configuration
+echo ""
+echo -e "${CYAN}[3/5] DNS Configuration${NC}"
+read -p "Free port 53 for custom DNS (AdGuard/Pi-hole)? [y/N]: " FREE_PORT_53
+
+# Question 4: Ad-Blocking DNS
+echo ""
+echo -e "${CYAN}[4/5] Ad-Blocking DNS${NC}"
+read -p "Install AdGuard Home? [y/N]: " INSTALL_AGH
+
+# Question 5: UniFi Controller
+echo ""
+echo -e "${CYAN}[5/5] UniFi Network Controller${NC}"
+read -p "Install UniFi Controller? [y/N]: " INSTALL_UNIFI
+
+# Configuration Summary
+echo ""
+echo -e "${BLUE}=========================================${NC}"
+echo -e "${BLUE}    Configuration Summary    ${NC}"
+echo -e "${BLUE}=========================================${NC}"
+if [ "$ADMIN_USER" != "existing" ]; then
+    echo "Admin Username: $ADMIN_USER"
+else
+    echo "Admin Credentials: Using existing"
+fi
+echo "IDS/IPS Stack: ${INSTALL_SEC:-N}"
+if [[ "$INSTALL_SEC" =~ ^[Yy]$ ]]; then
+    echo "  └─ LAN Network: $USER_LAN"
+fi
+echo "Free Port 53: ${FREE_PORT_53:-N}"
+echo "AdGuard Home: ${INSTALL_AGH:-N}"
+echo "UniFi Controller: ${INSTALL_UNIFI:-N}"
+echo ""
+read -p "Proceed with installation? [Y/n]: " CONFIRM
+if [[ "$CONFIRM" =~ ^[Nn]$ ]]; then
+    echo -e "${YELLOW}Installation cancelled by user.${NC}"
+    exit 0
+fi
+
+echo ""
+echo -e "${GREEN}=========================================${NC}"
+echo -e "${GREEN}  Starting Unattended Installation  ${NC}"
+echo -e "${GREEN}=========================================${NC}"
+echo "You may now leave. Installation will complete automatically."
+echo "This may take 10-15 minutes depending on your hardware."
+sleep 3
+
+# ============================================
+# PHASE 2: UNATTENDED INSTALLATION
+# ============================================
+
 # 2. System Dependencies
+echo ""
 echo -e "${CYAN}[1/10] Installing System Dependencies...${NC}"
 apt update
 apt install -y curl git golang-go nftables iproute2 systemd jq wget bsdmainutils wireguard openvpn easy-rsa qrencode unbound
@@ -38,31 +139,15 @@ if ! command -v node &> /dev/null; then
     apt install -y nodejs
 fi
 
-# 3. Interactive Security Setup
+# 3. Security Setup (Non-Interactive)
 echo -e "${CYAN}[2/10] Security Configuration...${NC}"
 mkdir -p /etc/softrouter
 chmod 700 /etc/softrouter
 
 if [ ! -f "/etc/softrouter/user_credentials.json" ]; then
-    echo -e "${BLUE}Define primary administrator account:${NC}"
-    read -p "Username (default: admin): " ADMIN_USER
-    ADMIN_USER=${ADMIN_USER:-admin}
-    
-    while true; do
-        read -sp "Set Password: " ADMIN_PASS
-        echo ""
-        read -sp "Confirm Password: " ADMIN_PASS_CONFIRM
-        echo ""
-        
-        if [ "$ADMIN_PASS" == "$ADMIN_PASS_CONFIRM" ] && [ ! -z "$ADMIN_PASS" ]; then
-            HASHED_PASS=$(echo -n "$ADMIN_PASS" | sha256sum | awk '{print $1}')
-            echo "{\"username\":\"$ADMIN_USER\",\"password\":\"$HASHED_PASS\"}" > /etc/softrouter/user_credentials.json
-            echo -e "${GREEN}Credentials stored securely.${NC}"
-            break
-        else
-            echo -e "${RED}Passwords do not match or are empty. Try again.${NC}"
-        fi
-    done
+    HASHED_PASS=$(echo -n "$ADMIN_PASS" | sha256sum | awk '{print $1}')
+    echo "{\"username\":\"$ADMIN_USER\",\"password\":\"$HASHED_PASS\"}" > /etc/softrouter/user_credentials.json
+    echo -e "${GREEN}Credentials stored securely.${NC}"
 fi
 
 # Generate Secret Key if missing
@@ -72,9 +157,8 @@ if [ ! -f "/etc/softrouter/token_secret.key" ]; then
     chmod 600 /etc/softrouter/token_secret.key
 fi
 
-# 4. IDS/IPS Stack (Suricata + CrowdSec)
-echo -e "${CYAN}[3/10] Integrated Security Stack (Optional)${NC}"
-read -p "Would you like to install the IDS/IPS stack (Suricata + CrowdSec)? [y/N]: " INSTALL_SEC
+# 4. IDS/IPS Stack (Conditional)
+echo -e "${CYAN}[3/10] Integrated Security Stack...${NC}"
 if [[ "$INSTALL_SEC" =~ ^[Yy]$ ]]; then
     echo -e "${CYAN}Installing Suricata & CrowdSec...${NC}"
     apt install -y suricata
@@ -88,15 +172,12 @@ if [[ "$INSTALL_SEC" =~ ^[Yy]$ ]]; then
     PRIMARY_IFACE=${PRIMARY_IFACE:-eth0}
     echo -e "Detected primary interface: ${CYAN}$PRIMARY_IFACE${NC}"
     
-    read -p "Enter your LAN network in CIDR (e.g., 192.168.1.0/24): " USER_LAN
-    
-    # Apply configurations
+    # Apply configurations using pre-collected USER_LAN
     sed -i "s|HOME_NET:.*|HOME_NET: \"[$USER_LAN]\"|" /etc/suricata/suricata.yaml
     sed -i 's|EXTERNAL_NET:.*|EXTERNAL_NET: "!$HOME_NET"|' /etc/suricata/suricata.yaml
     sed -i "s/interface: eth0/interface: $PRIMARY_IFACE/g" /etc/suricata/suricata.yaml
     
-    # Enable eve-log (robust approach)
-    # First ensure we don't have multiple 'enabled:' lines right after eve-log
+    # Enable eve-log
     sed -i '/- eve-log:/,/enabled:/ { /enabled:/d }' /etc/suricata/suricata.yaml
     sed -i 's/- eve-log:/- eve-log:\n      enabled: yes/' /etc/suricata/suricata.yaml
     
@@ -116,12 +197,11 @@ if [[ "$INSTALL_SEC" =~ ^[Yy]$ ]]; then
     systemctl restart suricata crowdsec crowdsec-firewall-bouncer
     echo -e "${GREEN}IDS/IPS Stack successfully integrated.${NC}"
 else
-    echo -e "Skipping IDS/IPS installation."
+    echo -e "Skipping IDS/IPS installation (user opted out)."
 fi
 
-# 5. DNS Optimization (Port 53 Cleanup)
+# 5. DNS Optimization (Conditional)
 echo -e "${CYAN}[4/10] DNS Optimization...${NC}"
-read -p "Disable systemd-resolved stub listener to free up port 53? (Required for AdGuard/Pi-hole) [y/N]: " FREE_PORT_53
 if [[ "$FREE_PORT_53" =~ ^[Yy]$ ]]; then
     echo -e "Configuring systemd-resolved..."
     mkdir -p /etc/systemd/resolved.conf.d
@@ -131,27 +211,27 @@ if [[ "$FREE_PORT_53" =~ ^[Yy]$ ]]; then
     fi
     systemctl restart systemd-resolved
     echo -e "${GREEN}Port 53 is now free for custom DNS servers.${NC}"
+else
+    echo -e "Keeping default DNS configuration (user opted out)."
 fi
 
-# 6. Optional Ad-Blocker (AdGuard Home)
-echo -e "${CYAN}[5/10] Ad-Blocking DNS (Optional)${NC}"
-read -p "Would you like to install AdGuard Home now? [y/N]: " INSTALL_AGH
+# 6. Optional Ad-Blocker (Conditional)
+echo -e "${CYAN}[5/10] Ad-Blocking DNS...${NC}"
 if [[ "$INSTALL_AGH" =~ ^[Yy]$ ]]; then
     echo -e "Installing AdGuard Home..."
     curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh -s -- -v
-    # The setup wizard will be on port 3000 by default
     echo -e "${GREEN}AdGuard Home installed. Complete setup at http://$(hostname -I | awk '{print $1}'):3000${NC}"
+else
+    echo -e "Skipping AdGuard Home installation (user opted out)."
 fi
 
-# 7. Optional UniFi Controller
-echo -e "${CYAN}[6/10] UniFi Network Server (Optional)${NC}"
-read -p "Would you like to install the UniFi Controller for your U6 AP? [y/N]: " INSTALL_UNIFI
+# 7. Optional UniFi Controller (Conditional)
+echo -e "${CYAN}[6/10] UniFi Network Server...${NC}"
 if [[ "$INSTALL_UNIFI" =~ ^[Yy]$ ]]; then
     echo -e "Installing UniFi Controller dependencies..."
     apt install -y openjdk-17-jre-headless libcap2 gnupg
 
     # Hardware Compatibility Check (AVX)
-    # MongoDB 5.0+ requires AVX instructions. Older CPUs (AMD A6/Atom) will crash with 'Illegal Instruction'.
     HAS_AVX=$(grep -o 'avx' /proc/cpuinfo | head -n1)
     
     echo -e "Adding UniFi Repository..."
@@ -161,38 +241,31 @@ if [[ "$INSTALL_UNIFI" =~ ^[Yy]$ ]]; then
     if [[ -z "$HAS_AVX" ]]; then
         echo -e "${YELLOW}Warning: AVX instructions not detected. Downgrading to MongoDB 4.4 for compatibility...${NC}"
         
-        # Remove any existing incompatible sources
         rm -f /etc/apt/sources.list.d/mongodb-org-7.0.list
-        apt remove -y mongodb-org* >/dev/null 2>&1 || true
+        apt remove -y mongodb-org* > /dev/null 2>&1 || true
 
-        # Ubuntu 24.04 (Noble) removed libssl1.1, which Mongo 4.4 needs. Manual install required.
-        if ! dpkg -s libssl1.1 >/dev/null 2>&1; then
+        if ! dpkg -s libssl1.1 > /dev/null 2>&1; then
              echo -e "Installing legacy libssl1.1 for MongoDB 4.4..."
              wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb -O /tmp/libssl1.1.deb
              dpkg -i /tmp/libssl1.1.deb || apt install -f -y
              rm -f /tmp/libssl1.1.deb
         fi
 
-        # Add MongoDB 4.4 Repo (Focal is the last stable 4.4 build, compatible with newer Ubuntu via libssl1.1)
         curl -fsSL https://www.mongodb.org/static/pgp/server-4.4.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-4.4.gpg --yes
         echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-4.4.gpg ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/4.4 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-4.4.list
         
         apt update
-        # Pin version to avoid accidental upgrades
         echo -e "Installing MongoDB 4.4..."
         apt install -y mongodb-org=4.4.29 mongodb-org-server=4.4.29 mongodb-org-shell=4.4.29 mongodb-org-mongos=4.4.29 mongodb-org-tools=4.4.29
-        
-        # Hold packages to prevent upgrading to crashing 7.0
         apt-mark hold mongodb-org mongodb-org-server mongodb-org-shell mongodb-org-mongos mongodb-org-tools
     else
-        echo -e "AVX Detected. Installing modern MongoDB 7.0 (Jammy Repo for Noble compatibility)..."
+        echo -e "AVX Detected. Installing modern MongoDB 7.0..."
         curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-7.0.gpg --yes
         echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list
         apt update
         apt install -y mongodb-org
     fi
     
-    # Increase systemd timeout for first-run initialization (common on slower hardware)
     mkdir -p /etc/systemd/system/unifi.service.d
     echo -e "[Service]\nTimeoutStartSec=600" > /etc/systemd/system/unifi.service.d/override.conf
     systemctl daemon-reload
@@ -203,12 +276,14 @@ if [[ "$INSTALL_UNIFI" =~ ^[Yy]$ ]]; then
     systemctl start unifi
     
     echo -e "${GREEN}UniFi Controller installed. Access at https://$(hostname -I | awk '{print $1}'):8443${NC}"
+else
+    echo -e "Skipping UniFi Controller installation (user opted out)."
 fi
 
 # 8. Build Phase
 echo -e "${CYAN}[7/10] Building Software Components...${NC}"
 
-# Stop existing service if running to avoid 'Text file busy' during binary overwrite
+# Stop existing service
 systemctl stop softrouter 2>/dev/null || true
 
 # Backend
@@ -268,16 +343,16 @@ AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN CAP_NET_BIND_SERVICE
 WantedBy=multi-user.target
 EOF
 
-# 10. Finalize
+# 11. Finalize
 echo -e "${CYAN}[10/10] Launching System...${NC}"
-# Kill existing processes on target ports to avoid 'address already in use'
 fuser -k 80/tcp 8080/tcp 2>/dev/null || true
 systemctl daemon-reload
 systemctl enable softrouter
 systemctl restart softrouter
 
-# 9. Success Report
+# 12. Success Report
 CORE_IP=$(hostname -I | awk '{print $1}')
+echo ""
 echo -e "${BLUE}=========================================${NC}"
 echo -e "${GREEN}✅ SoftRouter is now FULLY INSTALLED!${NC}"
 echo -e "${BLUE}=========================================${NC}"
@@ -291,7 +366,7 @@ if [[ "$INSTALL_SEC" =~ ^[Yy]$ ]]; then
     echo -e "- Monitor Security: sudo cscli decisions list"
 fi
 if [[ "$INSTALL_AGH" =~ ^[Yy]$ ]]; then
-    echo -e "- AdGuard Setup: http://${CORE_IP}:90"
+    echo -e "- AdGuard Setup: http://${CORE_IP}:3000"
 fi
 if [[ "$INSTALL_UNIFI" =~ ^[Yy]$ ]]; then
     echo -e "- UniFi Controller: https://${CORE_IP}:8443"
