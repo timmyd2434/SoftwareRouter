@@ -193,8 +193,8 @@ if [[ "$INSTALL_SEC" =~ ^[Yy]$ ]]; then
     cscli collections install crowdsecurity/linux crowdsecurity/sshd crowdsecurity/http-cve crowdsecurity/iptables crowdsecurity/suricata
     
     # Start security services
-    systemctl enable suricata crowdsec crowdsec-firewall-bouncer
-    systemctl restart suricata crowdsec crowdsec-firewall-bouncer
+    systemctl enable suricata crowdsec crowdsec-firewall-bouncer-nftables
+    systemctl restart suricata crowdsec crowdsec-firewall-bouncer-nftables
     echo -e "${GREEN}IDS/IPS Stack successfully integrated.${NC}"
 else
     echo -e "Skipping IDS/IPS installation (user opted out)."
