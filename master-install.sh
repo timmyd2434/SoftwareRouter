@@ -206,14 +206,19 @@ fi
 # 5. DNS Optimization (Conditional)
 echo -e "${CYAN}[4/10] DNS Optimization...${NC}"
 if [[ "$FREE_PORT_53" =~ ^[Yy]$ ]]; then
-    echo -e "Configuring systemd-resolved..."
-    mkdir -p /etc/systemd/resolved.conf.d
-    echo -e "[Resolve]\nDNSStubListener=no" > /etc/systemd/resolved.conf.d/softrouter.conf
-    if [ -L /etc/resolv.conf ]; then
-        ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+    # Check if systemd-resolved is installed
+    if systemctl list-unit-files | grep -q systemd-resolved.service; then
+        echo -e "Configuring systemd-resolved..."
+        mkdir -p /etc/systemd/resolved.conf.d
+        echo -e "[Resolve]\nDNSStubListener=no" > /etc/systemd/resolved.conf.d/softrouter.conf
+        if [ -L /etc/resolv.conf ]; then
+            ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+        fi
+        systemctl restart systemd-resolved
+        echo -e "${GREEN}Port 53 is now free for custom DNS servers.${NC}"
+    else
+        echo -e "${YELLOW}systemd-resolved not found. Port 53 should already be free.${NC}"
     fi
-    systemctl restart systemd-resolved
-    echo -e "${GREEN}Port 53 is now free for custom DNS servers.${NC}"
 else
     echo -e "Keeping default DNS configuration (user opted out)."
 fi
