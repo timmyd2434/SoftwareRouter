@@ -1737,11 +1737,6 @@ func getDNSStats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// If no data was parsed successfully, use mock data
-	if stats.TotalQueries == 0 {
-		stats = getMockDNSStats()
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
 }
