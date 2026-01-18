@@ -301,6 +301,11 @@ if [[ "$INSTALL_UNIFI" =~ ^[Yy]$ ]]; then
         echo -e "Waiting for MongoDB to initialize..."
         sleep 5
 
+        # Configure UniFi to use port 8081 for inform (CrowdSec uses 8080)
+        mkdir -p /usr/lib/unifi/data
+        echo -e "Configuring UniFi ports (avoiding CrowdSec conflict)..."
+        echo "unifi.http.port=8081" > /usr/lib/unifi/data/system.properties
+
         echo -e "Installing UniFi Controller..."
         apt install -y unifi
         systemctl enable unifi
