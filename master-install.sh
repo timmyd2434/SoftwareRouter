@@ -249,7 +249,7 @@ if [[ "$INSTALL_UNIFI" =~ ^[Yy]$ ]]; then
     echo -e "Installing UniFi Controller dependencies..."
     
     # Detect available Java version (21 on Trixie, 17 on stable)
-    if apt-cache show openjdk-17-jre-headless >/dev/null 2>&1; then
+    if apt-cache policy openjdk-17-jre-headless 2>/dev/null | grep -q "Candidate:"; then
         apt install -y openjdk-17-jre-headless libcap2 gnupg
     else
         echo -e "${YELLOW}OpenJDK 17 not available, using OpenJDK 21...${NC}"
