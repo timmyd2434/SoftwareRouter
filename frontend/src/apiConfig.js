@@ -73,5 +73,6 @@ export const API_ENDPOINTS = {
     OVPN_SERVER_SETUP: `${API_BASE_URL}/api/vpn/server-openvpn/setup`,
     OVPN_SERVER_CLIENTS: `${API_BASE_URL}/api/vpn/server-openvpn/clients`,
     OVPN_SERVER_DOWNLOAD: `${API_BASE_URL}/api/vpn/server-openvpn/download`,
+    SETTINGS: `${API_BASE_URL}/api/settings`,
 };
 

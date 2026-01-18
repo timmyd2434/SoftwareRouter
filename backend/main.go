@@ -54,6 +54,23 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
+// Config represents the system configuration
+type Config struct {
+	AdGuard AdGuardConfig `json:"adguard"`
+}
+
+type AdGuardConfig struct {
+	URL      string `json:"url"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+var (
+	config     Config
+	configLock sync.RWMutex
+	configPath = "/etc/softrouter/config.json"
+)
+
 func initWireGuard() {
 	configDir := "/etc/softrouter"
 	wgDir := "/etc/wireguard"
@@ -1639,16 +1656,142 @@ func getCrowdSecDecisions(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(decisions)
 }
 
+// loadSystemConfig loads configuration from file or uses defaults
+func loadSystemConfig() {
+	configLock.Lock()
+	defer configLock.Unlock()
+
+	// Create config directory if it doesn't exist
+	os.MkdirAll(filepath.Dir(configPath), 0755)
+
+	// Try to read existing config file
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		// File doesn't exist, use defaults
+		config = Config{
+			AdGuard: AdGuardConfig{
+				URL:      getEnvOrDefault("AGH_URL", "http://localhost:3000"),
+				Username: os.Getenv("AGH_USERNAME"),
+				Password: os.Getenv("AGH_PASSWORD"),
+			},
+		}
+		// Save default config
+		saveConfigLocked()
+		return
+	}
+
+	// Parse existing config
+	if err := json.Unmarshal(data, &config); err != nil {
+		fmt.Printf("Error parsing config file: %v. Using defaults.\n", err)
+		config = Config{
+			AdGuard: AdGuardConfig{
+				URL:      getEnvOrDefault("AGH_URL", "http://localhost:3000"),
+				Username: os.Getenv("AGH_USERNAME"),
+				Password: os.Getenv("AGH_PASSWORD"),
+			},
+		}
+	}
+
+	// Environment variables override config file
+	if url := os.Getenv("AGH_URL"); url != "" {
+		config.AdGuard.URL = url
+	}
+	if username := os.Getenv("AGH_USERNAME"); username != "" {
+		config.AdGuard.Username = username
+	}
+	if password := os.Getenv("AGH_PASSWORD"); password != "" {
+		config.AdGuard.Password = password
+	}
+}
+
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+func saveConfigLocked() error {
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(configPath, data, 0600); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
+}
+
+func getSettings(w http.ResponseWriter, r *http.Request) {
+	configLock.RLock()
+	defer configLock.RUnlock()
+
+	// Return config with password masked
+	sanitized := Config{
+		AdGuard: AdGuardConfig{
+			URL:      config.AdGuard.URL,
+			Username: config.AdGuard.Username,
+			Password: maskPassword(config.AdGuard.Password),
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sanitized)
+}
+
+func updateSettings(w http.ResponseWriter, r *http.Request) {
+	var newConfig Config
+	if err := json.NewDecoder(r.Body).Decode(&newConfig); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	configLock.Lock()
+	defer configLock.Unlock()
+
+	// Don't update password if it's the masked value
+	if newConfig.AdGuard.Password == maskPassword(config.AdGuard.Password) {
+		newConfig.AdGuard.Password = config.AdGuard.Password
+	}
+
+	// Update config
+	config = newConfig
+
+	// Save to file
+	if err := saveConfigLocked(); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "success",
+		"message": "Settings updated successfully",
+	})
+}
+
+func maskPassword(password string) string {
+	if password == "" {
+		return ""
+	}
+	return "****"
+}
+
 func getDNSStats(w http.ResponseWriter, r *http.Request) {
 	stats := DNSStats{}
 
-	// Get AdGuard Home configuration from environment variables or use defaults
-	aghURL := os.Getenv("AGH_URL")
+	// Get AdGuard Home configuration from config
+	configLock.RLock()
+	aghURL := config.AdGuard.URL
+	aghUsername := config.AdGuard.Username
+	aghPassword := config.AdGuard.Password
+	configLock.RUnlock()
+
 	if aghURL == "" {
-		aghURL = "http://localhost:3000" // Default AdGuard Home URL
+		aghURL = "http://localhost:3000" // Fallback default
 	}
-	aghUsername := os.Getenv("AGH_USERNAME")
-	aghPassword := os.Getenv("AGH_PASSWORD")
 
 	// Try to fetch stats from AdGuard Home
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -1924,6 +2067,7 @@ func controlService(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	loadSystemConfig()
 	loadTokenSecret()
 	initWireGuard()
 	go collectTrafficHistory()
@@ -1937,6 +2081,8 @@ func main() {
 	mux.HandleFunc("GET /api/config", authMiddleware(getConfig))
 	mux.HandleFunc("POST /api/config", authMiddleware(updateConfig))
 	mux.HandleFunc("POST /api/auth/update-credentials", authMiddleware(updateCredentials))
+	mux.HandleFunc("GET /api/settings", authMiddleware(getSettings))
+	mux.HandleFunc("POST /api/settings", authMiddleware(updateSettings))
 
 	mux.HandleFunc("GET /api/interfaces", authMiddleware(getInterfaces))
 	mux.HandleFunc("POST /api/interfaces/vlan", authMiddleware(createVLAN))
