@@ -186,7 +186,17 @@ if [[ "$INSTALL_SEC" =~ ^[Yy]$ ]]; then
     
     # Install CrowdSec
     echo -e "Installing CrowdSec..."
-    curl -s https://packagecloud.io/install/repositories/crowdsec/crowdsec/script.deb.sh | bash
+    
+    # Check Debian version - skip CrowdSec repo on Trixie (uses Debian packages instead)
+    DEBIAN_VERSION=$(cat /etc/debian_version 2>/dev/null || echo "")
+    if [[ "$DEBIAN_VERSION" =~ ^13 ]] || grep -q "trixie" /etc/os-release 2>/dev/null; then
+        echo -e "${YELLOW}Debian Trixie detected. Using Debian's CrowdSec packages...${NC}"
+        # Trixie has CrowdSec in main repos, no need for packagecloud
+    else
+        # Add CrowdSec repository for stable Debian versions
+        curl -s https://packagecloud.io/install/repositories/crowdsec/crowdsec/script.deb.sh | bash
+    fi
+    
     apt install -y crowdsec crowdsec-firewall-bouncer
     
     # Install standard collections
