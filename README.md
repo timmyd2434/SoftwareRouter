@@ -39,17 +39,44 @@ sudo ./master-install.sh
 2.  **Security Setup**: configures your admin account and API secrets.
 3.  **IDS/IPS Integration**: Optional one-click setup for Suricata & CrowdSec.
 4.  **DNS Optimization**: Automatically resolves Port 53 conflicts (disables `systemd-resolved` stub).
-5.  **Production Build**: Compiles the Go binary and builds the optimized React frontend.
-6.  **Persistence**: Installs a `softrouter.service` for automated startup on boot.
+5.  **AdGuard Home**: Optional DNS ad-blocking with web UI (Port 3000).
+6.  **UniFi Controller**: Optional network management for UniFi devices (requires AVX CPU).
+7.  **Production Build**: Compiles the Go binary and builds the optimized React frontend.
+8.  **Persistence**: Installs a `softrouter.service` for automated startup on boot.
+
+**Tested on:**
+- Debian 12 (Bookworm) stable
+- Debian 13 (Trixie) testing
+- Ubuntu 22.04 LTS and 24.04 LTS
 
 ### Accessing the Interface
 - **URL**: `http://<YOUR_ROUTER_IP>`
 - **Admin Port**: 80
-- **Default Credentials**: Set during installation (Step 2/8).
+- **Default Credentials**: Set during installation (Step 2/10).
+
+### Post-Installation Configuration
+After installation, access the **Settings** page to configure:
+- **AdGuard Home Integration**: Enter URL and credentials to enable real-time DNS analytics
+- **Cloudflare Tunnel**: Configure Zero Trust access
+- **Administrative Credentials**: Update username and password
 
 ---
 
 ## 💡 Professional Tips & Config
+
+### AdGuard Home DNS Analytics
+The DNS Analytics page integrates with AdGuard Home to display:
+- Real-time DNS queries and blocked domains
+- Top queried and blocked domains
+- Ad-blocking statistics
+
+**Setup via Settings UI:**
+1. Navigate to **Settings** → **AdGuard Home Integration**
+2. Enter AdGuard URL (e.g., `http://localhost:3000`)
+3. Enter username and password
+4. Click Save
+
+No service restart required - changes take effect immediately!
 
 ### Reclaiming Port 53
 If you install **AdGuard Home** or **Pi-hole**, you must free up port 53 which Ubuntu occupies by default. The `master-install.sh` handles this, but you can do it manually:
