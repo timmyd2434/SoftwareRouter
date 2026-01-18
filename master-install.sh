@@ -247,7 +247,14 @@ fi
 echo -e "${CYAN}[6/10] UniFi Network Server...${NC}"
 if [[ "$INSTALL_UNIFI" =~ ^[Yy]$ ]]; then
     echo -e "Installing UniFi Controller dependencies..."
-    apt install -y openjdk-17-jre-headless libcap2 gnupg
+    
+    # Detect available Java version (21 on Trixie, 17 on stable)
+    if apt-cache show openjdk-17-jre-headless >/dev/null 2>&1; then
+        apt install -y openjdk-17-jre-headless libcap2 gnupg
+    else
+        echo -e "${YELLOW}OpenJDK 17 not available, using OpenJDK 21...${NC}"
+        apt install -y openjdk-21-jre-headless libcap2 gnupg
+    fi
 
     # Hardware Compatibility Check (AVX)
     HAS_AVX=$(grep -o 'avx' /proc/cpuinfo | head -n1)
