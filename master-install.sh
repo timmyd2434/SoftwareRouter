@@ -193,7 +193,7 @@ if [[ "$INSTALL_SEC" =~ ^[Yy]$ ]]; then
     echo -e "Updating CrowdSec hub..."
     cscli hub update
     echo -e "Installing CrowdSec collections..."
-    cscli collections install crowdsecurity/linux crowdsecurity/sshd crowdsecurity/http-cve crowdsecurity/iptables crowdsecurity/suricata
+    cscli collections install crowdsecurity/linux crowdsecurity/sshd crowdsecurity/http-cve crowdsecurity/iptables crowdsecurity/suricata --force
     
     # Start security services
     systemctl enable suricata crowdsec crowdsec-firewall-bouncer
