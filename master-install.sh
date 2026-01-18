@@ -320,6 +320,19 @@ fi
 # 8. Build Phase
 echo -e "${CYAN}[7/10] Building Software Components...${NC}"
 
+# Free port 80 by disabling conflicting web servers
+echo -e "Checking for web server conflicts on port 80..."
+if systemctl is-active --quiet apache2 2>/dev/null; then
+    echo -e "${YELLOW}Apache2 detected on port 80. Disabling to free port for SoftRouter...${NC}"
+    systemctl stop apache2
+    systemctl disable apache2
+fi
+if systemctl is-active --quiet nginx 2>/dev/null; then
+    echo -e "${YELLOW}Nginx detected on port 80. Disabling to free port for SoftRouter...${NC}"
+    systemctl stop nginx
+    systemctl disable nginx
+fi
+
 # Stop existing service
 systemctl stop softrouter 2>/dev/null || true
 
