@@ -190,6 +190,9 @@ if [[ "$INSTALL_SEC" =~ ^[Yy]$ ]]; then
     apt install -y crowdsec crowdsec-firewall-bouncer
     
     # Install standard collections
+    echo -e "Updating CrowdSec hub..."
+    cscli hub update
+    echo -e "Installing CrowdSec collections..."
     cscli collections install crowdsecurity/linux crowdsecurity/sshd crowdsecurity/http-cve crowdsecurity/iptables crowdsecurity/suricata
     
     # Start security services
