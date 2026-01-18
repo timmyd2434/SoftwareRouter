@@ -292,6 +292,15 @@ if [[ "$INSTALL_UNIFI" =~ ^[Yy]$ ]]; then
         echo -e "[Service]\nTimeoutStartSec=600" > /etc/systemd/system/unifi.service.d/override.conf
         systemctl daemon-reload
 
+        # Start and enable MongoDB before UniFi
+        echo -e "Starting MongoDB service..."
+        systemctl enable mongod
+        systemctl start mongod
+        
+        # Wait for MongoDB to be ready
+        echo -e "Waiting for MongoDB to initialize..."
+        sleep 5
+
         echo -e "Installing UniFi Controller..."
         apt install -y unifi
         systemctl enable unifi
