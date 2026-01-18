@@ -248,12 +248,13 @@ echo -e "${CYAN}[6/10] UniFi Network Server...${NC}"
 if [[ "$INSTALL_UNIFI" =~ ^[Yy]$ ]]; then
     echo -e "Installing UniFi Controller dependencies..."
     
-    # Detect available Java version (21 on Trixie, 17 on stable)
-    if apt-cache policy openjdk-17-jre-headless 2>/dev/null | grep -q "Candidate:"; then
-        apt install -y openjdk-17-jre-headless libcap2 gnupg
-    else
-        echo -e "${YELLOW}OpenJDK 17 not available, using OpenJDK 21...${NC}"
+    # Detect available Java version based on Debian version
+    # Trixie (testing) has Java 21, Bookworm (stable) has Java 17
+    if grep -q "trixie" /etc/os-release 2>/dev/null || [[ "$(cat /etc/debian_version 2>/dev/null)" =~ ^13 ]]; then
+        echo -e "${YELLOW}Debian Trixie detected. Using OpenJDK 21...${NC}"
         apt install -y openjdk-21-jre-headless libcap2 gnupg
+    else
+        apt install -y openjdk-17-jre-headless libcap2 gnupg
     fi
 
     # Hardware Compatibility Check (AVX)
