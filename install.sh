@@ -283,13 +283,44 @@ if [[ "$INSTALL_UNIFI" =~ ^[Yy]$ ]]; then
         echo ""
     else
         echo -e "AVX Detected. Installing modern MongoDB 8.0..."
+        
+        # Add MongoDB GPG key
         curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-8.0.gpg --yes
-        echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list
+        
+        # Use Debian repository (not Ubuntu)
+        echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/debian bookworm/mongodb-org/8.0 main" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list
+        
         apt update
         apt install -y mongodb-org
         
+        # Configure MongoDB for UniFi
+        echo -e "Configuring MongoDB..."
+        cat > /etc/mongod.conf <<'MONGO_EOF'
+# mongod.conf
+storage:
+  dbPath: /var/lib/mongodb
+systemLog:
+  destination: file
+  logAppend: true
+  path: /var/log/mongodb/mongod.log
+net:
+  port: 27017
+  bindIp: 127.0.0.1
+processManagement:
+  timeZoneInfo: /usr/share/zoneinfo
+MONGO_EOF
+        
+        # Configure UniFi service dependencies and timeouts
         mkdir -p /etc/systemd/system/unifi.service.d
-        echo -e "[Service]\nTimeoutStartSec=600" > /etc/systemd/system/unifi.service.d/override.conf
+        cat > /etc/systemd/system/unifi.service.d/override.conf <<'UNIFI_OVERRIDE'
+[Unit]
+After=mongod.service
+Requires=mongod.service
+
+[Service]
+TimeoutStartSec=600
+UNIFI_OVERRIDE
+        
         systemctl daemon-reload
 
         # Start and enable MongoDB before UniFi
@@ -297,17 +328,26 @@ if [[ "$INSTALL_UNIFI" =~ ^[Yy]$ ]]; then
         systemctl enable mongod
         systemctl start mongod
         
-        # Wait for MongoDB to be ready
+        # Wait for MongoDB to be ready with health check
         echo -e "Waiting for MongoDB to initialize..."
-        sleep 5
+        for i in {1..30}; do
+            if mongosh --eval "db.adminCommand('ping')" &>/dev/null 2>&1 || mongo --eval "db.adminCommand('ping')" &>/dev/null 2>&1; then
+                echo -e "${GREEN}MongoDB is ready!${NC}"
+                break
+            fi
+            echo -e "Waiting for MongoDB... ($i/30)"
+            sleep 2
+        done
 
-        # Configure UniFi to use port 8081 for inform (CrowdSec uses 8080)
+        # Configure UniFi to use port 8081 for HTTP (avoiding CrowdSec on 8080)
         mkdir -p /usr/lib/unifi/data
-        echo -e "Configuring UniFi ports (avoiding CrowdSec conflict)..."
+        echo -e "Configuring UniFi ports..."
         echo "unifi.http.port=8081" > /usr/lib/unifi/data/system.properties
 
+        # Install UniFi
         echo -e "Installing UniFi Controller..."
         apt install -y unifi
+        
         systemctl enable unifi
         systemctl start unifi
         
