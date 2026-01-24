@@ -344,6 +344,15 @@ UNIFI_OVERRIDE
         echo -e "Configuring UniFi ports..."
         echo "unifi.http.port=8081" > /usr/lib/unifi/data/system.properties
 
+        # Install libssl1.1 (required by UniFi, not in Debian 13 repos)
+        if ! dpkg -l | grep -q 'libssl1.1'; then
+            echo -e "Installing libssl1.1 (UniFi dependency)..."
+            curl -fsSL "https://security.debian.org/debian-security/pool/updates/main/o/openssl/libssl1.1_1.1.1w-0+deb11u4_amd64.deb" -o "/tmp/libssl.deb"
+            dpkg -i /tmp/libssl.deb
+            rm -f /tmp/libssl.deb
+            echo -e "${GREEN}libssl1.1 installed.${NC}"
+        fi
+
         # Install UniFi
         echo -e "Installing UniFi Controller..."
         apt install -y unifi
