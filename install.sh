@@ -339,10 +339,20 @@ UNIFI_OVERRIDE
             sleep 2
         done
 
-        # Configure UniFi to use port 8081 for HTTP (avoiding CrowdSec on 8080)
+        # Configure UniFi to use external MongoDB and custom ports
         mkdir -p /usr/lib/unifi/data
-        echo -e "Configuring UniFi ports..."
-        echo "unifi.http.port=8081" > /usr/lib/unifi/data/system.properties
+        echo -e "Configuring UniFi to use external MongoDB..."
+        cat > /usr/lib/unifi/data/system.properties <<'UNIFI_PROPS'
+# Use external MongoDB (not embedded)
+unifi.db.nojournal=false
+db.mongo.local=false
+db.mongo.uri=mongodb://127.0.0.1:27017/unifi
+statdb.mongo.uri=mongodb://127.0.0.1:27017/unifi_stat
+unifi.db.name=unifi
+
+# Custom ports (avoid CrowdSec on 8080)
+unifi.http.port=8081
+UNIFI_PROPS
 
         # Install libssl1.1 (required by UniFi, not in Debian 13 repos)
         if ! dpkg -l | grep -q 'libssl1.1'; then
