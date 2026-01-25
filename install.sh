@@ -139,6 +139,15 @@ if ! command -v node &> /dev/null; then
     apt install -y nodejs
 fi
 
+
+# Enable IP Forwarding Persistent
+echo -e "${CYAN}Enabling Persistent IP Forwarding...${NC}"
+cat <<EOF > /etc/sysctl.d/99-softrouter.conf
+net.ipv4.ip_forward=1
+net.ipv6.conf.all.forwarding=1
+EOF
+sysctl -p /etc/sysctl.d/99-softrouter.conf
+
 # 3. Security Setup (Non-Interactive)
 echo -e "${CYAN}[2/10] Security Configuration...${NC}"
 mkdir -p /etc/softrouter

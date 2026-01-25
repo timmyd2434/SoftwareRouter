@@ -2096,6 +2096,7 @@ func main() {
 	loadSystemConfig()
 	loadTokenSecret()
 	initWireGuard()
+	initFirewall()
 	go collectTrafficHistory()
 	mux := http.NewServeMux()
 
