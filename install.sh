@@ -239,6 +239,25 @@ if [[ "$INSTALL_AGH" =~ ^[Yy]$ ]]; then
     echo -e "Installing AdGuard Home..."
     curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh -s -- -v
     echo -e "${GREEN}AdGuard Home installed. Complete setup at http://$(hostname -I | awk '{print $1}'):3000${NC}"
+    
+    # Configure dnsmasq to avoid port 53 conflict with AdGuard Home
+    echo -e "${CYAN}Configuring dnsmasq for DHCP-only mode (AdGuard will handle DNS)...${NC}"
+    cat > /etc/dnsmasq.d/adguard-compat.conf <<'EOF'
+# Disable DNS service on port 53 (AdGuard Home will handle DNS)
+port=0
+
+# DHCP Configuration - Adjust these values for your network
+# Example DHCP range - CHANGE THIS to match your network!
+# dhcp-range=192.168.1.50,192.168.1.150,12h
+
+# Tell DHCP clients to use AdGuard Home for DNS
+# dhcp-option=6,192.168.1.1  # CHANGE 192.168.1.1 to your AdGuard IP
+
+# Other useful DHCP options
+dhcp-authoritative
+EOF
+    echo -e "${YELLOW}NOTE: dnsmasq configured for DHCP-only. Edit /etc/dnsmasq.d/adguard-compat.conf to set your DHCP range.${NC}"
+    systemctl restart dnsmasq 2>/dev/null || true
 else
     echo -e "Skipping AdGuard Home installation (user opted out)."
 fi
