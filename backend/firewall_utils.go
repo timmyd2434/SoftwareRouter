@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // initFirewall sets up the basic networking environment
@@ -29,12 +30,39 @@ func enableIPForwarding() {
 
 func setupNAT() {
 	// We need to apply masquerading to the WAN interface.
-	// Since we don't strictly know which is WAN, a common safe default for a router
-	// is to masquerade traffic leaving the interface that has the default route.
+	// 1. Check for an interface explicitly labeled "WAN" in metadata
+	wanIface := ""
+	metaStore, err := loadInterfaceMetadata()
+	if err == nil {
+		for ifaceName, meta := range metaStore.Metadata {
+			if strings.EqualFold(meta.Label, "WAN") {
+				wanIface = ifaceName
+				fmt.Printf("Using explicitly labeled WAN interface: %s\n", wanIface)
+				break
+			}
+		}
+	} else {
+		fmt.Printf("Error loading metadata: %v. Proceeding with auto-detection.\n", err)
+	}
 
-	wanIface, err := getDefaultGatewayInterface()
-	if err != nil {
-		fmt.Printf("Warning: Could not determine WAN interface: %v. NAT may not work.\n", err)
+	// 2. Fallback: Auto-detect default gateway with retry
+	if wanIface == "" {
+		fmt.Println("No WAN label found. Attempting to auto-detect default gateway...")
+		maxRetries := 10
+		for i := 0; i < maxRetries; i++ {
+			wanIface, err = getDefaultGatewayInterface()
+			if err == nil && wanIface != "" {
+				break
+			}
+			if i < maxRetries-1 {
+				fmt.Printf("Waiting for default route... (attempt %d/%d)\n", i+1, maxRetries)
+				time.Sleep(2 * time.Second)
+			}
+		}
+	}
+
+	if wanIface == "" {
+		fmt.Printf("Warning: Could not determine WAN interface after retries. NAT may not work.\n")
 		return
 	}
 
@@ -49,6 +77,9 @@ func setupNAT() {
 
 	// Apply Masquerade to WAN
 	// rule: oifname "wanIface" masquerade
+	// We first flush the chain to avoid duplicates on restart
+	exec.Command("nft", "flush", "chain", "inet", "softrouter", "postrouting").Run()
+
 	cmd := exec.Command("nft", "add", "rule", "inet", "softrouter", "postrouting", "oifname", wanIface, "masquerade")
 	if output, err := cmd.CombinedOutput(); err != nil {
 		fmt.Printf("Error applying NAT rule: %v (%s)\n", err, string(output))
@@ -56,8 +87,8 @@ func setupNAT() {
 		fmt.Println("NAT/Masquerading rule applied successfully.")
 	}
 
-	// Ensure forwarding is allowed (default policy is often accept, but good to be sure)
-	// For now we default to accept all forwarding. In a stricter firewall we'd limit this.
+	// Ensure forwarding is allowed
+	// For now we default to accept all forwarding.
 }
 
 func getDefaultGatewayInterface() (string, error) {
