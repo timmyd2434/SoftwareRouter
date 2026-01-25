@@ -130,7 +130,7 @@ sleep 3
 echo ""
 echo -e "${CYAN}[1/10] Installing System Dependencies...${NC}"
 apt update
-apt install -y curl git golang-go nftables iproute2 systemd jq wget bsdmainutils wireguard openvpn easy-rsa qrencode unbound
+apt install -y curl git golang-go nftables iproute2 systemd jq wget bsdmainutils wireguard openvpn easy-rsa qrencode unbound dnsmasq net-tools iptables ca-certificates gnupg lsb-release
 
 # Install Node.js LTS if not present
 if ! command -v node &> /dev/null; then
