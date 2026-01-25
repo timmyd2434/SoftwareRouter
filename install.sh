@@ -380,6 +380,11 @@ unifi.http.port=8081
 unifi.https.port=8443
 UNIFI_PROPS
 
+        # Fix permissions on data directory (UniFi runs as 'unifi' user, not root)
+        echo -e "Setting proper ownership on UniFi data directory..."
+        chown -R unifi:unifi /usr/lib/unifi/data
+        chmod -R 755 /usr/lib/unifi/data
+
         # Install libssl1.1 (required by UniFi, not in Debian 13 repos)
         if ! dpkg -l | grep -q 'libssl1.1'; then
             echo -e "Installing libssl1.1 (UniFi dependency)..."
@@ -392,6 +397,13 @@ UNIFI_PROPS
         # Install UniFi
         echo -e "Installing UniFi Controller..."
         apt install -y unifi
+        
+        # Pre-generate SSL keystore as unifi user (prevents HTTPS startup failure)
+        echo -e "Generating SSL keystore for HTTPS..."
+        if [ ! -f /usr/lib/unifi/data/keystore ]; then
+            sudo -u unifi keytool -genkey -keyalg RSA -alias unifi -keystore /usr/lib/unifi/data/keystore -storepass aircontrolenterprise -validity 3650 -keysize 4096 -dname "CN=UniFi" 2>/dev/null
+            echo -e "${GREEN}SSL keystore generated.${NC}"
+        fi
         
         systemctl enable unifi
         systemctl start unifi
