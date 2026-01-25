@@ -110,7 +110,7 @@ const Interfaces = () => {
         if (!confirm(`Delete VLAN interface ${interfaceName}?`)) return;
 
         try {
-            const res = await fetch(`${API_ENDPOINTS.INTERFACE_VLAN}?interface=${interfaceName}`, {
+            const res = await authFetch(`${API_ENDPOINTS.INTERFACE_VLAN}?interface=${interfaceName}`, {
                 method: 'DELETE'
             });
 
