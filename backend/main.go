@@ -28,6 +28,8 @@ var (
 const secretFilePath = "/etc/softrouter/token_secret.key"
 const credentialsFilePath = "/etc/softrouter/user_credentials.json"
 const metadataFilePath = "/etc/softrouter/interface_metadata.json"
+const dhcpConfigPath = "/etc/softrouter/dhcp-config.json"
+const dnsmasqDHCPPath = "/etc/dnsmasq.d/softrouter-dhcp.conf"
 
 // tokenSecret is loaded at runtime from a protected file
 var tokenSecret []byte
@@ -205,6 +207,30 @@ type AppConfig struct {
 	ProtectedSubnet string `json:"protected_subnet"`
 	AdBlocker       string `json:"ad_blocker"` // "none", "adguard", "pihole"
 	OpenVPNPort     int    `json:"openvpn_port"`
+}
+
+// DHCPConfig represents DHCP configuration for a single interface
+type DHCPConfig struct {
+	Enabled    bool     `json:"enabled"`
+	StartIP    string   `json:"startIP"`
+	EndIP      string   `json:"endIP"`
+	LeaseTime  string   `json:"leaseTime"` // e.g., "12h"
+	Gateway    string   `json:"gateway"`
+	DNSServers []string `json:"dnsServers"`
+}
+
+// DHCPConfigStore manages all DHCP configurations
+type DHCPConfigStore struct {
+	Configs map[string]DHCPConfig `json:"configs"` // Key: interface name
+}
+
+// DHCPLease represents an active DHCP lease
+type DHCPLease struct {
+	IP        string `json:"ip"`
+	MAC       string `json:"mac"`
+	Hostname  string `json:"hostname"`
+	Expires   string `json:"expires"`
+	Interface string `json:"interface"`
 }
 
 const configFilePath = "/etc/softrouter/config.json"
@@ -2103,6 +2129,12 @@ func main() {
 	mux.HandleFunc("GET /api/security/crowdsec/decisions", authMiddleware(getCrowdSecDecisions))
 	mux.HandleFunc("GET /api/security/stats", authMiddleware(getSecurityStats))
 	mux.HandleFunc("GET /api/dns/stats", authMiddleware(getDNSStats))
+
+	// DHCP Endpoints
+	mux.HandleFunc("GET /api/dhcp/config", authMiddleware(getDHCPConfig))
+	mux.HandleFunc("POST /api/dhcp/config", authMiddleware(setDHCPConfig))
+	mux.HandleFunc("DELETE /api/dhcp/config", authMiddleware(deleteDHCPConfig))
+	mux.HandleFunc("GET /api/dhcp/leases", authMiddleware(getDHCPLeases))
 
 	// VPN Endpoints
 	mux.HandleFunc("GET /api/vpn/clients", authMiddleware(listVPNClients))

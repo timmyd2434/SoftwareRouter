@@ -6,10 +6,13 @@ import { API_ENDPOINTS, authFetch } from '../apiConfig';
 const Interfaces = () => {
     const [interfaces, setInterfaces] = useState([]);
     const [metadata, setMetadata] = useState({});
+    const [dhcpConfigs, setDhcpConfigs] = useState({});
     const [loading, setLoading] = useState(true);
     const [showVLANModal, setShowVLANModal] = useState(false);
     const [showIPModal, setShowIPModal] = useState(false);
-    const [showLabelModal, setShowLabelModal] = useState(false);
+    const [showDHCPModal, setShowDHCPModal] = useState(false);
+    const [showLeasesModal, setShowLeasesModal] = useState(false);
+    const [leases, setLeases] = useState([]);
     const [selectedInterface, setSelectedInterface] = useState(null);
 
     const [vlanForm, setVlanForm] = useState({
@@ -28,6 +31,16 @@ const Interfaces = () => {
         label: '',
         description: '',
         color: '#3b82f6'
+    });
+
+    const [dhcpForm, setDhcpForm] = useState({
+        interfaceName: '',
+        enabled: false,
+        startIP: '',
+        endIP: '',
+        leaseTime: '12h',
+        gateway: '',
+        dnsServers: []
     });
 
     const labelOptions = [
@@ -62,6 +75,33 @@ const Interfaces = () => {
             .catch(err => {
                 console.error('Failed to load metadata:', err);
             });
+    };
+
+    const fetchDhcpConfig = () => {
+        authFetch(API_ENDPOINTS.DHCP_CONFIG)
+            .then(res => res.json())
+            .then(data => {
+                setDhcpConfigs(data.configs || {});
+            })
+            .catch(err => {
+                console.error('Failed to load DHCP config:', err);
+            });
+    };
+
+    const fetchLeases = () => {
+        authFetch(API_ENDPOINTS.DHCP_LEASES)
+            .then(res => res.json())
+            .then(data => {
+                setLeases(data || []);
+            })
+            .catch(err => {
+                console.error('Failed to load DHCP leases:', err);
+            });
+    };
+
+    const openLeasesModal = () => {
+        fetchLeases();
+        setShowLeasesModal(true);
     };
 
     const handleCreateVLAN = async () => {
@@ -216,13 +256,73 @@ const Interfaces = () => {
         setShowIPModal(true);
     };
 
+    const openDHCPModal = (interfaceName) => {
+        const existingConfig = dhcpConfigs[interfaceName] || {
+            enabled: false,
+            startIP: '',
+            endIP: '',
+            leaseTime: '12h',
+            gateway: '',
+            dnsServers: []
+        };
+
+        setDhcpForm({
+            interfaceName,
+            enabled: existingConfig.enabled,
+            startIP: existingConfig.startIP || '',
+            endIP: existingConfig.endIP || '',
+            leaseTime: existingConfig.leaseTime || '12h',
+            gateway: existingConfig.gateway || '',
+            dnsServers: existingConfig.dnsServers || []
+        });
+        setShowDHCPModal(true);
+    };
+
+    const handleSetDhcpConfig = async () => {
+        // Simple validation
+        if (dhcpForm.enabled && (!dhcpForm.startIP || !dhcpForm.endIP)) {
+            alert('Start IP and End IP are required when DHCP is enabled');
+            return;
+        }
+
+        try {
+            const res = await authFetch(API_ENDPOINTS.DHCP_CONFIG, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    interfaceName: dhcpForm.interfaceName,
+                    config: {
+                        enabled: dhcpForm.enabled,
+                        startIP: dhcpForm.startIP,
+                        endIP: dhcpForm.endIP,
+                        leaseTime: dhcpForm.leaseTime,
+                        gateway: dhcpForm.gateway,
+                        dnsServers: dhcpForm.dnsServers
+                    }
+                })
+            });
+
+            if (res.ok) {
+                setShowDHCPModal(false);
+                fetchDhcpConfig();
+            } else {
+                const text = await res.text();
+                alert(`Failed to set DHCP config:\n${text}`);
+            }
+        } catch (err) {
+            alert(`Error: ${err.message}`);
+        }
+    };
+
     useEffect(() => {
         fetchInterfaces();
         fetchMetadata();
+        fetchDhcpConfig();
         // Auto-refresh every 15 seconds
         const interval = setInterval(() => {
             fetchInterfaces();
             fetchMetadata();
+            fetchDhcpConfig();
         }, 15000);
         return () => clearInterval(interval);
     }, []);
@@ -240,6 +340,10 @@ const Interfaces = () => {
                 <div className="header-actions">
                     <button className="icon-btn" onClick={fetchInterfaces} title="Refresh">
                         <RefreshCw size={20} className={loading ? "spin" : ""} />
+                    </button>
+                    <button className="primary-btn" onClick={openLeasesModal} style={{ marginRight: '1rem' }}>
+                        <Network size={18} />
+                        Active Leases
                     </button>
                     <button className="primary-btn" onClick={() => setShowVLANModal(true)}>
                         <Plus size={18} />
@@ -261,8 +365,10 @@ const Interfaces = () => {
                                     key={iface.index}
                                     iface={iface}
                                     metadata={metadata[iface.name]}
+                                    dhcpConfig={dhcpConfigs[iface.name]}
                                     onToggle={handleToggleInterface}
                                     onConfigureIP={openIPModal}
+                                    onConfigureDHCP={openDHCPModal}
                                     onSetLabel={openLabelModal}
                                     onDelete={null}
                                 />
@@ -280,8 +386,10 @@ const Interfaces = () => {
                                         key={iface.index}
                                         iface={iface}
                                         metadata={metadata[iface.name]}
+                                        dhcpConfig={dhcpConfigs[iface.name]}
                                         onToggle={handleToggleInterface}
                                         onConfigureIP={openIPModal}
+                                        onConfigureDHCP={openDHCPModal}
                                         onSetLabel={openLabelModal}
                                         onDelete={handleDeleteVLAN}
                                     />
@@ -441,12 +549,158 @@ const Interfaces = () => {
                     </div>
                 </div>
             )}
+            {/* DHCP Configuration Modal */}
+            {showDHCPModal && (
+                <div className="modal-overlay">
+                    <div className="modal-content">
+                        <div className="modal-header">
+                            <h3>Configure DHCP Server</h3>
+                            <button className="close-btn" onClick={() => setShowDHCPModal(false)}>
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="form-group">
+                                <label>Interface: <strong>{dhcpForm.interfaceName}</strong></label>
+                            </div>
+
+                            <div className="form-group checkbox-group">
+                                <label className="checkbox-label">
+                                    <input
+                                        type="checkbox"
+                                        checked={dhcpForm.enabled}
+                                        onChange={e => setDhcpForm({ ...dhcpForm, enabled: e.target.checked })}
+                                    />
+                                    Enable DHCP Server on this interface
+                                </label>
+                            </div>
+
+                            {dhcpForm.enabled && (
+                                <>
+                                    <div className="form-row">
+                                        <div className="form-group">
+                                            <label>Start IP Address</label>
+                                            <input
+                                                type="text"
+                                                className="form-input"
+                                                value={dhcpForm.startIP}
+                                                onChange={e => setDhcpForm({ ...dhcpForm, startIP: e.target.value })}
+                                                placeholder="e.g., 192.168.1.50"
+                                            />
+                                        </div>
+                                        <div className="form-group">
+                                            <label>End IP Address</label>
+                                            <input
+                                                type="text"
+                                                className="form-input"
+                                                value={dhcpForm.endIP}
+                                                onChange={e => setDhcpForm({ ...dhcpForm, endIP: e.target.value })}
+                                                placeholder="e.g., 192.168.1.150"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="form-group">
+                                        <label>Lease Time</label>
+                                        <input
+                                            type="text"
+                                            className="form-input"
+                                            value={dhcpForm.leaseTime}
+                                            onChange={e => setDhcpForm({ ...dhcpForm, leaseTime: e.target.value })}
+                                            placeholder="e.g., 12h, 7d"
+                                        />
+                                    </div>
+
+                                    <div className="form-group">
+                                        <label>Gateway IP (Optional)</label>
+                                        <input
+                                            type="text"
+                                            className="form-input"
+                                            value={dhcpForm.gateway}
+                                            onChange={e => setDhcpForm({ ...dhcpForm, gateway: e.target.value })}
+                                            placeholder="Leave blank for router IP"
+                                        />
+                                    </div>
+
+                                    <div className="form-group">
+                                        <label>DNS Servers (Optional, Comma Separated)</label>
+                                        <input
+                                            type="text"
+                                            className="form-input"
+                                            value={dhcpForm.dnsServers.join(', ')}
+                                            onChange={e => setDhcpForm({ ...dhcpForm, dnsServers: e.target.value.split(',').map(s => s.trim()).filter(s => s) })}
+                                            placeholder="e.g., 1.1.1.1, 8.8.8.8"
+                                        />
+                                    </div>
+                                </>
+                            )}
+
+                            <div className="info-box">
+                                <AlertCircle size={16} />
+                                <span>DHCP allows devices to automatically get IP addresses when connecting to this interface.</span>
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="cancel-btn" onClick={() => setShowDHCPModal(false)}>Cancel</button>
+                            <button className="primary-btn" onClick={handleSetDhcpConfig}>Save Configuration</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Leases Modal */}
+            {showLeasesModal && (
+                <div className="modal-overlay">
+                    <div className="modal-content large-modal">
+                        <div className="modal-header">
+                            <h3>Active DHCP Leases</h3>
+                            <button className="close-btn" onClick={() => setShowLeasesModal(false)}>
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="leases-table-container">
+                                {leases.length === 0 ? (
+                                    <div className="empty-state">No active leases found</div>
+                                ) : (
+                                    <table className="data-table">
+                                        <thead>
+                                            <tr>
+                                                <th>IP Address</th>
+                                                <th>MAC Address</th>
+                                                <th>Hostname</th>
+                                                <th>Expires</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {leases.map((lease, idx) => (
+                                                <tr key={idx}>
+                                                    <td>{lease.ip}</td>
+                                                    <td>{lease.mac}</td>
+                                                    <td>{lease.hostname}</td>
+                                                    <td>{lease.expires}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                )}
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="primary-btn" onClick={fetchLeases}>
+                                <RefreshCw size={16} /> Refresh
+                            </button>
+                            <button className="cancel-btn" onClick={() => setShowLeasesModal(false)}>Close</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
 
 // Interface Card Component
-const InterfaceCard = ({ iface, metadata, onToggle, onConfigureIP, onSetLabel, onDelete }) => {
+const InterfaceCard = ({ iface, metadata, dhcpConfig, onToggle, onConfigureIP, onConfigureDHCP, onSetLabel, onDelete }) => {
     return (
         <div className={`interface-card glass-panel ${iface.is_up ? 'active' : 'inactive'}`}>
             <div className="iface-header">
@@ -514,6 +768,15 @@ const InterfaceCard = ({ iface, metadata, onToggle, onConfigureIP, onSetLabel, o
                 >
                     <Settings size={16} />
                     IP
+                </button>
+                <button
+                    className={`action-btn ${dhcpConfig?.enabled ? 'active-dhcp' : ''}`}
+                    onClick={() => onConfigureDHCP(iface.name)}
+                    title="Configure DHCP"
+                >
+                    <Network size={16} />
+                    DHCP
+                    {dhcpConfig?.enabled && <span className="status-dot"></span>}
                 </button>
                 <button
                     className={`action-btn ${iface.is_up ? 'danger' : 'success'}`}

@@ -65,6 +65,8 @@ export const API_ENDPOINTS = {
     VPN_CLIENTS: `${API_BASE_URL}/api/vpn/clients`,
     VPN_DOWNLOAD: `${API_BASE_URL}/api/vpn/download`,
     DNS_STATS: `${API_BASE_URL}/api/dns/stats`,
+    DHCP_CONFIG: `${API_BASE_URL}/api/dhcp/config`,
+    DHCP_LEASES: `${API_BASE_URL}/api/dhcp/leases`,
     VPN_CLIENT_STATUS: `${API_BASE_URL}/api/vpn/client/status`,
     VPN_CLIENT_CONFIG: `${API_BASE_URL}/api/vpn/client/config`,
     VPN_CLIENT_CONTROL: `${API_BASE_URL}/api/vpn/client/control`,
