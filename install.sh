@@ -236,12 +236,10 @@ fi
 # 6. Optional Ad-Blocker (Conditional)
 echo -e "${CYAN}[5/10] Ad-Blocking DNS...${NC}"
 if [[ "$INSTALL_AGH" =~ ^[Yy]$ ]]; then
-    echo -e "Installing AdGuard Home..."
-    curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh -s -- -v
-    echo -e "${GREEN}AdGuard Home installed. Complete setup at http://$(hostname -I | awk '{print $1}'):3000${NC}"
-    
-    # Configure dnsmasq to avoid port 53 conflict with AdGuard Home
+    # FIRST: Stop dnsmasq and configure it for DHCP-only mode (before AdGuard takes port 53)
     echo -e "${CYAN}Configuring dnsmasq for DHCP-only mode (AdGuard will handle DNS)...${NC}"
+    systemctl stop dnsmasq 2>/dev/null || true
+    
     cat > /etc/dnsmasq.d/adguard-compat.conf <<'EOF'
 # Disable DNS service on port 53 (AdGuard Home will handle DNS)
 port=0
@@ -256,8 +254,16 @@ port=0
 # Other useful DHCP options
 dhcp-authoritative
 EOF
-    echo -e "${YELLOW}NOTE: dnsmasq configured for DHCP-only. Edit /etc/dnsmasq.d/adguard-compat.conf to set your DHCP range.${NC}"
+    
+    # SECOND: Install AdGuard Home (it will now get port 53)
+    echo -e "Installing AdGuard Home..."
+    curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh -s -- -v
+    echo -e "${GREEN}AdGuard Home installed. Complete setup at http://$(hostname -I | awk '{print $1}'):3000${NC}"
+    
+    # THIRD: Start dnsmasq in DHCP-only mode
+    echo -e "${CYAN}Starting dnsmasq in DHCP-only mode...${NC}"
     systemctl restart dnsmasq 2>/dev/null || true
+    echo -e "${YELLOW}NOTE: dnsmasq configured for DHCP-only. Edit /etc/dnsmasq.d/adguard-compat.conf to set your DHCP range.${NC}"
 else
     echo -e "Skipping AdGuard Home installation (user opted out)."
 fi
