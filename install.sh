@@ -377,6 +377,7 @@ unifi.db.name=unifi
 
 # Custom ports (avoid CrowdSec on 8080)
 unifi.http.port=8081
+unifi.https.port=8443
 UNIFI_PROPS
 
         # Install libssl1.1 (required by UniFi, not in Debian 13 repos)
