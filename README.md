@@ -31,7 +31,7 @@ SoftRouter is optimized for headless servers. Run the comprehensive installer to
 ```bash
 git clone -b Dev https://github.com/timmyd2434/SoftwareRouter.git
 cd SoftwareRouter
-sudo ./master-install.sh
+sudo ./install.sh
 ```
 
 **What the installer handles:**
@@ -79,7 +79,7 @@ The DNS Analytics page integrates with AdGuard Home to display:
 No service restart required - changes take effect immediately!
 
 ### Reclaiming Port 53
-If you install **AdGuard Home** or **Pi-hole**, you must free up port 53 which Ubuntu occupies by default. The `master-install.sh` handles this, but you can do it manually:
+If you install **AdGuard Home** or **Pi-hole**, you must free up port 53 which Ubuntu occupies by default. The `install.sh` script handles this automatically (when you answer "y" to freeing port 53), but you can do it manually:
 ```bash
 # Disable Ubuntu's internal listener
 echo -e "[Resolve]\nDNSStubListener=no" | sudo tee /etc/systemd/resolved.conf.d/softrouter.conf
@@ -102,7 +102,7 @@ tail -f /var/log/suricata/eve.json | jq
 ## 📂 Project Structure
 - `backend/`: Go API server (Port 80). Handles kernel interactions (IP, NFT, systemd).
 - `frontend/`: React + Vite SPA. Modern, glassmorphism-based UI.
-- `master-install.sh`: The "glue" script for full appliance deployment.
+- `install.sh`: All-in-one installation script for full appliance deployment.
 - `/etc/softrouter/`: Secure persistent storage for credentials and configuration.
 
 ## 🛠️ Development
