@@ -445,7 +445,7 @@ systemctl stop softrouter 2>/dev/null || true
 # Backend
 echo -e "Compiling Go Backend..."
 cd backend
-go build -o softrouter-backend main.go vpn_client_utils.go openvpn_server_utils.go
+go build -o softrouter-backend .
 cp softrouter-backend /usr/local/bin/softrouter-backend
 chmod +x /usr/local/bin/softrouter-backend
 cd ..
