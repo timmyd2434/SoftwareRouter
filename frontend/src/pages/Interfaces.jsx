@@ -10,6 +10,7 @@ const Interfaces = () => {
     const [loading, setLoading] = useState(true);
     const [showVLANModal, setShowVLANModal] = useState(false);
     const [showIPModal, setShowIPModal] = useState(false);
+    const [showLabelModal, setShowLabelModal] = useState(false);
     const [showDHCPModal, setShowDHCPModal] = useState(false);
     const [showLeasesModal, setShowLeasesModal] = useState(false);
     const [leases, setLeases] = useState([]);
