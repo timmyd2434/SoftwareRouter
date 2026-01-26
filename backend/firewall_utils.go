@@ -74,6 +74,12 @@ func setupNAT() {
 	// Create chains
 	exec.Command("nft", "add", "chain", "inet", "softrouter", "postrouting", "{ type nat hook postrouting priority 100; policy accept; }").Run()
 	exec.Command("nft", "add", "chain", "inet", "softrouter", "forward", "{ type filter hook forward priority 0; policy accept; }").Run()
+	// Add input chain for local services like DNS
+	exec.Command("nft", "add", "chain", "inet", "softrouter", "input", "{ type filter hook input priority 0; policy accept; }").Run()
+
+	// Ensure DNS (Port 53) is allowed from LAN
+	exec.Command("nft", "add", "rule", "inet", "softrouter", "input", "udp", "dport", "53", "accept").Run()
+	exec.Command("nft", "add", "rule", "inet", "softrouter", "input", "tcp", "dport", "53", "accept").Run()
 
 	// Apply Masquerade to WAN
 	// rule: oifname "wanIface" masquerade
