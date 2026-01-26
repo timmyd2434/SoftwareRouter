@@ -17,10 +17,19 @@ import (
 	"time"
 )
 
+// Security Globals
+var (
+	loginAttempts = make(map[string]int)
+	loginBanUntil = make(map[string]time.Time)
+	loginMu       sync.Mutex
+)
+
 // Auth related constants and structs
 const secretFilePath = "/etc/softrouter/token_secret.key"
 const credentialsFilePath = "/etc/softrouter/user_credentials.json"
 const metadataFilePath = "/etc/softrouter/interface_metadata.json"
+const dhcpConfigPath = "/etc/softrouter/dhcp-config.json"
+const dnsmasqDHCPPath = "/etc/dnsmasq.d/softrouter-dhcp.conf"
 
 // tokenSecret is loaded at runtime from a protected file
 var tokenSecret []byte
@@ -46,6 +55,23 @@ type LoginRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
+
+// Config represents the system configuration
+type Config struct {
+	AdGuard AdGuardConfig `json:"adguard"`
+}
+
+type AdGuardConfig struct {
+	URL      string `json:"url"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+var (
+	config     Config
+	configLock sync.RWMutex
+	configPath = "/etc/softrouter/config.json"
+)
 
 func initWireGuard() {
 	configDir := "/etc/softrouter"
@@ -181,6 +207,30 @@ type AppConfig struct {
 	ProtectedSubnet string `json:"protected_subnet"`
 	AdBlocker       string `json:"ad_blocker"` // "none", "adguard", "pihole"
 	OpenVPNPort     int    `json:"openvpn_port"`
+}
+
+// DHCPConfig represents DHCP configuration for a single interface
+type DHCPConfig struct {
+	Enabled    bool     `json:"enabled"`
+	StartIP    string   `json:"startIP"`
+	EndIP      string   `json:"endIP"`
+	LeaseTime  string   `json:"leaseTime"` // e.g., "12h"
+	Gateway    string   `json:"gateway"`
+	DNSServers []string `json:"dnsServers"`
+}
+
+// DHCPConfigStore manages all DHCP configurations
+type DHCPConfigStore struct {
+	Configs map[string]DHCPConfig `json:"configs"` // Key: interface name
+}
+
+// DHCPLease represents an active DHCP lease
+type DHCPLease struct {
+	IP        string `json:"ip"`
+	MAC       string `json:"mac"`
+	Hostname  string `json:"hostname"`
+	Expires   string `json:"expires"`
+	Interface string `json:"interface"`
 }
 
 const configFilePath = "/etc/softrouter/config.json"
@@ -321,9 +371,19 @@ func verifySecureToken(token string) bool {
 
 func enableCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// CORS
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		// Security Headers
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-XSS-Protection", "1; mode=block")
+		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:;")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
@@ -402,9 +462,29 @@ func login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	creds := loadCredentials()
-	if req.Username == creds.Username && hashPassword(req.Password) == creds.Password {
-		// Generate secure signed token
+	storedCreds := loadCredentials()
+
+	// Check Rate Limit
+	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	loginMu.Lock()
+	if banTime, banned := loginBanUntil[ip]; banned {
+		if time.Now().Before(banTime) {
+			loginMu.Unlock()
+			time.Sleep(2 * time.Second) // Tarpit
+			http.Error(w, "Too many failed attempts. Try again later.", http.StatusTooManyRequests)
+			return
+		}
+		delete(loginBanUntil, ip) // Expired ban
+		delete(loginAttempts, ip)
+	}
+	loginMu.Unlock()
+
+	if req.Username == storedCreds.Username && hashPassword(req.Password) == storedCreds.Password {
+		// Success
+		loginMu.Lock()
+		delete(loginAttempts, ip)
+		loginMu.Unlock()
+
 		token := generateSecureToken(req.Username)
 		// Return just the part after "Bearer " for client storage
 		tokenValue := strings.TrimPrefix(token, "Bearer ")
@@ -414,10 +494,19 @@ func login(w http.ResponseWriter, r *http.Request) {
 			"token": tokenValue,
 			"user":  req.Username,
 		})
-		return
-	}
+	} else {
+		// Failure
+		loginMu.Lock()
+		loginAttempts[ip]++
+		if loginAttempts[ip] >= 5 {
+			loginBanUntil[ip] = time.Now().Add(15 * time.Minute)
+			log.Printf("Banned IP %s due to excessive login failures", ip)
+		}
+		loginMu.Unlock()
 
-	http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		time.Sleep(500 * time.Millisecond) // Artificial delay
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+	}
 }
 
 func updateCredentials(w http.ResponseWriter, r *http.Request) {
@@ -839,6 +928,37 @@ func addFirewallRule(w http.ResponseWriter, r *http.Request) {
 	} // Default
 	if rule.Table == "" || rule.Chain == "" || rule.Raw == "" {
 		http.Error(w, "Missing required fields (table, chain, raw)", http.StatusBadRequest)
+		return
+	}
+
+	// Security: Sanitize firewall rule input to prevent command injection
+	// Block dangerous characters and command sequences
+	dangerousPatterns := []string{";", "|", "&", "$", "`", "$(", "||", "&&", "\n", "\r"}
+	for _, pattern := range dangerousPatterns {
+		if strings.Contains(rule.Raw, pattern) {
+			http.Error(w, "Invalid characters in firewall rule", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Whitelist allowed nftables keywords
+	allowedKeywords := []string{
+		"tcp", "udp", "icmp", "ip", "ip6", "accept", "drop", "reject", "dport", "sport",
+		"daddr", "saddr", "ct", "state", "established", "related", "new", "invalid",
+		"counter", "packets", "bytes", "limit", "rate", "log", "prefix", "to",
+	}
+
+	// Validate that rule contains at least one allowed keyword
+	hasValidKeyword := false
+	ruleLower := strings.ToLower(rule.Raw)
+	for _, keyword := range allowedKeywords {
+		if strings.Contains(ruleLower, keyword) {
+			hasValidKeyword = true
+			break
+		}
+	}
+	if !hasValidKeyword {
+		http.Error(w, "Firewall rule must contain valid nftables keywords", http.StatusBadRequest)
 		return
 	}
 
@@ -1562,56 +1682,250 @@ func getCrowdSecDecisions(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(decisions)
 }
 
-func getDNSStats(w http.ResponseWriter, r *http.Request) {
-	stats := DNSStats{}
+// loadSystemConfig loads configuration from file or uses defaults
+func loadSystemConfig() {
+	configLock.Lock()
+	defer configLock.Unlock()
 
-	// For now, we assume AdGuard Home is on port 3000 or the user-preferred port 90
-	// In a real environment, we'd pull from the actual config.
-	ports := []string{"3000", "90", "80"}
-	var finalData map[string]interface{}
+	// Create config directory if it doesn't exist
+	os.MkdirAll(filepath.Dir(configPath), 0755)
 
-	for _, port := range ports {
-		url := fmt.Sprintf("http://localhost:%s/control/stats", port)
-		// Note: AdGuard Home usually needs Basic Auth.
-		// For this integration to work perfectly, we'd need to store or prompt for AGH credentials.
-		// For now, we try an unauthenticated request (which might fail but is a start)
-		resp, cerr := http.Get(url)
-		if cerr == nil && resp.StatusCode == 200 {
-			json.NewDecoder(resp.Body).Decode(&finalData)
-			resp.Body.Close()
-			break
+	// Try to read existing config file
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		// File doesn't exist, use defaults
+		config = Config{
+			AdGuard: AdGuardConfig{
+				URL:      getEnvOrDefault("AGH_URL", "http://localhost:3000"),
+				Username: os.Getenv("AGH_USERNAME"),
+				Password: os.Getenv("AGH_PASSWORD"),
+			},
+		}
+		// Save default config
+		saveConfigLocked()
+		return
+	}
+
+	// Parse existing config
+	if err := json.Unmarshal(data, &config); err != nil {
+		fmt.Printf("Error parsing config file: %v. Using defaults.\n", err)
+		config = Config{
+			AdGuard: AdGuardConfig{
+				URL:      getEnvOrDefault("AGH_URL", "http://localhost:3000"),
+				Username: os.Getenv("AGH_USERNAME"),
+				Password: os.Getenv("AGH_PASSWORD"),
+			},
 		}
 	}
 
-	if finalData != nil {
-		// Map AGH data to our internal struct
-		if val, ok := finalData["num_dns_queries"].(float64); ok {
-			stats.TotalQueries = int(val)
+	// Environment variables override config file
+	if url := os.Getenv("AGH_URL"); url != "" {
+		config.AdGuard.URL = url
+	}
+	if username := os.Getenv("AGH_USERNAME"); username != "" {
+		config.AdGuard.Username = username
+	}
+	if password := os.Getenv("AGH_PASSWORD"); password != "" {
+		config.AdGuard.Password = password
+	}
+}
+
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+func saveConfigLocked() error {
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(configPath, data, 0600); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
+}
+
+func getSettings(w http.ResponseWriter, r *http.Request) {
+	configLock.RLock()
+	defer configLock.RUnlock()
+
+	// Return config with password masked
+	sanitized := Config{
+		AdGuard: AdGuardConfig{
+			URL:      config.AdGuard.URL,
+			Username: config.AdGuard.Username,
+			Password: maskPassword(config.AdGuard.Password),
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sanitized)
+}
+
+func updateSettings(w http.ResponseWriter, r *http.Request) {
+	var newConfig Config
+	if err := json.NewDecoder(r.Body).Decode(&newConfig); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	configLock.Lock()
+	defer configLock.Unlock()
+
+	// Don't update password if it's the masked value
+	if newConfig.AdGuard.Password == maskPassword(config.AdGuard.Password) {
+		newConfig.AdGuard.Password = config.AdGuard.Password
+	}
+
+	// Update config
+	config = newConfig
+
+	// Save to file
+	if err := saveConfigLocked(); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "success",
+		"message": "Settings updated successfully",
+	})
+}
+
+func maskPassword(password string) string {
+	if password == "" {
+		return ""
+	}
+	return "****"
+}
+
+func getDNSStats(w http.ResponseWriter, r *http.Request) {
+	stats := DNSStats{}
+
+	// Get AdGuard Home configuration from config
+	configLock.RLock()
+	aghURL := config.AdGuard.URL
+	aghUsername := config.AdGuard.Username
+	aghPassword := config.AdGuard.Password
+	configLock.RUnlock()
+
+	if aghURL == "" {
+		aghURL = "http://localhost:3000" // Fallback default
+	}
+
+	// Try to fetch stats from AdGuard Home
+	client := &http.Client{Timeout: 5 * time.Second}
+	req, err := http.NewRequest("GET", aghURL+"/control/stats", nil)
+	if err != nil {
+		// Fall back to mock data
+		stats = getMockDNSStats()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(stats)
+		return
+	}
+
+	// Add Basic Auth if credentials are provided
+	if aghUsername != "" && aghPassword != "" {
+		req.SetBasicAuth(aghUsername, aghPassword)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil || resp.StatusCode != 200 {
+		// Fall back to mock data if AdGuard Home is not available
+		stats = getMockDNSStats()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(stats)
+		return
+	}
+	defer resp.Body.Close()
+
+	var aghData map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&aghData); err != nil {
+		stats = getMockDNSStats()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(stats)
+		return
+	}
+
+	// Parse basic statistics
+	if val, ok := aghData["num_dns_queries"].(float64); ok {
+		stats.TotalQueries = int(val)
+	}
+	if val, ok := aghData["num_blocked_filtering"].(float64); ok {
+		stats.BlockedFiltering = int(val)
+	}
+	if stats.TotalQueries > 0 {
+		stats.BlockedPercentage = (float64(stats.BlockedFiltering) / float64(stats.TotalQueries)) * 100
+	}
+
+	// Parse top blocked domains
+	if topBlocked, ok := aghData["top_blocked_domains"].([]interface{}); ok {
+		for i, item := range topBlocked {
+			if i >= 10 { // Limit to top 10
+				break
+			}
+			if domainData, ok := item.(map[string]interface{}); ok {
+				domain := TopDomain{}
+				if name, ok := domainData["name"].(string); ok {
+					domain.Domain = name
+				}
+				if count, ok := domainData["count"].(float64); ok {
+					domain.Hits = int(count)
+				}
+				if domain.Domain != "" {
+					stats.TopBlocked = append(stats.TopBlocked, domain)
+				}
+			}
 		}
-		if val, ok := finalData["num_blocked_filtering"].(float64); ok {
-			stats.BlockedFiltering = int(val)
-		}
-		if stats.TotalQueries > 0 {
-			stats.BlockedPercentage = (float64(stats.BlockedFiltering) / float64(stats.TotalQueries)) * 100
-		}
-	} else {
-		// Mock data if no ad-blocker is found, so the UI can be developed/tested
-		stats.TotalQueries = 1250
-		stats.BlockedFiltering = 340
-		stats.BlockedPercentage = 27.2
-		stats.TopBlocked = []TopDomain{
-			{Domain: "doubleclick.net", Hits: 85},
-			{Domain: "google-analytics.com", Hits: 62},
-			{Domain: "facebook.com", Hits: 44},
-		}
-		stats.TopQueries = []TopDomain{
-			{Domain: "google.com", Hits: 210},
-			{Domain: "github.com", Hits: 155},
+	}
+
+	// Parse top queried domains
+	if topQueried, ok := aghData["top_queried_domains"].([]interface{}); ok {
+		for i, item := range topQueried {
+			if i >= 10 { // Limit to top 10
+				break
+			}
+			if domainData, ok := item.(map[string]interface{}); ok {
+				domain := TopDomain{}
+				if name, ok := domainData["name"].(string); ok {
+					domain.Domain = name
+				}
+				if count, ok := domainData["count"].(float64); ok {
+					domain.Hits = int(count)
+				}
+				if domain.Domain != "" {
+					stats.TopQueries = append(stats.TopQueries, domain)
+				}
+			}
 		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
+}
+
+// getMockDNSStats returns mock data for development/testing when AdGuard Home is not available
+func getMockDNSStats() DNSStats {
+	return DNSStats{
+		TotalQueries:      1250,
+		BlockedFiltering:  340,
+		BlockedPercentage: 27.2,
+		TopBlocked: []TopDomain{
+			{Domain: "doubleclick.net", Hits: 85},
+			{Domain: "google-analytics.com", Hits: 62},
+			{Domain: "facebook.com", Hits: 44},
+		},
+		TopQueries: []TopDomain{
+			{Domain: "google.com", Hits: 210},
+			{Domain: "github.com", Hits: 155},
+		},
+	}
 }
 
 func getSecurityStats(w http.ResponseWriter, r *http.Request) {
@@ -1779,8 +2093,10 @@ func controlService(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	loadSystemConfig()
 	loadTokenSecret()
 	initWireGuard()
+	initFirewall()
 	go collectTrafficHistory()
 	mux := http.NewServeMux()
 
@@ -1792,6 +2108,8 @@ func main() {
 	mux.HandleFunc("GET /api/config", authMiddleware(getConfig))
 	mux.HandleFunc("POST /api/config", authMiddleware(updateConfig))
 	mux.HandleFunc("POST /api/auth/update-credentials", authMiddleware(updateCredentials))
+	mux.HandleFunc("GET /api/settings", authMiddleware(getSettings))
+	mux.HandleFunc("POST /api/settings", authMiddleware(updateSettings))
 
 	mux.HandleFunc("GET /api/interfaces", authMiddleware(getInterfaces))
 	mux.HandleFunc("POST /api/interfaces/vlan", authMiddleware(createVLAN))
@@ -1812,6 +2130,12 @@ func main() {
 	mux.HandleFunc("GET /api/security/crowdsec/decisions", authMiddleware(getCrowdSecDecisions))
 	mux.HandleFunc("GET /api/security/stats", authMiddleware(getSecurityStats))
 	mux.HandleFunc("GET /api/dns/stats", authMiddleware(getDNSStats))
+
+	// DHCP Endpoints
+	mux.HandleFunc("GET /api/dhcp/config", authMiddleware(getDHCPConfig))
+	mux.HandleFunc("POST /api/dhcp/config", authMiddleware(setDHCPConfig))
+	mux.HandleFunc("DELETE /api/dhcp/config", authMiddleware(deleteDHCPConfig))
+	mux.HandleFunc("GET /api/dhcp/leases", authMiddleware(getDHCPLeases))
 
 	// VPN Endpoints
 	mux.HandleFunc("GET /api/vpn/clients", authMiddleware(listVPNClients))

@@ -11,6 +11,12 @@ const Settings = () => {
         openvpn_port: 1194
     });
 
+    const [adguardSettings, setAdguardSettings] = useState({
+        url: '',
+        username: '',
+        password: ''
+    });
+
     const [creds, setCreds] = useState({
         newUsername: '',
         newPassword: '',
@@ -23,6 +29,7 @@ const Settings = () => {
 
     useEffect(() => {
         fetchConfig();
+        fetchAdGuardSettings();
     }, []);
 
     const fetchConfig = async () => {
@@ -36,6 +43,43 @@ const Settings = () => {
             console.error('Failed to fetch config', err);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const fetchAdGuardSettings = async () => {
+        try {
+            const res = await authFetch(API_ENDPOINTS.SETTINGS);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.adguard) {
+                    setAdguardSettings(data.adguard);
+                }
+            }
+        } catch (err) {
+            console.error('Failed to fetch AdGuard settings', err);
+        }
+    };
+
+    const handleSaveAdGuard = async (e) => {
+        e.preventDefault();
+        setSaving('adguard');
+        setMessage({ type: '', text: '' });
+
+        try {
+            const res = await authFetch(API_ENDPOINTS.SETTINGS, {
+                method: 'POST',
+                body: JSON.stringify({ adguard: adguardSettings })
+            });
+            if (res.ok) {
+                setMessage({ type: 'success', text: 'AdGuard settings saved successfully' });
+                await fetchAdGuardSettings(); // Refresh to get masked password
+            } else {
+                setMessage({ type: 'error', text: 'Failed to save AdGuard settings' });
+            }
+        } catch (err) {
+            setMessage({ type: 'error', text: 'Network error' });
+        } finally {
+            setSaving(null);
         }
     };
 
@@ -162,6 +206,59 @@ const Settings = () => {
                         <button type="submit" className="save-btn" disabled={saving}>
                             {saving === 'creds' ? <Loader2 size={18} className="spin" /> : <Save size={18} />}
                             Update Access
+                        </button>
+                    </form>
+                </div>
+
+                {/* AdGuard Home Integration */}
+                <div className="settings-card glass-panel">
+                    <div className="card-header">
+                        <Shield size={20} className="header-icon shield" />
+                        <h3>AdGuard Home Integration</h3>
+                    </div>
+                    <form onSubmit={handleSaveAdGuard} className="card-form">
+                        <div className="input-group">
+                            <label>AdGuard Home URL</label>
+                            <div className="field-wrapper">
+                                <Globe size={18} />
+                                <input
+                                    type="text"
+                                    value={adguardSettings.url}
+                                    onChange={e => setAdguardSettings({ ...adguardSettings, url: e.target.value })}
+                                    placeholder="http://localhost:3000"
+                                    required
+                                />
+                            </div>
+                            <span className="hint">Full URL including protocol (http:// or https://)</span>
+                        </div>
+                        <div className="input-group">
+                            <label>Username</label>
+                            <div className="field-wrapper">
+                                <User size={18} />
+                                <input
+                                    type="text"
+                                    value={adguardSettings.username}
+                                    onChange={e => setAdguardSettings({ ...adguardSettings, username: e.target.value })}
+                                    placeholder="admin"
+                                />
+                            </div>
+                        </div>
+                        <div className="input-group">
+                            <label>Password</label>
+                            <div className="field-wrapper">
+                                <Lock size={18} />
+                                <input
+                                    type="password"
+                                    value={adguardSettings.password}
+                                    onChange={e => setAdguardSettings({ ...adguardSettings, password: e.target.value })}
+                                    placeholder="Enter password"
+                                />
+                            </div>
+                            <span className="hint">Leave as **** to keep existing password</span>
+                        </div>
+                        <button type="submit" className="save-btn" disabled={saving}>
+                            {saving === 'adguard' ? <Loader2 size={18} className="spin" /> : <Save size={18} />}
+                            Save AdGuard Settings
                         </button>
                     </form>
                 </div>

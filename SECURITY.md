@@ -1,12 +1,22 @@
-# Security Stack Integration Guide
+# Security & Hardening Guide
 
 ## 🛡️ Overview
 
-This router now includes a comprehensive security stack combining:
-- **Suricata** - Signature-based IDS/IPS
-- **CrowdSec** - Behavioral analysis and community threat intelligence
+SoftRouter includes comprehensive multi-layered security:
 
-Both systems work together to provide layered defense against network threats.
+### **Built-in Protection** (Always Active)
+- **HTTP Security Headers** - HSTS, CSP, X-Frame-Options, XSS Protection
+- **Login Rate Limiting** - Automatic 15-minute IP ban after 5 failed attempts  
+- **Input Validation** - Command injection protection for firewall rules, VLAN/IP configs
+- **Session Management** - Secure JWT-style token authentication
+
+### **Optional Security Stack** (Recommended for Production)
+- **Suricata** - Signature-based IDS/IPS for threat detection
+- **CrowdSec** - Behavioral analysis and community threat intelligence
+- **Fail2Ban** - Log-based reactive banning (see [Fail2Ban Setup](./docs/FAIL2BAN_SETUP.md))
+- **HTTPS/TLS** - Encrypted web interface (see [TLS Setup](./docs/TLS_SETUP.md))
+
+All systems work together to provide defense-in-depth against network threats.
 
 ---
 
@@ -17,18 +27,22 @@ Both systems work together to provide layered defense against network threats.
 Run the automated installation script:
 
 ```bash
-cd /path/to/SoftwareRouter
-sudo ./install-security.sh
+git clone -b Dev https://github.com/timmyd2434/SoftwareRouter.git
+cd SoftwareRouter
+sudo ./install.sh
 ```
 
-This script will:
-1. Install Suricata IDS/IPS
-2. Install CrowdSec security engine
-3. Install CrowdSec nftables bouncer
-4. Configure home network settings
-5. Update Suricata rulesets (ET Open)
-6. Install CrowdSec collections for Linux, SSH, HTTP-CVE, and Suricata
-7. Start and enable all services
+During installation, you'll be prompted to install the security stack (Suricata & CrowdSec).
+Answer "y" when asked: **"Install IDS/IPS (Suricata + CrowdSec)? [y/N]"**
+
+The security installation includes:
+1. Suricata IDS/IPS for network threat detection
+2. CrowdSec behavioral analysis and community threat intelligence
+3. CrowdSec nftables bouncer for automatic IP blocking
+4. Home network configuration (you'll provide your LAN CIDR)
+5. Suricata ruleset updates (ET Open)
+6. CrowdSec collections for Linux, SSH, HTTP-CVE, iptables, and Suricata
+7. Automatic service enablement and startup
 
 ### Manual Installation
 
@@ -492,6 +506,20 @@ Suricata can work alongside your NFTables firewall rules:
 
 ---
 
-**Installation script created:** `./install-security.sh`
+## 📚 Additional Security Guides
 
-**Run with:** `sudo ./install-security.sh`
+### Web Interface Hardening
+- **[HTTPS/TLS Setup](./docs/TLS_SETUP.md)** - Secure your web UI with Let's Encrypt SSL certificates
+- **[Fail2Ban Integration](./docs/FAIL2BAN_SETUP.md)** - Add log-based IP banning for enhanced brute-force protection
+
+### Built-in Protections
+SoftRouter includes automatic security features:
+- **Login Rate Limiting**: 5 failed attempts = 15-minute IP ban
+- **Security Headers**: HSTS, CSP, X-Frame-Options automatically applied
+- **Input Validation**: Command injection protection for all system configurations
+
+---
+
+**Main installation script:** `./install.sh`
+
+**Run with:** `sudo ./install.sh` (includes optional security stack installation)

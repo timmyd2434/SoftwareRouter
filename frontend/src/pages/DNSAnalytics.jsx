@@ -7,6 +7,7 @@ import { API_ENDPOINTS, authFetch } from '../apiConfig';
 const DNSAnalytics = () => {
     const [stats, setStats] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [adguardUrl, setAdguardUrl] = useState('');
 
     const fetchStats = async () => {
         try {
@@ -22,8 +23,28 @@ const DNSAnalytics = () => {
         }
     };
 
+    const fetchAdGuardSettings = async () => {
+        try {
+            const res = await authFetch(API_ENDPOINTS.SETTINGS);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.adguard && data.adguard.url) {
+                    setAdguardUrl(data.adguard.url);
+                } else {
+                    // Fallback to default port 3000 if not configured
+                    setAdguardUrl(`http://${window.location.hostname}:3000`);
+                }
+            }
+        } catch (err) {
+            console.error("Failed to fetch AdGuard settings", err);
+            // Fallback to default port 3000 on error
+            setAdguardUrl(`http://${window.location.hostname}:3000`);
+        }
+    };
+
     useEffect(() => {
         fetchStats();
+        fetchAdGuardSettings();
         const interval = setInterval(fetchStats, 60000); // Update every minute
         return () => clearInterval(interval);
     }, []);
@@ -166,7 +187,7 @@ const DNSAnalytics = () => {
                     <h3>Advanced Management</h3>
                     <p>For detailed rule customization, upstream DNS settings, and per-client filtering, use the full AdGuard Home interface.</p>
                     <a
-                        href={`http://${window.location.hostname}:3000`}
+                        href={adguardUrl || `http://${window.location.hostname}:3000`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="external-link-btn"
