@@ -62,12 +62,12 @@ tr:last-child td {
 }
 
 .badge {
-    display: inline-block;
     padding: 0.25rem 0.6rem;
     border-radius: 4px;
     font-size: 0.75rem !important;
     font-weight: 600;
     line-height: 1.2;
+    white-space: nowrap;
     color: var(--text-main) !important;
 }
 
