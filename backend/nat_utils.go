@@ -125,6 +125,12 @@ func applyPortForwardingRules() {
 
 func addPortForwardingRule(rule PortForwardingRule) error {
 	pfStoreLock.Lock()
+
+	// Validate/Default Protocol
+	if rule.Protocol != "udp" {
+		rule.Protocol = "tcp"
+	}
+
 	pfStore.Rules = append(pfStore.Rules, rule)
 	pfStoreLock.Unlock()
 
