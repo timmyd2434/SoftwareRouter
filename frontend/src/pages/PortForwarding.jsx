@@ -134,13 +134,14 @@ const PortForwarding = () => {
                                 {rules.map((rule) => (
                                     <tr key={rule.id}>
                                         <td style={{
-                                            padding: '0.25rem 0.6rem',
-                                            borderRadius: '4px',
-                                            backgroundColor: rule.protocol === 'udp' ? 'rgba(249, 115, 22, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                                            padding: '0.35rem 0.75rem',
+                                            borderRadius: '6px',
+                                            backgroundColor: rule.protocol === 'udp' ? 'rgba(249, 115, 22, 0.15)' : 'rgba(59, 130, 246, 0.15)',
                                             color: rule.protocol === 'udp' ? '#fb923c' : '#60a5fa',
                                             fontWeight: '600',
-                                            fontSize: '0.75rem',
-                                            whiteSpace: 'nowrap'
+                                            fontSize: '0.8rem',
+                                            whiteSpace: 'nowrap',
+                                            textAlign: 'center'
                                         }}>
                                             {(rule.protocol || 'tcp').toUpperCase()}
                                         </td>
