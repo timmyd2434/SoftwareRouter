@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Trash2, Plus, ArrowRight, Save, X } from 'lucide-react';
+import { Trash2, Plus, ArrowRight, Save, X, Edit2 } from 'lucide-react';
 import { API_ENDPOINTS, authFetch } from '../apiConfig';
 import './PortForwarding.css';
 
@@ -8,6 +8,7 @@ const PortForwarding = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [showAddModal, setShowAddModal] = useState(false);
+    const [editingRule, setEditingRule] = useState(null);
 
     // Form State
     const [newRule, setNewRule] = useState({
@@ -61,6 +62,18 @@ const PortForwarding = () => {
         }
     };
 
+    const handleEdit = (rule) => {
+        setEditingRule(rule);
+        setNewRule({
+            description: rule.description || '',
+            protocol: rule.protocol || 'tcp',
+            external_port: rule.external_port.toString(),
+            internal_ip: rule.internal_ip,
+            internal_port: rule.internal_port.toString()
+        });
+        setShowAddModal(true);
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
@@ -71,17 +84,32 @@ const PortForwarding = () => {
                 internal_port: parseInt(newRule.internal_port)
             };
 
-            const response = await authFetch(API_ENDPOINTS.PORT_FORWARDING, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(payload)
-            });
+            if (editingRule) {
+                // Update existing rule
+                const response = await authFetch(`${API_ENDPOINTS.PORT_FORWARDING}?id=${editingRule.id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
 
-            if (!response.ok) throw new Error('Failed to create rule');
+                if (!response.ok) throw new Error('Failed to update rule');
+            } else {
+                // Create new rule
+                const response = await authFetch(API_ENDPOINTS.PORT_FORWARDING, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) throw new Error('Failed to create rule');
+            }
 
             setShowAddModal(false);
+            setEditingRule(null);
             setNewRule({
                 description: '',
                 protocol: 'tcp',
@@ -153,8 +181,16 @@ const PortForwarding = () => {
                                         <td>{rule.description || '-'}</td>
                                         <td>
                                             <button
+                                                className="btn-icon"
+                                                onClick={() => handleEdit(rule)}
+                                                title="Edit rule"
+                                            >
+                                                <Edit2 size={16} />
+                                            </button>
+                                            <button
                                                 className="btn-icon danger"
                                                 onClick={() => handleDelete(rule.id)}
+                                                title="Delete rule"
                                             >
                                                 <Trash2 size={16} />
                                             </button>
@@ -171,7 +207,7 @@ const PortForwarding = () => {
                 <div className="modal-overlay">
                     <div className="modal">
                         <div className="modal-header">
-                            <h2>Add Port Forwarding Rule</h2>
+                            <h2>{editingRule ? 'Edit' : 'Add'} Port Forwarding Rule</h2>
                             <button className="btn-icon" onClick={() => setShowAddModal(false)}>
                                 <X size={20} />
                             </button>
@@ -236,11 +272,23 @@ const PortForwarding = () => {
                             </div>
 
                             <div className="modal-actions">
-                                <button type="button" className="btn-secondary" onClick={() => setShowAddModal(false)}>
+                                <button type="button" className="btn-secondary" onClick={() => {
+                                    setShowAddModal(false);
+                                    setEditingRule(null);
+                                    setNewRule({
+                                        description: '',
+                                        protocol: 'tcp',
+                                        external_port: '',
+                                        internal_ip: '',
+                                        internal_port: ''
+                                    });
+                                }}>
+                                    <X size={18} />
                                     Cancel
                                 </button>
                                 <button type="submit" className="btn-primary">
-                                    <Save size={18} /> Save Rule
+                                    <Save size={18} />
+                                    {editingRule ? 'Update' : 'Create'} Rule
                                 </button>
                             </div>
                         </form>

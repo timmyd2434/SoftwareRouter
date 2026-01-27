@@ -165,3 +165,38 @@ func deletePortForwardingRule(id string) error {
 	applyPortForwardingRules()
 	return nil
 }
+
+func updatePortForwardingRule(id string, updatedRule PortForwardingRule) error {
+	pfStoreLock.Lock()
+	found := false
+
+	// Validate/Default Protocol
+	if updatedRule.Protocol != "udp" {
+		updatedRule.Protocol = "tcp"
+	}
+
+	for i, r := range pfStore.Rules {
+		if r.ID == id {
+			// Keep the same ID and enabled status
+			updatedRule.ID = id
+			if updatedRule.Enabled == false && r.Enabled == false {
+				// Preserve enabled status if not explicitly set
+				updatedRule.Enabled = r.Enabled
+			}
+			pfStore.Rules[i] = updatedRule
+			found = true
+			break
+		}
+	}
+	pfStoreLock.Unlock()
+
+	if !found {
+		return fmt.Errorf("rule not found")
+	}
+
+	if err := savePortForwardingRules(); err != nil {
+		return err
+	}
+	applyPortForwardingRules()
+	return nil
+}

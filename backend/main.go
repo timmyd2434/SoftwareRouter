@@ -2147,6 +2147,38 @@ func removePortForwardingRule(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 
+func updatePortForwardingRuleHandler(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "ID required", http.StatusBadRequest)
+		return
+	}
+
+	var rule PortForwardingRule
+	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	// Basic Validation
+	if rule.ExternalPort < 1 || rule.ExternalPort > 65535 || rule.InternalPort < 1 || rule.InternalPort > 65535 {
+		http.Error(w, "Invalid ports", http.StatusBadRequest)
+		return
+	}
+	if rule.InternalIP == "" {
+		http.Error(w, "Internal IP required", http.StatusBadRequest)
+		return
+	}
+
+	if err := updatePortForwardingRule(id, rule); err != nil {
+		http.Error(w, "Failed to update rule: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(rule)
+}
+
 func main() {
 	loadSystemConfig()
 	loadTokenSecret()
@@ -2219,6 +2251,7 @@ func main() {
 	// Port Forwarding
 	mux.HandleFunc("GET /api/port-forwarding", authMiddleware(listPortForwardingRules))
 	mux.HandleFunc("POST /api/port-forwarding", authMiddleware(createPortForwardingRule))
+	mux.HandleFunc("PUT /api/port-forwarding", authMiddleware(updatePortForwardingRuleHandler))
 	mux.HandleFunc("DELETE /api/port-forwarding", authMiddleware(removePortForwardingRule))
 
 	// SPA Static File Server
