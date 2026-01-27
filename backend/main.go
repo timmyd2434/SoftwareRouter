@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Security Globals
@@ -799,7 +801,7 @@ func getSystemStatus(w http.ResponseWriter, r *http.Request) {
 
 	status := SystemStatus{
 		Hostname:    hostname,
-		OS:          fmt.Sprintf("%s (%s)", runtime.GOOS, runtime.GOARCH),
+		OS:          runtime.GOOS,
 		Uptime:      uptime,
 		CPUUsage:    cpuUsage,
 		MemoryUsed:  memUsed,
@@ -2092,11 +2094,65 @@ func controlService(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// --- Port Forwarding Handlers ---
+
+func listPortForwardingRules(w http.ResponseWriter, r *http.Request) {
+	pfStoreLock.RLock()
+	defer pfStoreLock.RUnlock()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(pfStore.Rules)
+}
+
+func createPortForwardingRule(w http.ResponseWriter, r *http.Request) {
+	var rule PortForwardingRule
+	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	// Basic Validation
+	if rule.ExternalPort < 1 || rule.ExternalPort > 65535 || rule.InternalPort < 1 || rule.InternalPort > 65535 {
+		http.Error(w, "Invalid ports", http.StatusBadRequest)
+		return
+	}
+	if rule.InternalIP == "" {
+		http.Error(w, "Internal IP required", http.StatusBadRequest)
+		return
+	}
+
+	rule.ID = uuid.New().String()
+	rule.Enabled = true // Default to enabled
+
+	if err := addPortForwardingRule(rule); err != nil {
+		http.Error(w, "Failed to save rule: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(rule)
+}
+
+func removePortForwardingRule(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "ID required", http.StatusBadRequest)
+		return
+	}
+
+	if err := deletePortForwardingRule(id); err != nil {
+		http.Error(w, "Failed to delete rule: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
 func main() {
 	loadSystemConfig()
 	loadTokenSecret()
 	initWireGuard()
 	initFirewall()
+	initPortForwarding()
 	go collectTrafficHistory()
 	mux := http.NewServeMux()
 
@@ -2157,7 +2213,13 @@ func main() {
 	mux.HandleFunc("GET /api/vpn/server-openvpn/clients", authMiddleware(listOpenVPNClients))
 	mux.HandleFunc("POST /api/vpn/server-openvpn/clients", authMiddleware(createOpenVPNClient))
 	mux.HandleFunc("DELETE /api/vpn/server-openvpn/clients", authMiddleware(deleteOpenVPNClient))
+	mux.HandleFunc("DELETE /api/vpn/server-openvpn/clients", authMiddleware(deleteOpenVPNClient))
 	mux.HandleFunc("GET /api/vpn/server-openvpn/download", authMiddleware(downloadOpenVPNClient))
+
+	// Port Forwarding
+	mux.HandleFunc("GET /api/port-forwarding", authMiddleware(listPortForwardingRules))
+	mux.HandleFunc("POST /api/port-forwarding", authMiddleware(createPortForwardingRule))
+	mux.HandleFunc("DELETE /api/port-forwarding", authMiddleware(removePortForwardingRule))
 
 	// SPA Static File Server
 	// Serve from /var/www/softrouter/html

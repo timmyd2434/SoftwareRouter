@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Network, ShieldCheck, Activity, Settings, Menu, X, LogOut, Lock, Server, Globe, ExternalLink, Box } from 'lucide-react';
+import { LayoutDashboard, Network, ShieldCheck, Activity, Settings, Menu, X, LogOut, Lock, Server, Globe, ExternalLink, Box, ArrowRight } from 'lucide-react';
 import './Sidebar.css';
 
 const Sidebar = ({ isOpen, toggleSidebar, onLogout }) => {
@@ -13,6 +13,7 @@ const Sidebar = ({ isOpen, toggleSidebar, onLogout }) => {
         { icon: Globe, label: 'Remote Access', path: '/remote-access' },
         { icon: Server, label: 'Services', path: '/services' },
         { icon: ShieldCheck, label: 'DNS Analytics', path: '/dns-analytics' },
+        { icon: ArrowRight, label: 'Port Forwarding', path: '/port-forwarding' },
         { icon: Settings, label: 'Settings', path: '/settings' },
         {
             icon: Box,

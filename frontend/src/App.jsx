@@ -11,6 +11,7 @@ import Login from './pages/Login';
 import Settings from './pages/Settings';
 import RemoteAccess from './pages/RemoteAccess';
 import DNSAnalytics from './pages/DNSAnalytics';
+import PortForwarding from './pages/PortForwarding';
 import './App.css';
 
 function App() {
@@ -42,6 +43,7 @@ function App() {
           <Route path="/remote-access" element={<RemoteAccess />} />
           <Route path="/services" element={<Services />} />
           <Route path="/dns-analytics" element={<DNSAnalytics />} />
+          <Route path="/port-forwarding" element={<PortForwarding />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
