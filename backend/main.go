@@ -2213,7 +2213,7 @@ func main() {
 	mux.HandleFunc("GET /api/vpn/server-openvpn/clients", authMiddleware(listOpenVPNClients))
 	mux.HandleFunc("POST /api/vpn/server-openvpn/clients", authMiddleware(createOpenVPNClient))
 	mux.HandleFunc("DELETE /api/vpn/server-openvpn/clients", authMiddleware(deleteOpenVPNClient))
-	mux.HandleFunc("DELETE /api/vpn/server-openvpn/clients", authMiddleware(deleteOpenVPNClient))
+
 	mux.HandleFunc("GET /api/vpn/server-openvpn/download", authMiddleware(downloadOpenVPNClient))
 
 	// Port Forwarding
