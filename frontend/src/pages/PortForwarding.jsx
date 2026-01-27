@@ -30,6 +30,13 @@ const PortForwarding = () => {
             if (!response.ok) throw new Error('Failed to fetch rules');
 
             const data = await response.json();
+            console.log('=== PORT FORWARDING DEBUG ===');
+            console.log('Full API Response:', data);
+            if (data && data.length > 0) {
+                console.log('First rule:', data[0]);
+                console.log('First rule protocol:', data[0].protocol);
+            }
+            console.log('=============================');
             setRules(data || []);
         } catch (err) {
             setError(err.message);
