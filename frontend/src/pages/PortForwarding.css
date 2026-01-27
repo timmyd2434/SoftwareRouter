@@ -64,11 +64,11 @@ tr:last-child td {
 .badge {
     padding: 0.25rem 0.6rem;
     border-radius: 4px;
-    font-size: 0.75rem !important;
+    font-size: 0.75rem;
     font-weight: 600;
     line-height: 1.2;
     white-space: nowrap;
-    color: var(--text-main) !important;
+    color: var(--text-main);
 }
 
 .badge.tcp {
