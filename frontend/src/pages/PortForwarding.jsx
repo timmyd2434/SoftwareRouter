@@ -133,7 +133,15 @@ const PortForwarding = () => {
                             <tbody>
                                 {rules.map((rule) => (
                                     <tr key={rule.id}>
-                                        <td className={`badge ${(rule.protocol || 'tcp').toLowerCase()}`}>
+                                        <td style={{
+                                            padding: '0.25rem 0.6rem',
+                                            borderRadius: '4px',
+                                            backgroundColor: rule.protocol === 'udp' ? 'rgba(249, 115, 22, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                                            color: rule.protocol === 'udp' ? '#fb923c' : '#60a5fa',
+                                            fontWeight: '600',
+                                            fontSize: '0.75rem',
+                                            whiteSpace: 'nowrap'
+                                        }}>
                                             {(rule.protocol || 'tcp').toUpperCase()}
                                         </td>
                                         <td className="port-cell">{rule.external_port}</td>
