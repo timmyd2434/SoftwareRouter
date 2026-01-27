@@ -127,9 +127,11 @@ const PortForwarding = () => {
                                 {rules.map((rule) => (
                                     <tr key={rule.id}>
                                         <td>
-                                            <span className={`badge ${rule.protocol || 'tcp'}`}>
-                                                {(rule.protocol || 'tcp').toUpperCase()}
-                                            </span>
+                                            <td>
+                                                <span className={`badge ${(rule.protocol || 'tcp').toLowerCase()}`}>
+                                                    {(rule.protocol || 'tcp').toUpperCase()}
+                                                </span>
+                                            </td>
                                         </td>
                                         <td className="port-cell">{rule.external_port}</td>
                                         <td className="arrow-cell"><ArrowRight size={16} /></td>
