@@ -62,6 +62,29 @@ const PortForwarding = () => {
         }
     };
 
+    const handleToggle = async (rule) => {
+        try {
+            const updatedRule = {
+                ...rule,
+                enabled: !rule.enabled
+            };
+
+            const response = await authFetch(`${API_ENDPOINTS.PORT_FORWARDING}?id=${rule.id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(updatedRule)
+            });
+
+            if (!response.ok) throw new Error('Failed to toggle rule');
+
+            fetchRules();
+        } catch (err) {
+            alert(err.message);
+        }
+    };
+
     const handleEdit = (rule) => {
         setEditingRule(rule);
         setNewRule({
@@ -155,6 +178,7 @@ const PortForwarding = () => {
                                     <th></th>
                                     <th>Internal Address</th>
                                     <th>Description</th>
+                                    <th>Status</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -179,6 +203,16 @@ const PortForwarding = () => {
                                             {rule.internal_ip}:{rule.internal_port}
                                         </td>
                                         <td>{rule.description || '-'}</td>
+                                        <td>
+                                            <label className="toggle-switch">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={rule.enabled !== false}
+                                                    onChange={() => handleToggle(rule)}
+                                                />
+                                                <span className="toggle-slider"></span>
+                                            </label>
+                                        </td>
                                         <td>
                                             <button
                                                 className="btn-icon"
