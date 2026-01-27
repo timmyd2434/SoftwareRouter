@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Trash2, Plus, ArrowRight, Save, X } from 'lucide-react';
-import { api } from '../apiConfig';
+import { API_ENDPOINTS, authFetch } from '../apiConfig';
 import './PortForwarding.css';
 
 const PortForwarding = () => {
@@ -25,10 +25,7 @@ const PortForwarding = () => {
     const fetchRules = async () => {
         try {
             setLoading(true);
-            const token = localStorage.getItem('sr_token');
-            const response = await fetch(`${api.API_URL}/api/port-forwarding`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const response = await authFetch(API_ENDPOINTS.PORT_FORWARDING);
 
             if (!response.ok) throw new Error('Failed to fetch rules');
 
@@ -45,10 +42,8 @@ const PortForwarding = () => {
         if (!window.confirm('Are you sure you want to delete this rule?')) return;
 
         try {
-            const token = localStorage.getItem('sr_token');
-            const response = await fetch(`${api.API_URL}/api/port-forwarding?id=${id}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
+            const response = await authFetch(`${API_ENDPOINTS.PORT_FORWARDING}?id=${id}`, {
+                method: 'DELETE'
             });
 
             if (!response.ok) throw new Error('Failed to delete rule');
@@ -62,7 +57,6 @@ const PortForwarding = () => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
-            const token = localStorage.getItem('sr_token');
             // Convert ports to numbers
             const payload = {
                 ...newRule,
@@ -70,11 +64,10 @@ const PortForwarding = () => {
                 internal_port: parseInt(newRule.internal_port)
             };
 
-            const response = await fetch(`${api.API_URL}/api/port-forwarding`, {
+            const response = await authFetch(API_ENDPOINTS.PORT_FORWARDING, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify(payload)
             });
