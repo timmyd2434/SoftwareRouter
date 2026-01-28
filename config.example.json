@@ -1,0 +1,22 @@
+{
+    "adguard": {
+        "url": "",
+        "username": "",
+        "password": ""
+    },
+    "tls": {
+        "enabled": false,
+        "cert_file": "/etc/softrouter/tls/cert.pem",
+        "key_file": "/etc/softrouter/tls/key.pem",
+        "port": ":443"
+    },
+    "cors": {
+        "allowed_origins": [
+            "http://localhost:5173"
+        ]
+    },
+    "cloudflare_token": "",
+    "protected_subnet": "10.0.0.0/24",
+    "ad_blocker": "none",
+    "openvpn_port": 1194
+}

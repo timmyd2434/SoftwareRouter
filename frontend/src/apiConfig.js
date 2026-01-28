@@ -23,6 +23,35 @@ const getApiBaseUrl = () => {
 
 export const API_BASE_URL = getApiBaseUrl();
 
+// CSRF Token Management
+let csrfToken = null;
+
+export const getCSRFToken = async () => {
+    if (csrfToken) return csrfToken;
+
+    const token = localStorage.getItem('sr_token');
+    if (!token) return null;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/csrf-token`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            }
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            csrfToken = data.token;
+            return csrfToken;
+        }
+    } catch (error) {
+        console.error('Failed to fetch CSRF token:', error);
+    }
+
+    return null;
+};
+
 export const authFetch = async (url, options = {}) => {
     const token = localStorage.getItem('sr_token');
     const headers = {
@@ -31,11 +60,20 @@ export const authFetch = async (url, options = {}) => {
         'Content-Type': 'application/json',
     };
 
+    // Add CSRF token for state-changing operations
+    if (options.method && ['POST', 'PUT', 'DELETE'].includes(options.method.toUpperCase())) {
+        const csrf = await getCSRFToken();
+        if (csrf) {
+            headers['X-CSRF-Token'] = csrf;
+        }
+    }
+
     const response = await fetch(url, { ...options, headers });
 
     if (response.status === 401) {
         localStorage.removeItem('sr_token');
         localStorage.removeItem('sr_user');
+        csrfToken = null; // Clear CSRF token on logout
         window.location.reload(); // Force redirect to login
     }
 
@@ -44,6 +82,7 @@ export const authFetch = async (url, options = {}) => {
 
 export const API_ENDPOINTS = {
     LOGIN: `${API_BASE_URL}/api/login`,
+    CSRF_TOKEN: `${API_BASE_URL}/api/csrf-token`,
     UPDATE_CREDS: `${API_BASE_URL}/api/auth/update-credentials`,
     CONFIG: `${API_BASE_URL}/api/config`,
     STATUS: `${API_BASE_URL}/api/status`,
@@ -78,4 +117,5 @@ export const API_ENDPOINTS = {
     PORT_FORWARDING: `${API_BASE_URL}/api/port-forwarding`,
     SETTINGS: `${API_BASE_URL}/api/settings`,
 };
+
 

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Security Globals
@@ -24,6 +25,10 @@ var (
 	loginAttempts = make(map[string]int)
 	loginBanUntil = make(map[string]time.Time)
 	loginMu       sync.Mutex
+
+	// CSRF Protection
+	csrfTokens    sync.Map // map[token]time.Time
+	csrfExpiryDur = 24 * time.Hour
 )
 
 // Auth related constants and structs
@@ -61,12 +66,25 @@ type LoginRequest struct {
 // Config represents the system configuration
 type Config struct {
 	AdGuard AdGuardConfig `json:"adguard"`
+	TLS     TLSConfig     `json:"tls"`
+	CORS    CORSConfig    `json:"cors"`
 }
 
 type AdGuardConfig struct {
 	URL      string `json:"url"`
 	Username string `json:"username"`
 	Password string `json:"password"`
+}
+
+type TLSConfig struct {
+	Enabled  bool   `json:"enabled"`
+	CertFile string `json:"cert_file"`
+	KeyFile  string `json:"key_file"`
+	Port     string `json:"port"` // Default ":443"
+}
+
+type CORSConfig struct {
+	AllowedOrigins []string `json:"allowed_origins"`
 }
 
 var (
@@ -262,7 +280,8 @@ func saveConfig(cfg AppConfig) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(configFilePath, data, 0644)
+	// Use 0640 permissions (owner read/write, group read)
+	return os.WriteFile(configFilePath, data, 0640)
 }
 
 // InterfaceMetadataStore manages interface metadata
@@ -373,10 +392,34 @@ func verifySecureToken(token string) bool {
 
 func enableCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// CORS
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		// Get allowed origins from config
+		configLock.RLock()
+		allowedOrigins := config.CORS.AllowedOrigins
+		configLock.RUnlock()
+
+		// Default to localhost for development if not configured
+		if len(allowedOrigins) == 0 {
+			allowedOrigins = []string{"http://localhost:5173"}
+		}
+
+		// Check if request origin is allowed
+		origin := r.Header.Get("Origin")
+		allowed := false
+		for _, allowedOrigin := range allowedOrigins {
+			if origin == allowedOrigin || allowedOrigin == "*" {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				allowed = true
+				break
+			}
+		}
+
+		// If origin not specifically allowed and no wildcard, don't set CORS headers
+		if !allowed {
+			w.Header().Set("Access-Control-Allow-Origin", allowedOrigins[0])
+		}
+
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token")
 
 		// Security Headers
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -396,9 +439,32 @@ func enableCORS(next http.Handler) http.Handler {
 
 // --- Auth Helpers ---
 
-func hashPassword(password string) string {
+// Legacy SHA256 hash (for migration only)
+func hashPasswordSHA256(password string) string {
 	hash := sha256.Sum256([]byte(password))
 	return hex.EncodeToString(hash[:])
+}
+
+// New bcrypt hash (secure)
+func hashPassword(password string) (string, error) {
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 12)
+	return string(bytes), err
+}
+
+// Verify password - supports both bcrypt and legacy SHA256
+func verifyPassword(password, hash string) bool {
+	// Try bcrypt first (starts with $2a$, $2b$, or $2y$)
+	if strings.HasPrefix(hash, "$2") {
+		err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+		return err == nil
+	}
+
+	// Fallback to legacy SHA256 (64 hex characters)
+	if len(hash) == 64 {
+		return hashPasswordSHA256(password) == hash
+	}
+
+	return false
 }
 
 func loadCredentials() UserCredentials {
@@ -431,7 +497,65 @@ func saveCredentials(creds UserCredentials) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(credentialsFilePath, data, 0644)
+	// Use 0600 permissions for security (owner read/write only)
+	return os.WriteFile(credentialsFilePath, data, 0600)
+}
+
+// --- CSRF Protection ---
+
+func generateCSRFToken() string {
+	token := uuid.New().String()
+	csrfTokens.Store(token, time.Now().Add(csrfExpiryDur))
+	return token
+}
+
+func validateCSRFToken(token string) bool {
+	if token == "" {
+		return false
+	}
+
+	val, ok := csrfTokens.Load(token)
+	if !ok {
+		return false
+	}
+
+	expiry, ok := val.(time.Time)
+	if !ok || time.Now().After(expiry) {
+		csrfTokens.Delete(token)
+		return false
+	}
+
+	return true
+}
+
+// Clean up expired CSRF tokens periodically
+func cleanupCSRFTokens() {
+	ticker := time.NewTicker(1 * time.Hour)
+	go func() {
+		for range ticker.C {
+			csrfTokens.Range(func(key, value interface{}) bool {
+				if expiry, ok := value.(time.Time); ok && time.Now().After(expiry) {
+					csrfTokens.Delete(key)
+				}
+				return true
+			})
+		}
+	}()
+}
+
+// csrfMiddleware validates CSRF tokens for state-changing operations
+func csrfMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Only check CSRF for state-changing methods
+		if r.Method != "GET" && r.Method != "OPTIONS" && r.Method != "HEAD" {
+			token := r.Header.Get("X-CSRF-Token")
+			if !validateCSRFToken(token) {
+				http.Error(w, "Invalid or missing CSRF token", http.StatusForbidden)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	}
 }
 
 // Simple token based auth middleware
@@ -481,11 +605,25 @@ func login(w http.ResponseWriter, r *http.Request) {
 	}
 	loginMu.Unlock()
 
-	if req.Username == storedCreds.Username && hashPassword(req.Password) == storedCreds.Password {
+	if req.Username == storedCreds.Username && verifyPassword(req.Password, storedCreds.Password) {
 		// Success
 		loginMu.Lock()
 		delete(loginAttempts, ip)
 		loginMu.Unlock()
+
+		// Auto-migrate from SHA256 to bcrypt if needed
+		if len(storedCreds.Password) == 64 { // SHA256 hash detected
+			log.Printf("Auto-migrating password for user %s to bcrypt", req.Username)
+			newHash, err := hashPassword(req.Password)
+			if err == nil {
+				storedCreds.Password = newHash
+				if err := saveCredentials(storedCreds); err != nil {
+					log.Printf("WARNING: Failed to migrate password: %v", err)
+				} else {
+					log.Printf("Password successfully migrated to bcrypt for user %s", req.Username)
+				}
+			}
+		}
 
 		token := generateSecureToken(req.Username)
 		// Return just the part after "Bearer " for client storage
@@ -518,9 +656,16 @@ func updateCredentials(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Hash password with bcrypt
+	newHash, err := hashPassword(req.NewPassword)
+	if err != nil {
+		http.Error(w, "Failed to hash password", http.StatusInternalServerError)
+		return
+	}
+
 	newCreds := UserCredentials{
 		Username: req.NewUsername,
-		Password: hashPassword(req.NewPassword),
+		Password: newHash,
 	}
 
 	if err := saveCredentials(newCreds); err != nil {
@@ -2185,11 +2330,19 @@ func main() {
 	initWireGuard()
 	initFirewall()
 	initPortForwarding()
+	cleanupCSRFTokens() // Start CSRF token cleanup
 	go collectTrafficHistory()
 	mux := http.NewServeMux()
 
 	// Public Auth Endpoints
 	mux.HandleFunc("POST /api/login", login)
+
+	// CSRF Token Endpoint  (authenticated)
+	mux.HandleFunc("GET /api/csrf-token", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		token := generateCSRFToken()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"token": token})
+	}))
 
 	// Protected Endpoints
 	mux.HandleFunc("GET /api/status", authMiddleware(getSystemStatus))
@@ -2275,16 +2428,70 @@ func main() {
 		http.FileServer(http.Dir(staticDir)).ServeHTTP(w, r)
 	})
 
-	port := ":80"
-	log.Printf("SoftRouter Governance Service starting on port %s", port)
-
 	handler := enableCORS(mux)
 
-	// Attempt to bind to standard port 80, fallback to 8080 if needed
-	if err := http.ListenAndServe("0.0.0.0:80", handler); err != nil {
-		log.Printf("Primary port 80 binding failed: %v. Attempting fallback to 8080...", err)
-		if err := http.ListenAndServe("0.0.0.0:8080", handler); err != nil {
-			log.Fatalf("Critical Failure: Could not bind to any port: %v", err)
+	// Load TLS configuration
+	configLock.RLock()
+	tlsEnabled := config.TLS.Enabled
+	tlsPort := config.TLS.Port
+	certFile := config.TLS.CertFile
+	keyFile := config.TLS.KeyFile
+	configLock.RUnlock()
+
+	// Set default TLS port if not configured
+	if tlsPort == "" {
+		tlsPort = ":443"
+	}
+
+	if tlsEnabled && certFile != "" && keyFile != "" {
+		// Verify certificate files exist
+		if _, err := os.Stat(certFile); os.IsNotExist(err) {
+			log.Fatalf("CRITICAL: TLS cert file not found: %s", certFile)
+		}
+		if _, err := os.Stat(keyFile); os.IsNotExist(err) {
+			log.Fatalf("CRITICAL: TLS key file not found: %s", keyFile)
+		}
+
+		log.Printf("Starting HTTPS server on %s", tlsPort)
+
+		// Start HTTP redirect server in background
+		go func() {
+			redirectMux := http.NewServeMux()
+			redirectMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+				// Extract host without port
+				host := r.Host
+				if idx := strings.Index(host, ":"); idx != -1 {
+					host = host[:idx]
+				}
+
+				// Build HTTPS URL
+				target := "https://" + host
+				if tlsPort != ":443" {
+					target += tlsPort
+				}
+				target += r.URL.Path
+				if r.URL.RawQuery != "" {
+					target += "?" + r.URL.RawQuery
+				}
+
+				http.Redirect(w, r, target, http.StatusMovedPermanently)
+			})
+			log.Println("Starting HTTP->HTTPS redirect server on :80")
+			if err := http.ListenAndServe(":80", redirectMux); err != nil {
+				log.Printf("HTTP redirect server failed: %v", err)
+			}
+		}()
+
+		// Start HTTPS server
+		log.Fatal(http.ListenAndServeTLS(tlsPort, certFile, keyFile, handler))
+	} else {
+		// HTTP only mode (existing behavior)
+		log.Println("Starting HTTP server on :80 (TLS disabled)")
+		if err := http.ListenAndServe("0.0.0.0:80", handler); err != nil {
+			log.Printf("Primary port 80 binding failed: %v. Attempting fallback to 8080...", err)
+			if err := http.ListenAndServe("0.0.0.0:8080", handler); err != nil {
+				log.Fatalf("Critical Failure: Could not bind to any port: %v", err)
+			}
 		}
 	}
 }
