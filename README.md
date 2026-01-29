@@ -21,6 +21,28 @@ A modern, high-performance web-based router management interface built with **Re
 - **Credential Security**: SHA-256 password hashing and secure token-based session management.
 - **Appliance Deployment**: Single-script installation that converts a fresh OS into a router in minutes.
 
+### 🔒 Phase 2 Security Features (NEW)
+- **Audit Logging**: Comprehensive audit trail for all security-sensitive operations
+  - JSON line format with automatic daily rotation
+  - Filter by date, action, user via web UI
+  - Tracks: firewall changes, credential updates, settings, backups, sessions
+- **Backup & Restore**: Full system configuration snapshots
+  - One-click backup creation and download
+  - Upload and restore with automatic pre-restore backup
+  - Includes: configs, credentials, metadata, DHCP, port forwarding
+- **API Rate Limiting**: Brute force attack prevention
+  - Token bucket algorithm with per-IP tracking
+  - Login: 10 req/min (configurable for other endpoints)
+  - Standard rate limit headers (X-RateLimit-*)
+- **Session Management**: Track and control active sessions
+  - View all active sessions (IP, device, timestamps)
+  - Manual session revocation capability
+  - 24-hour timeout with auto-renewal
+- **Error Sanitization**: Prevent information leakage
+  - Error code system for debugging
+  - Separate user-facing vs internal error messages
+  - Structured logging with error codes
+
 ---
 
 ## 🚀 Installation & Deployment
@@ -59,6 +81,13 @@ After installation, access the **Settings** page to configure:
 - **AdGuard Home Integration**: Enter URL and credentials to enable real-time DNS analytics
 - **Cloudflare Tunnel**: Configure Zero Trust access
 - **Administrative Credentials**: Update username and password
+- **Backup & Restore**: Create system backups or restore from previous snapshots
+- **Session Management**: View and manage active sessions
+
+Access the **Audit Logs** page to:
+- View complete audit trail of all security operations
+- Filter logs by date range, action type, or user
+- Monitor system changes and administrative actions
 
 ---
 
@@ -95,6 +124,38 @@ sudo cscli decisions list
 
 # Check Suricata logs
 tail -f /var/log/suricata/eve.json | jq
+```
+
+### Using Phase 2 Features
+Access security features via the web UI or API:
+
+**Audit Logs:**
+```bash
+# View audit logs via API
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost/api/audit/logs?limit=50"
+
+# Filter by action
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost/api/audit/logs?action=firewall.add"
+```
+
+**Backup & Restore:**
+```bash
+# Create backup
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost/api/backup/create > backup.json
+
+# List backups
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost/api/backup/list
+```
+
+**Session Management:**
+```bash
+# List active sessions
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost/api/sessions
 ```
 
 ---
