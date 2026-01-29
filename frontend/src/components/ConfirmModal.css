@@ -1,4 +1,4 @@
-.modal-overlay {
+.confirm-modal-overlay {
     position: fixed;
     top: 0;
     left: 0;
@@ -12,7 +12,7 @@
     backdrop-filter: blur(4px);
 }
 
-.modal-content {
+.confirm-modal-content {
     background: white;
     border-radius: 8px;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
