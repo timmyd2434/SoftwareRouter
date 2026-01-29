@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Network, ShieldCheck, Activity, Settings, Menu, X, LogOut, Lock, Server, Globe, ExternalLink, Box, ArrowRight } from 'lucide-react';
+import { LayoutDashboard, Network, ShieldCheck, Activity, Settings, Menu, X, LogOut, Lock, Server, Globe, ExternalLink, Box, ArrowRight, FileText } from 'lucide-react';
 import './Sidebar.css';
 
 const Sidebar = ({ isOpen, toggleSidebar, onLogout }) => {
@@ -10,6 +10,7 @@ const Sidebar = ({ isOpen, toggleSidebar, onLogout }) => {
         { icon: ShieldCheck, label: 'Firewall', path: '/firewall' },
         { icon: Activity, label: 'Traffic', path: '/traffic' },
         { icon: Lock, label: 'Security', path: '/security' },
+        { icon: FileText, label: 'Audit Logs', path: '/audit-logs' },
         { icon: Globe, label: 'Remote Access', path: '/remote-access' },
         { icon: Server, label: 'Services', path: '/services' },
         { icon: ShieldCheck, label: 'DNS Analytics', path: '/dns-analytics' },
