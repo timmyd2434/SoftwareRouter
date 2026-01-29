@@ -668,6 +668,5 @@ const SessionManagement = () => {
         </div>
     );
 };
-};
 
 export default Settings;
