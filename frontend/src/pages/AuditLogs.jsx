@@ -142,7 +142,7 @@ const AuditLogs = () => {
             </div>
 
             {/* Logs Table */}
-            <div className="logs-card">
+            <div className="logs-card glass-panel">
                 {loading && <div className="loading">Loading audit logs...</div>}
 
                 {error && <div className="error-message">{error}</div>}
