@@ -70,15 +70,17 @@ const AuditLogs = () => {
 
     return (
         <div className="audit-logs-container">
-            <div className="page-header">
-                <h1>Audit Logs</h1>
-                <p className="page-description">
-                    View and filter all security-sensitive operations
-                </p>
+            <div className="section-header">
+                <div>
+                    <h2>Audit Logs</h2>
+                    <span className="page-description">
+                        View and filter all security-sensitive operations
+                    </span>
+                </div>
             </div>
 
             {/* Filters */}
-            <div className="filters-card">
+            <div className="filters-card glass-panel">
                 <form onSubmit={handleSearch}>
                     <div className="filters-grid">
                         <div className="filter-group">
