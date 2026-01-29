@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -558,6 +559,50 @@ func csrfMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// --- Audit Helpers ---
+
+// getClientIP extracts the client IP address from the request
+func getClientIP(r *http.Request) string {
+	// Check X-Forwarded-For header first (if behind proxy)
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		ips := strings.Split(xff, ",")
+		return strings.TrimSpace(ips[0])
+	}
+
+	// Check X-Real-IP header
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		return xri
+	}
+
+	// Fall back to RemoteAddr
+	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	return ip
+}
+
+// getUsernameFromToken extracts username from the Bearer token
+func getUsernameFromToken(r *http.Request) string {
+	token := r.Header.Get("Authorization")
+	if token == "" {
+		token = r.URL.Query().Get("token")
+		if token != "" {
+			token = "Bearer " + token
+		}
+	}
+
+	// Extract username from token (token format: "Bearer user:timestamp:signature")
+	if !strings.HasPrefix(token, "Bearer ") {
+		return "unknown"
+	}
+
+	tokenValue := strings.TrimPrefix(token, "Bearer ")
+	parts := strings.Split(tokenValue, ":")
+	if len(parts) >= 1 {
+		return parts[0]
+	}
+
+	return "unknown"
+}
+
 // Simple token based auth middleware
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -659,6 +704,8 @@ func updateCredentials(w http.ResponseWriter, r *http.Request) {
 	// Hash password with bcrypt
 	newHash, err := hashPassword(req.NewPassword)
 	if err != nil {
+		logAuditEvent(getUsernameFromToken(r), "credentials.update", "password",
+			fmt.Sprintf("{\"error\":\"%s\"}", err.Error()), getClientIP(r), false)
 		http.Error(w, "Failed to hash password", http.StatusInternalServerError)
 		return
 	}
@@ -669,9 +716,15 @@ func updateCredentials(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := saveCredentials(newCreds); err != nil {
+		logAuditEvent(getUsernameFromToken(r), "credentials.update", "password",
+			fmt.Sprintf("{\"error\":\"%s\"}", err.Error()), getClientIP(r), false)
 		http.Error(w, "Failed to save credentials", http.StatusInternalServerError)
 		return
 	}
+
+	// Log successful credential update
+	logAuditEvent(getUsernameFromToken(r), "credentials.update", "password",
+		fmt.Sprintf("{\"new_username\":\"%s\"}", req.NewUsername), getClientIP(r), true)
 
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
@@ -1122,12 +1175,25 @@ func addFirewallRule(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("Executing NFT: nft %v\n", args) // Debug log
 
 	cmd := exec.Command("nft", args...)
+	ruleJSON, _ := json.Marshal(rule)
+
 	if out, err := cmd.CombinedOutput(); err != nil {
 		errorMsg := fmt.Sprintf("NFT Error: %s (CMD: nft %v)", string(out), args)
 		fmt.Println(errorMsg)
+
+		// Log failed firewall rule addition
+		logAuditEvent(getUsernameFromToken(r), "firewall.add",
+			fmt.Sprintf("%s/%s", rule.Table, rule.Chain),
+			string(ruleJSON), getClientIP(r), false)
+
 		http.Error(w, errorMsg, http.StatusInternalServerError)
 		return
 	}
+
+	// Log successful firewall rule addition
+	logAuditEvent(getUsernameFromToken(r), "firewall.add",
+		fmt.Sprintf("%s/%s", rule.Table, rule.Chain),
+		string(ruleJSON), getClientIP(r), true)
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -1151,9 +1217,17 @@ func deleteFirewallRule(w http.ResponseWriter, r *http.Request) {
 	// Command: nft delete rule <family> <table> <chain> handle <handle>
 	cmd := exec.Command("nft", "delete", "rule", family, table, chain, "handle", handle)
 	if out, err := cmd.CombinedOutput(); err != nil {
+		logAuditEvent(getUsernameFromToken(r), "firewall.delete",
+			fmt.Sprintf("%s/%s", table, chain),
+			fmt.Sprintf("{\"handle\":\"%s\",\"error\":\"%s\"}", handle, string(out)),
+			getClientIP(r), false)
 		http.Error(w, fmt.Sprintf("NFT Error: %s", string(out)), http.StatusInternalServerError)
 		return
 	}
+
+	logAuditEvent(getUsernameFromToken(r), "firewall.delete",
+		fmt.Sprintf("%s/%s", table, chain),
+		fmt.Sprintf("{\"handle\":\"%s\"}", handle), getClientIP(r), true)
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -1934,9 +2008,16 @@ func updateSettings(w http.ResponseWriter, r *http.Request) {
 
 	// Save to file
 	if err := saveConfigLocked(); err != nil {
+		logAuditEvent(getUsernameFromToken(r), "settings.update", "config",
+			fmt.Sprintf("{\"error\":\"%s\"}", err.Error()), getClientIP(r), false)
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
 		return
 	}
+
+	// Log successful settings update
+	configJSON, _ := json.Marshal(newConfig)
+	logAuditEvent(getUsernameFromToken(r), "settings.update", "config",
+		string(configJSON), getClientIP(r), true)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
@@ -2330,12 +2411,27 @@ func main() {
 	initWireGuard()
 	initFirewall()
 	initPortForwarding()
-	cleanupCSRFTokens() // Start CSRF token cleanup
+
+	// Initialize audit logging
+	if err := initAuditLog(); err != nil {
+		log.Printf("WARNING: Failed to initialize audit log: %v", err)
+	}
+	startAuditLogRotation()
+
+	// Initialize rate limiters
+	authLimiter := NewRateLimiter()  // 10 req/min for login
+	writeLimiter := NewRateLimiter() // 30 req/min for mutations
+	readLimiter := NewRateLimiter()  // 60 req/min for reads
+	_ = writeLimiter                 // TODO: apply to write endpoints
+	_ = readLimiter                  // TODO: apply to read endpoints
+
+	cleanupCSRFTokens()   // Start CSRF token cleanup
+	startSessionCleanup() // Start session cleanup
 	go collectTrafficHistory()
 	mux := http.NewServeMux()
 
-	// Public Auth Endpoints
-	mux.HandleFunc("POST /api/login", login)
+	// Public Auth Endpoints (strict 10 req/min to prevent brute force)
+	mux.HandleFunc("POST /api/login", rateLimitMiddleware(authLimiter, 10, time.Minute)(login))
 
 	// CSRF Token Endpoint  (authenticated)
 	mux.HandleFunc("GET /api/csrf-token", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
@@ -2351,6 +2447,154 @@ func main() {
 	mux.HandleFunc("POST /api/auth/update-credentials", authMiddleware(updateCredentials))
 	mux.HandleFunc("GET /api/settings", authMiddleware(getSettings))
 	mux.HandleFunc("POST /api/settings", authMiddleware(updateSettings))
+
+	// Audit Logs
+	mux.HandleFunc("GET /api/audit/logs", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		// Parse query parameters for filtering
+		startTimeStr := r.URL.Query().Get("start")
+		endTimeStr := r.URL.Query().Get("end")
+		actionFilter := r.URL.Query().Get("action")
+		userFilter := r.URL.Query().Get("user")
+		limitStr := r.URL.Query().Get("limit")
+
+		var startTime, endTime time.Time
+		var limit int = 100 // Default limit
+
+		if startTimeStr != "" {
+			if t, err := time.Parse(time.RFC3339, startTimeStr); err == nil {
+				startTime = t
+			}
+		}
+		if endTimeStr != "" {
+			if t, err := time.Parse(time.RFC3339, endTimeStr); err == nil {
+				endTime = t
+			}
+		}
+		if limitStr != "" {
+			fmt.Sscanf(limitStr, "%d", &limit)
+		}
+
+		logs, err := getAuditLogs(startTime, endTime, actionFilter, userFilter, limit)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to retrieve audit logs: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(logs)
+	}))
+
+	// Backup & Restore
+	mux.HandleFunc("GET /api/backup/create", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		backupData, err := createBackup()
+		if err != nil {
+			logAuditEvent(getUsernameFromToken(r), "backup.create", "system",
+				fmt.Sprintf("{\"error\":\"%s\"}", err.Error()), getClientIP(r), false)
+			http.Error(w, fmt.Sprintf("Failed to create backup: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		logAuditEvent(getUsernameFromToken(r), "backup.create", "system",
+			"{\"status\":\"success\"}", getClientIP(r), true)
+
+		// Send backup as downloadable file
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"softrouter-backup-%s.json\"",
+			time.Now().Format("2006-01-02-150405")))
+		w.Write(backupData)
+	}))
+
+	mux.HandleFunc("POST /api/backup/restore", authMiddleware(csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		// Read multipart form file or JSON body
+		var backupData []byte
+
+		if err := r.ParseMultipartForm(10 << 20); err == nil { // 10 MB max
+			file, _, err := r.FormFile("file")
+			if err == nil {
+				defer file.Close()
+				backupData, err = io.ReadAll(file)
+				if err != nil {
+					http.Error(w, "Failed to read uploaded file", http.StatusBadRequest)
+					return
+				}
+			}
+		}
+
+		// Fallback to JSON body if no file upload
+		if len(backupData) == 0 {
+			backupData, _ = io.ReadAll(r.Body)
+		}
+
+		if len(backupData) == 0 {
+			http.Error(w, "No backup data provided", http.StatusBadRequest)
+			return
+		}
+
+		// Restore system
+		if err := restoreBackup(backupData); err != nil {
+			logAuditEvent(getUsernameFromToken(r), "backup.restore", "system",
+				fmt.Sprintf("{\"error\":\"%s\"}", err.Error()), getClientIP(r), false)
+			http.Error(w, fmt.Sprintf("Failed to restore backup: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		logAuditEvent(getUsernameFromToken(r), "backup.restore", "system",
+			"{\"status\":\"success\"}", getClientIP(r), true)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":  "success",
+			"message": "System restored from backup. Please review settings and restart services if needed.",
+		})
+	})))
+
+	mux.HandleFunc("GET /api/backup/list", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		backups, err := listBackups()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to list backups: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(backups)
+	}))
+
+	// Session Management
+	mux.HandleFunc("GET /api/sessions", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		username := getUsernameFromToken(r)
+		sessions := sessionStore.ListSessions(username)
+
+		currentToken := r.Header.Get("Authorization")
+		safeInfo := make([]SessionInfo, len(sessions))
+		for i, s := range sessions {
+			safeInfo[i] = s.ToSafeInfo(currentToken)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(safeInfo)
+	}))
+
+	mux.HandleFunc("DELETE /api/sessions", authMiddleware(csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		tokenToRevoke := r.URL.Query().Get("token")
+		username := getUsernameFromToken(r)
+
+		if tokenToRevoke == "" {
+			http.Error(w, "Token parameter required", http.StatusBadRequest)
+			return
+		}
+
+		session, exists := sessionStore.GetSession("Bearer " + tokenToRevoke)
+		if !exists || session.Username != username {
+			http.Error(w, "Cannot revoke this session", http.StatusForbidden)
+			return
+		}
+
+		sessionStore.DeleteSession("Bearer " + tokenToRevoke)
+		logAuditEvent(username, "session.revoke", "token",
+			fmt.Sprintf("{\"token\":\"%s\"}", tokenToRevoke), getClientIP(r), true)
+
+		json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+	})))
 
 	mux.HandleFunc("GET /api/interfaces", authMiddleware(getInterfaces))
 	mux.HandleFunc("POST /api/interfaces/vlan", authMiddleware(createVLAN))
