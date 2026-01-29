@@ -245,12 +245,15 @@
 }
 
 .modal-content {
-    background: var(--bg-panel);
-    border: 1px solid var(--glass-border);
+    background: linear-gradient(to bottom right,
+            rgba(30, 41, 59, 0.95),
+            rgba(15, 23, 42, 0.95));
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: var(--radius-lg);
     width: 500px;
     max-width: 90%;
-    box-shadow: var(--shadow-xl);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
     animation: modalSlide 0.3s ease-out;
 }
 
