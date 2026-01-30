@@ -66,9 +66,10 @@ type LoginRequest struct {
 
 // Config represents the system configuration
 type Config struct {
-	AdGuard AdGuardConfig `json:"adguard"`
-	TLS     TLSConfig     `json:"tls"`
-	CORS    CORSConfig    `json:"cors"`
+	AdGuard         AdGuardConfig `json:"adguard"`
+	TLS             TLSConfig     `json:"tls"`
+	CORS            CORSConfig    `json:"cors"`
+	ProtectedSubnet string        `json:"protected_subnet"`
 }
 
 type AdGuardConfig struct {
@@ -242,7 +243,15 @@ type DHCPConfig struct {
 
 // DHCPConfigStore manages all DHCP configurations
 type DHCPConfigStore struct {
-	Configs map[string]DHCPConfig `json:"configs"` // Key: interface name
+	Configs      map[string]DHCPConfig `json:"configs"` // Key: interface name
+	StaticLeases []StaticLease         `json:"static_leases"`
+}
+
+// StaticLease represents a static DHCP reservation
+type StaticLease struct {
+	MAC      string `json:"mac"`
+	IP       string `json:"ip"`
+	Hostname string `json:"hostname"`
 }
 
 // DHCPLease represents an active DHCP lease
@@ -2621,6 +2630,9 @@ func main() {
 	mux.HandleFunc("POST /api/dhcp/config", authMiddleware(setDHCPConfig))
 	mux.HandleFunc("DELETE /api/dhcp/config", authMiddleware(deleteDHCPConfig))
 	mux.HandleFunc("GET /api/dhcp/leases", authMiddleware(getDHCPLeases))
+	mux.HandleFunc("POST /api/dhcp/static", authMiddleware(addStaticLease))
+	mux.HandleFunc("DELETE /api/dhcp/static", authMiddleware(removeStaticLease))
+	mux.HandleFunc("GET /api/network/clients", authMiddleware(getNetworkClients))
 
 	// VPN Endpoints
 	mux.HandleFunc("GET /api/vpn/clients", authMiddleware(listVPNClients))
@@ -2650,6 +2662,18 @@ func main() {
 	mux.HandleFunc("POST /api/port-forwarding", authMiddleware(createPortForwardingRule))
 	mux.HandleFunc("PUT /api/port-forwarding", authMiddleware(updatePortForwardingRuleHandler))
 	mux.HandleFunc("DELETE /api/port-forwarding", authMiddleware(removePortForwardingRule))
+
+	// Routes (Static)
+	mux.HandleFunc("GET /api/routes", authMiddleware(getRoutes))
+	mux.HandleFunc("POST /api/routes", authMiddleware(createRoute))
+	mux.HandleFunc("DELETE /api/routes", authMiddleware(deleteRoute))
+
+	// Start Background Services
+	go func() {
+		// Wait a bit for network to settle then apply routes
+		time.Sleep(5 * time.Second)
+		initRoutes()
+	}()
 
 	// SPA Static File Server
 	// Serve from /var/www/softrouter/html

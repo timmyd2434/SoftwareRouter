@@ -12,7 +12,9 @@ import Settings from './pages/Settings';
 import RemoteAccess from './pages/RemoteAccess';
 import DNSAnalytics from './pages/DNSAnalytics';
 import PortForwarding from './pages/PortForwarding';
+import Routing from './pages/Routing';
 import AuditLogs from './pages/AuditLogs';
+import Clients from './pages/Clients';
 import './App.css';
 
 function App() {
@@ -37,6 +39,7 @@ function App() {
       <MainLayout onLogout={handleLogout}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/clients" element={<Clients />} />
           <Route path="/interfaces" element={<Interfaces />} />
           <Route path="/firewall" element={<Firewall />} />
           <Route path="/traffic" element={<Traffic />} />
@@ -45,6 +48,7 @@ function App() {
           <Route path="/services" element={<Services />} />
           <Route path="/dns-analytics" element={<DNSAnalytics />} />
           <Route path="/port-forwarding" element={<PortForwarding />} />
+          <Route path="/routing" element={<Routing />} />
           <Route path="/audit-logs" element={<AuditLogs />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" />} />

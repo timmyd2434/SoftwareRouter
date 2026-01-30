@@ -93,6 +93,27 @@ func setupNAT() {
 		fmt.Println("NAT/Masquerading rule applied successfully.")
 	}
 
+	// 2. Hairpin NAT (NAT Reflection)
+	// Allow devices on LAN to access other LAN devices via the WAN IP (which gets DNAT'd).
+	// We need to SNAT this traffic so the return packet goes back to the router, not directly to source.
+	// Rule: ip saddr <LAN_SUBNET> ip daddr <LAN_SUBNET> masquerade
+	// We use the configured ProtectedSubnet.
+	configLock.RLock()
+	lanSubnet := config.ProtectedSubnet
+	configLock.RUnlock()
+
+	if lanSubnet != "" {
+		fmt.Printf("Applying Hairpin NAT for subnet: %s\n", lanSubnet)
+		// nft add rule inet softrouter postrouting ip saddr 10.0.0.0/24 ip daddr 10.0.0.0/24 masquerade
+		cmdHairpin := exec.Command("nft", "add", "rule", "inet", "softrouter", "postrouting",
+			"ip", "saddr", lanSubnet, "ip", "daddr", lanSubnet, "masquerade")
+		if out, err := cmdHairpin.CombinedOutput(); err != nil {
+			fmt.Printf("Error applying Hairpin NAT: %v (%s)\n", err, string(out))
+		} else {
+			fmt.Println("Hairpin NAT rule applied.")
+		}
+	}
+
 	// Ensure forwarding is allowed
 	// For now we default to accept all forwarding.
 }
