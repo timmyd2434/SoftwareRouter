@@ -2672,12 +2672,17 @@ func main() {
 	mux.HandleFunc("GET /api/wan", authMiddleware(getWANInterfaces))
 	mux.HandleFunc("POST /api/wan", authMiddleware(updateWANInterfaces))
 
+	// Dynamic Routing
+	mux.HandleFunc("GET /api/routing/dynamic", authMiddleware(getDynamicRouting))
+	mux.HandleFunc("POST /api/routing/dynamic", authMiddleware(updateDynamicRouting))
+
 	// Start Background Services
 	go func() {
 		// Wait a bit for network to settle then apply routes
 		time.Sleep(5 * time.Second)
 		initRoutes()
 		initWANManager()
+		initDynamicRouting()
 	}()
 
 	// SPA Static File Server

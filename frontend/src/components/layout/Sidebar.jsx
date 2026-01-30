@@ -9,6 +9,7 @@ const Sidebar = ({ isOpen, toggleSidebar, onLogout }) => {
         { icon: Monitor, label: 'Devices', path: '/clients' },
         { icon: Network, label: 'Interfaces', path: '/interfaces' },
         { icon: Route, label: 'Routing', path: '/routing' },
+        { icon: Globe, label: 'Dynamic Routing', path: '/dynamic-routing' },
         { icon: Zap, label: 'Multi-WAN', path: '/multi-wan' },
         { icon: ShieldCheck, label: 'Firewall', path: '/firewall' },
         { icon: Activity, label: 'Traffic', path: '/traffic' },

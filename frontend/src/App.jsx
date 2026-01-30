@@ -14,6 +14,7 @@ import DNSAnalytics from './pages/DNSAnalytics';
 import PortForwarding from './pages/PortForwarding';
 import Routing from './pages/Routing';
 import MultiWAN from './pages/MultiWAN';
+import DynamicRouting from './pages/DynamicRouting';
 import AuditLogs from './pages/AuditLogs';
 import Clients from './pages/Clients';
 import './App.css';
@@ -51,6 +52,7 @@ function App() {
           <Route path="/port-forwarding" element={<PortForwarding />} />
           <Route path="/routing" element={<Routing />} />
           <Route path="/multi-wan" element={<MultiWAN />} />
+          <Route path="/dynamic-routing" element={<DynamicRouting />} />
           <Route path="/audit-logs" element={<AuditLogs />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" />} />
