@@ -2668,11 +2668,16 @@ func main() {
 	mux.HandleFunc("POST /api/routes", authMiddleware(createRoute))
 	mux.HandleFunc("DELETE /api/routes", authMiddleware(deleteRoute))
 
+	// Multi-WAN
+	mux.HandleFunc("GET /api/wan", authMiddleware(getWANInterfaces))
+	mux.HandleFunc("POST /api/wan", authMiddleware(updateWANInterfaces))
+
 	// Start Background Services
 	go func() {
 		// Wait a bit for network to settle then apply routes
 		time.Sleep(5 * time.Second)
 		initRoutes()
+		initWANManager()
 	}()
 
 	// SPA Static File Server
