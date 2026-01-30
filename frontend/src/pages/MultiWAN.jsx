@@ -11,9 +11,36 @@ const MultiWAN = () => {
 
     useEffect(() => {
         fetchInterfaces();
+        fetchWanCandidates();
         const interval = setInterval(fetchInterfaces, 5000);
         return () => clearInterval(interval);
     }, []);
+
+    const [wanCandidates, setWanCandidates] = useState([]);
+
+    const fetchWanCandidates = async () => {
+        try {
+            const [ifaceRes, metaRes] = await Promise.all([
+                authFetch('/api/interfaces'),
+                authFetch('/api/interfaces/metadata')
+            ]);
+
+            if (ifaceRes.ok && metaRes.ok) {
+                const ifaces = await ifaceRes.json();
+                const metadata = await metaRes.json();
+
+                // Filter for interfaces labeled as WAN
+                const filtered = ifaces.filter(i => {
+                    const meta = metadata[i.name];
+                    return meta && (meta.label === 'WAN' || meta.label === 'Internet');
+                });
+
+                setWanCandidates(filtered);
+            }
+        } catch (err) {
+            console.error("Failed to load interface candidates", err);
+        }
+    };
 
     const fetchInterfaces = async () => {
         try {
@@ -215,13 +242,22 @@ const MultiWAN = () => {
                         <div className="wan-body">
                             <div className="field-group">
                                 <label>Interface</label>
-                                <input
-                                    type="text"
+                                <select
                                     className="form-input"
                                     value={iface.interface}
                                     onChange={(e) => updateInterface(idx, 'interface', e.target.value)}
-                                    placeholder="e.g. eth0"
-                                />
+                                >
+                                    <option value="" disabled>Select Interface</option>
+                                    {wanCandidates.map(c => (
+                                        <option key={c.name} value={c.name}>
+                                            {c.name} {c.mac ? `(${c.mac})` : ''}
+                                        </option>
+                                    ))}
+                                    {/* Fallback for existing values not in the list */}
+                                    {iface.interface && !wanCandidates.find(c => c.name === iface.interface) && (
+                                        <option value={iface.interface}>{iface.interface} (Current)</option>
+                                    )}
+                                </select>
                             </div>
                             <div className="field-group">
                                 <label>Gateway IP</label>
