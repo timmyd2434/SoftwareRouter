@@ -20,12 +20,60 @@ const MultiWAN = () => {
             const res = await authFetch('/api/wan');
             if (res.ok) {
                 const data = await res.json();
-                // Handle legacy array response vs new object response
+
+                // Parse server response
+                let serverConfig = { mode: 'failover', interfaces: [] };
                 if (Array.isArray(data)) {
-                    setConfig({ mode: 'failover', interfaces: data });
-                } else {
-                    setConfig(data || { mode: 'failover', interfaces: [] });
+                    serverConfig = { mode: 'failover', interfaces: data };
+                } else if (data) {
+                    serverConfig = data;
                 }
+
+                // Merge strategy:
+                // 1. Keep local mode if different? No, server is truth, but we don't want to jump.
+                //    Actually, for mode, server should probably win unless we are editing.
+                // 2. For interfaces:
+                //    - Update status of existing ones.
+                //    - Do NOT remove local ones that are missing from server (e.g. just added).
+
+                setConfig(prevConfig => {
+                    const newIfaces = [...prevConfig.interfaces];
+
+                    // Update existing ones from server
+                    serverConfig.interfaces.forEach(srvIface => {
+                        // Find by interface name (assuming unique) or some index mapping if stable?
+                        // Since we don't have IDs, we might rely on 'interface' field or index if strict.
+                        // Let's rely on index for now as that's how we map, but this is brittle if array changes size.
+                        // Better: Match by 'interface' field if set, otherwise fallback to index?
+                        // Given the backend uses a simple array, index matching is the only 1:1 map we have guaranteed 
+                        // unless we introduce IDs. For now, we'll try to match by index for existing items.
+
+                        // BUT, if user added a new item at end, prevConfig has length N+1.
+                        // We iterate server interfaces (N) and update the first N items of prevConfig.
+                    });
+
+                    // Simpler approach for this specific bug:
+                    // Just update the 'state' field of items that match, and don't touch others.
+
+                    const mergedInterfaces = prevConfig.interfaces.map((localIface, idx) => {
+                        if (idx < serverConfig.interfaces.length) {
+                            const srvIface = serverConfig.interfaces[idx];
+                            // Only update status/state, preserve local edits to other fields?
+                            // Or overwriting is fine if we assume server is truth?
+                            // The bug is "erased it". That means server sent shorter list.
+                            // So if we have more items locally, keep them!
+
+                            // We update state from server always
+                            return { ...localIface, state: srvIface.state };
+                        }
+                        return localIface; // Keep local item that doesn't exist on server yet
+                    });
+
+                    return {
+                        mode: serverConfig.mode, // Sync mode
+                        interfaces: mergedInterfaces
+                    };
+                });
             }
         } catch (err) {
             console.error(err);
