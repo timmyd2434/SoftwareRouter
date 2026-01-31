@@ -168,21 +168,6 @@ type FirewallRule struct {
 	Raw     string `json:"raw"`
 }
 
-// BandwidthSnapshot represents a point in time for the traffic graph
-type BandwidthSnapshot struct {
-	Timestamp string `json:"timestamp"`
-	RxBps     uint64 `json:"rx_bps"`
-	TxBps     uint64 `json:"tx_bps"`
-}
-
-var (
-	trafficHistory     []BandwidthSnapshot
-	historyLock        sync.Mutex
-	lastTotalRx        uint64
-	lastTotalTx        uint64
-	historyInitialized bool
-)
-
 // DNSStats represents aggregate metrics from the ad-blocker
 type DNSStats struct {
 	TotalQueries      int         `json:"total_queries"`
@@ -1642,77 +1627,6 @@ func getTrafficStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
 }
-func getTrafficHistory(w http.ResponseWriter, r *http.Request) {
-	historyLock.Lock()
-	defer historyLock.Unlock()
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(trafficHistory)
-}
-
-func collectTrafficHistory() {
-	for {
-		time.Sleep(1 * time.Second)
-
-		data, err := os.ReadFile("/proc/net/dev")
-		if err != nil {
-			continue
-		}
-
-		lines := strings.Split(string(data), "\n")
-		var currentTotalRx uint64
-		var currentTotalTx uint64
-
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line == "" || strings.HasPrefix(line, "Inter-") || strings.HasPrefix(line, "face") {
-				continue
-			}
-
-			parts := strings.Fields(line)
-			if len(parts) < 17 {
-				continue
-			}
-
-			iface := strings.TrimSuffix(parts[0], ":")
-			if iface == "lo" {
-				continue
-			}
-
-			var rx, tx uint64
-			fmt.Sscanf(parts[1], "%d", &rx)
-			fmt.Sscanf(parts[9], "%d", &tx)
-			currentTotalRx += rx
-			currentTotalTx += tx
-		}
-
-		historyLock.Lock()
-		if !historyInitialized {
-			lastTotalRx = currentTotalRx
-			lastTotalTx = currentTotalTx
-			historyInitialized = true
-			historyLock.Unlock()
-			continue
-		}
-
-		rxBps := currentTotalRx - lastTotalRx
-		txBps := currentTotalTx - lastTotalTx
-		lastTotalRx = currentTotalRx
-		lastTotalTx = currentTotalTx
-
-		snapshot := BandwidthSnapshot{
-			Timestamp: time.Now().Format("15:04:05"),
-			RxBps:     rxBps,
-			TxBps:     txBps,
-		}
-
-		trafficHistory = append(trafficHistory, snapshot)
-		if len(trafficHistory) > 60 {
-			trafficHistory = trafficHistory[1:]
-		}
-		historyLock.Unlock()
-	}
-}
 
 func getActiveConnections(w http.ResponseWriter, r *http.Request) {
 	// Use 'ss' command to get active connections
@@ -2438,7 +2352,7 @@ func main() {
 
 	cleanupCSRFTokens()   // Start CSRF token cleanup
 	startSessionCleanup() // Start session cleanup
-	go collectTrafficHistory()
+
 	mux := http.NewServeMux()
 
 	// Public Auth Endpoints (strict 10 req/min to prevent brute force)
