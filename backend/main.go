@@ -2420,6 +2420,7 @@ func main() {
 	initWireGuard()
 	initFirewall()
 	InitQoS() // Re-apply persistent QoS settings
+	initTrafficStats()
 	initPortForwarding()
 
 	// Initialize audit logging
@@ -2618,6 +2619,14 @@ func main() {
 	mux.HandleFunc("GET /api/qos", authMiddleware(getQoSConfig))
 	mux.HandleFunc("POST /api/qos", authMiddleware(updateQoSConfig))
 	mux.HandleFunc("DELETE /api/qos", authMiddleware(deleteQoSConfig))
+
+	// Diagnostics
+	mux.HandleFunc("POST /api/tools/ping", authMiddleware(handlePing))
+	mux.HandleFunc("POST /api/tools/traceroute", authMiddleware(handleTraceroute))
+	mux.HandleFunc("GET /api/system/logs", authMiddleware(handleSystemLogs))
+
+	// Traffic History
+	mux.HandleFunc("GET /api/traffic/history", authMiddleware(getTrafficHistory))
 	mux.HandleFunc("GET /api/firewall", authMiddleware(getFirewallRules))
 	mux.HandleFunc("POST /api/firewall", authMiddleware(addFirewallRule))
 	mux.HandleFunc("DELETE /api/firewall", authMiddleware(deleteFirewallRule))

@@ -5,6 +5,8 @@ import Dashboard from './pages/Dashboard';
 import Interfaces from './pages/Interfaces';
 import Firewall from './pages/Firewall';
 import TrafficControl from './pages/TrafficControl';
+import TrafficStats from './pages/TrafficStats';
+import Diagnostics from './pages/Diagnostics';
 import Services from './pages/Services';
 import Traffic from './pages/Traffic';
 import Security from './pages/Security';
@@ -46,6 +48,8 @@ function App() {
           <Route path="/interfaces" element={<Interfaces />} />
           <Route path="/firewall" element={<Firewall />} />
           <Route path="/traffic" element={<TrafficControl />} />
+          <Route path="/stats" element={<TrafficStats />} />
+          <Route path="/diagnostics" element={<Diagnostics />} />
           <Route path="/security" element={<Security />} />
           <Route path="/remote-access" element={<RemoteAccess />} />
           <Route path="/services" element={<Services />} />
