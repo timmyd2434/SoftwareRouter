@@ -2547,7 +2547,7 @@ func main() {
 	mux.HandleFunc("GET /api/services", authMiddleware(getServices))
 	mux.HandleFunc("POST /api/services/control", authMiddleware(controlService))
 	mux.HandleFunc("GET /api/traffic/stats", authMiddleware(getTrafficStats))
-	mux.HandleFunc("GET /api/traffic/history", authMiddleware(getTrafficHistory))
+
 	mux.HandleFunc("GET /api/traffic/connections", authMiddleware(getActiveConnections))
 	mux.HandleFunc("GET /api/security/suricata/alerts", authMiddleware(getSuricataAlerts))
 	mux.HandleFunc("GET /api/security/crowdsec/decisions", authMiddleware(getCrowdSecDecisions))

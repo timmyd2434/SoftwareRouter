@@ -110,7 +110,7 @@ func applyPortForwardingRules() {
 		args := []string{
 			"add", "rule", "inet", "softrouter", "prerouting",
 			proto, "dport", fmt.Sprintf("%d", rule.ExternalPort),
-			"dnat", "to", fmt.Sprintf("%s:%d", rule.InternalIP, rule.InternalPort),
+			"dnat", "ip", "to", fmt.Sprintf("%s:%d", rule.InternalIP, rule.InternalPort),
 		}
 
 		cmd := exec.Command("nft", args...)
