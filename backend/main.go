@@ -2419,6 +2419,7 @@ func main() {
 	loadTokenSecret()
 	initWireGuard()
 	initFirewall()
+	InitQoS() // Re-apply persistent QoS settings
 	initPortForwarding()
 
 	// Initialize audit logging
@@ -2612,6 +2613,11 @@ func main() {
 	mux.HandleFunc("POST /api/interfaces/state", authMiddleware(setInterfaceState))
 	mux.HandleFunc("GET /api/interfaces/metadata", authMiddleware(getInterfaceMetadata))
 	mux.HandleFunc("POST /api/interfaces/label", authMiddleware(setInterfaceLabel))
+
+	// Traffic Control / QoS
+	mux.HandleFunc("GET /api/qos", authMiddleware(getQoSConfig))
+	mux.HandleFunc("POST /api/qos", authMiddleware(updateQoSConfig))
+	mux.HandleFunc("DELETE /api/qos", authMiddleware(deleteQoSConfig))
 	mux.HandleFunc("GET /api/firewall", authMiddleware(getFirewallRules))
 	mux.HandleFunc("POST /api/firewall", authMiddleware(addFirewallRule))
 	mux.HandleFunc("DELETE /api/firewall", authMiddleware(deleteFirewallRule))

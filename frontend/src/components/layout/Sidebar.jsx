@@ -12,7 +12,7 @@ const Sidebar = ({ isOpen, toggleSidebar, onLogout }) => {
         { icon: Globe, label: 'Dynamic Routing', path: '/dynamic-routing' },
         { icon: Zap, label: 'Multi-WAN', path: '/multi-wan' },
         { icon: ShieldCheck, label: 'Firewall', path: '/firewall' },
-        { icon: Activity, label: 'Traffic', path: '/traffic' },
+        { icon: Activity, label: 'Traffic Control', path: '/traffic' },
         { icon: Lock, label: 'Security', path: '/security' },
         { icon: FileText, label: 'Audit Logs', path: '/audit-logs' },
         { icon: Globe, label: 'Remote Access', path: '/remote-access' },
