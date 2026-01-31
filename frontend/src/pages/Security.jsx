@@ -99,7 +99,7 @@ const Security = () => {
             {/* Security Statistics Cards */}
             {stats && (
                 <div className="stats-grid">
-                    <div className="stat-card glass-panel">
+                    <div className="security-stat-card glass-panel">
                         <div className="stat-icon suricata">
                             <Shield size={28} />
                         </div>
@@ -114,7 +114,7 @@ const Security = () => {
                         </div>
                     </div>
 
-                    <div className="stat-card glass-panel">
+                    <div className="security-stat-card glass-panel">
                         <div className="stat-icon crowdsec">
                             <Ban size={28} />
                         </div>
@@ -127,7 +127,7 @@ const Security = () => {
                         </div>
                     </div>
 
-                    <div className="stat-card glass-panel">
+                    <div className="security-stat-card glass-panel">
                         <div className="stat-icon status">
                             <CheckCircle size={28} />
                         </div>

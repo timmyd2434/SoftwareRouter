@@ -116,6 +116,53 @@ func collectTrafficStats() {
 			h.Points = h.Points[len(h.Points)-maxHistoryPoints:]
 		}
 	}
+
+	// Calculate Total Traffic
+	totalRx := uint64(0)
+	totalTx := uint64(0)
+	totalRxRate := uint64(0)
+	totalTxRate := uint64(0)
+	// We iterate over the history just updated for the current timestamp
+	// Actually, easier to iterate over lines/fields again? No.
+	// We can iterate over lastStats if we trust it, or accumulated as we went.
+	// But we need the *rate*, which we just calculated.
+	// Let's re-iterate lastStats but that includes everything.
+	// Better: accumulate inside the loop above.
+	// But resetting loop logic is annoying.
+	// Let's just loop over history for the "latest" point of each interface.
+	// Valid interfaces only.
+	for name, h := range history {
+		if name == "total" || name == "lo" || strings.HasPrefix(name, "tun") { // Skip virtuals?
+			continue
+		}
+		if len(h.Points) > 0 {
+			lastP := h.Points[len(h.Points)-1]
+			if lastP.Timestamp == now {
+				totalRx += lastP.RxBytes
+				totalTx += lastP.TxBytes
+				totalRxRate += lastP.RxRate
+				totalTxRate += lastP.TxRate
+			}
+		}
+	}
+
+	totalPoint := TrafficPoint{
+		Timestamp: now,
+		RxBytes:   totalRx,
+		TxBytes:   totalTx,
+		RxRate:    totalRxRate,
+		TxRate:    totalTxRate,
+	}
+
+	// Store total history
+	if _, exists := history["total"]; !exists {
+		history["total"] = &TrafficHistory{Points: make([]TrafficPoint, 0)}
+	}
+	th := history["total"]
+	th.Points = append(th.Points, totalPoint)
+	if len(th.Points) > maxHistoryPoints {
+		th.Points = th.Points[len(th.Points)-maxHistoryPoints:]
+	}
 }
 
 func getTrafficHistory(w http.ResponseWriter, r *http.Request) {
@@ -134,6 +181,12 @@ func getTrafficHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Else return all? or maybe empty
-	json.NewEncoder(w).Encode(map[string][]TrafficPoint{})
+	// Else return total history if available
+	if h, ok := history["total"]; ok {
+		json.NewEncoder(w).Encode(h.Points)
+		return
+	}
+
+	// Fallback to empty list
+	json.NewEncoder(w).Encode([]TrafficPoint{})
 }
