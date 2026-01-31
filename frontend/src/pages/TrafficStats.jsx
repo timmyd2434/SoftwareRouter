@@ -17,7 +17,7 @@ const TrafficStats = () => {
     useEffect(() => {
         if (selectedInterface) {
             fetchHistory();
-            const interval = setInterval(fetchHistory, 5000);
+            const interval = setInterval(fetchHistory, 1000);
             return () => clearInterval(interval);
         }
     }, [selectedInterface]);
@@ -70,7 +70,7 @@ const TrafficStats = () => {
                 </div>
             </div>
 
-            <div className="stats-grid">
+            <div className="traffic-stats-grid">
                 {/* Interface List */}
                 <div className="glass-panel">
                     <h3>Interfaces</h3>

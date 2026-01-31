@@ -30,7 +30,7 @@ var (
 	lastStats    = make(map[string]TrafficPoint) // To calc rates
 
 	// Config
-	historyInterval  = 5 * time.Second
+	historyInterval  = 1 * time.Second
 	maxHistoryPoints = 720 // 1 hour at 5s execution (approx) or more.
 	// Let's do 120 points for live graph?
 	// For "Historical" maybe we want longer terms.

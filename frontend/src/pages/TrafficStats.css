@@ -6,7 +6,7 @@
     height: 100%;
 }
 
-.stats-grid {
+.traffic-stats-grid {
     display: grid;
     grid-template-columns: 250px 1fr;
     gap: 1.5rem;

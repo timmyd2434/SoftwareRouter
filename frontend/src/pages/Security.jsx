@@ -98,7 +98,7 @@ const Security = () => {
 
             {/* Security Statistics Cards */}
             {stats && (
-                <div className="stats-grid">
+                <div className="security-stats-grid">
                     <div className="security-stat-card glass-panel">
                         <div className="stat-icon suricata">
                             <Shield size={28} />
