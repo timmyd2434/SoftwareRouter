@@ -130,14 +130,12 @@ const TrafficControl = () => {
                             return (
                                 <div key={iface.name} className={`interface-item ${selectedIface === iface.name ? 'active' : ''} ${hasQoS ? 'has-qos' : ''}`} onClick={() => handleEdit(iface.name)}>
                                     <div className="iface-info">
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                            <strong>{iface.name}</strong>
-                                            {meta.description && (
-                                                <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic' }}>
-                                                    {meta.description}
-                                                </span>
-                                            )}
-                                        </div>
+                                        <strong>{iface.name}</strong>
+                                        {meta.description && (
+                                            <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic', marginBottom: '2px' }}>
+                                                {meta.description}
+                                            </span>
+                                        )}
                                         <span className="mac">{iface.mac}</span>
                                     </div>
                                     <div className="qos-status">
