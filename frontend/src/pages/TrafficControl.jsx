@@ -17,11 +17,14 @@ const TrafficControl = () => {
         return () => clearInterval(interval);
     }, []);
 
+    const [metadata, setMetadata] = useState({});
+
     const fetchData = async () => {
         try {
-            const [qosRes, ifaceRes] = await Promise.all([
+            const [qosRes, ifaceRes, metaRes] = await Promise.all([
                 authFetch('/api/qos'),
-                authFetch('/api/interfaces')
+                authFetch('/api/interfaces'),
+                authFetch('/api/interfaces/metadata')
             ]);
 
             if (qosRes.ok) {
@@ -32,6 +35,10 @@ const TrafficControl = () => {
                 const ifaces = await ifaceRes.json();
                 // We typically only want to shape WAN or LAN interfaces, but let's show all
                 setInterfaces(ifaces);
+            }
+            if (metaRes.ok) {
+                const meta = await metaRes.json();
+                setMetadata(meta || {});
             }
         } catch (err) {
             console.error("Failed to load QoS data", err);
@@ -119,10 +126,18 @@ const TrafficControl = () => {
                     <div className="interface-list">
                         {interfaces.map(iface => {
                             const hasQoS = configs[iface.name] && configs[iface.name].mode !== 'none';
+                            const meta = metadata[iface.name] || {};
                             return (
                                 <div key={iface.name} className={`interface-item ${selectedIface === iface.name ? 'active' : ''} ${hasQoS ? 'has-qos' : ''}`} onClick={() => handleEdit(iface.name)}>
                                     <div className="iface-info">
-                                        <strong>{iface.name}</strong>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <strong>{iface.name}</strong>
+                                            {meta.description && (
+                                                <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic' }}>
+                                                    {meta.description}
+                                                </span>
+                                            )}
+                                        </div>
                                         <span className="mac">{iface.mac}</span>
                                     </div>
                                     <div className="qos-status">
