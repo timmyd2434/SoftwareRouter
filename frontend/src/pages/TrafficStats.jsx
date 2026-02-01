@@ -119,6 +119,7 @@ const TrafficStats = () => {
                                     fillOpacity={1}
                                     fill="url(#colorRx)"
                                     name="Download (Mbps)"
+                                    isAnimationActive={false}
                                 />
                                 <Area
                                     type="monotone"
@@ -127,6 +128,7 @@ const TrafficStats = () => {
                                     fillOpacity={1}
                                     fill="url(#colorTx)"
                                     name="Upload (Mbps)"
+                                    isAnimationActive={false}
                                 />
                             </AreaChart>
                         </ResponsiveContainer>
