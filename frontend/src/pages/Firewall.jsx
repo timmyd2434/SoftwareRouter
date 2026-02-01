@@ -265,6 +265,9 @@ const Firewall = () => {
     };
 
     const handleSubmitRule = async () => {
+        // Clear previous logs at the start of each attempt
+        setDebugLog([]);
+
         addLog("Submit clicked. Validating...");
         addLog(`Target: ${newRule.table} | ${newRule.chain}`);
 
@@ -305,14 +308,14 @@ const Firewall = () => {
                 }, 1000);
             } else {
                 const text = await res.text();
-                // If we failed to add but deleted old one, that's risky. 
-                // In a prod system we'd use 'nft -f' transaction file.
                 console.error("Backend error:", text);
                 addLog(`Backend Error: ${text}`);
+                // Don't close modal - let user see error and retry
             }
         } catch (err) {
             console.error("Network error:", err);
             addLog(`Network Error: ${err.message}`);
+            // Don't close modal - let user see error and retry
         }
     };
 
