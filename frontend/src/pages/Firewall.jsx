@@ -107,31 +107,137 @@ const Firewall = () => {
         try {
             // Check if it looks like JSON
             if (raw && raw.trim().startsWith('[')) {
-                const json = JSON.parse(raw);
-                // Simple parser for common NFT JSON structures
-                return json.map(part => {
-                    if (part.match) {
-                        const p = part.match.left.payload;
-                        const op = part.match.op === "==" ? "" : part.match.op;
-                        const val = part.match.right;
-                        return `${p.protocol} ${p.field} ${op} ${val}`.replace(/  /g, ' ');
-                    }
-                    if ('counter' in part) return '';
-                    if ('accept' in part) return 'accept';
-                    if ('drop' in part) return 'drop';
-                    if ('reject' in part) return 'reject';
-                    if ('return' in part) return 'return';
-                    if ('masquerade' in part) return 'masquerade';
-                    if (part.jump) return `jump ${part.jump.target}`;
-                    if (part.goto) return `goto ${part.goto.target}`;
-                    return JSON.stringify(part);
-                }).filter(s => s).join(' ').trim();
+                const expressions = JSON.parse(raw);
+                const parts = [];
+
+                for (const expr of expressions) {
+                    const formatted = formatExpression(expr);
+                    if (formatted) parts.push(formatted);
+                }
+
+                return parts.join(' ').trim() || raw;
             }
             return raw;
         } catch (e) {
             return raw; // Fallback
         }
     };
+
+    // Helper to format individual NFTables expressions
+    const formatExpression = (expr) => {
+        // Match expression (e.g., iifname "eth0", tcp dport 22)
+        if (expr.match) {
+            const { left, op, right } = expr.match;
+            const leftStr = formatMatchLeft(left);
+            const rightStr = formatMatchRight(right);
+            const opStr = op === '==' ? '' : ` ${op}`;
+            return `${leftStr}${opStr} ${rightStr}`;
+        }
+
+        // Verdict expressions
+        if ('accept' in expr) return 'accept';
+        if ('drop' in expr) return 'drop';
+        if ('reject' in expr) return 'reject';
+        if ('return' in expr) return 'return';
+
+        // Jump/Goto
+        if (expr.jump) return `jump ${expr.jump.target}`;
+        if (expr.goto) return `goto ${expr.goto.target}`;
+
+        // Masquerade
+        if ('masquerade' in expr) return 'masquerade';
+
+        // DNAT/SNAT
+        if (expr.dnat) {
+            const addr = expr.dnat.addr ? formatMatchRight(expr.dnat.addr) : '';
+            const port = expr.dnat.port ? `:${expr.dnat.port}` : '';
+            return `dnat to ${addr}${port}`;
+        }
+        if (expr.snat) {
+            const addr = expr.snat.addr ? formatMatchRight(expr.snat.addr) : '';
+            const port = expr.snat.port ? `:${expr.snat.port}` : '';
+            return `snat to ${addr}${port}`;
+        }
+
+        // Counter (usually silent in nftables syntax, but we can show it)
+        if (expr.counter) {
+            return `counter packets ${expr.counter.packets || 0} bytes ${expr.counter.bytes || 0}`;
+        }
+
+        // Limit
+        if (expr.limit) {
+            return `limit rate ${expr.limit.rate}/${expr.limit.per}`;
+        }
+
+        // CT (connection tracking)
+        if (expr.ct) {
+            if (expr.ct.key) return `ct ${expr.ct.key}`;
+            if (expr.ct.state) return `ct state ${expr.ct.state}`;
+            if (expr.ct.status) return `ct status ${expr.ct.status}`;
+        }
+
+        // Log
+        if (expr.log) {
+            return `log ${expr.log.prefix ? `prefix "${expr.log.prefix}"` : ''}`;
+        }
+
+        // If we can't parse it, return nothing (skip)
+        return '';
+    };
+
+    // Format the left side of a match expression
+    const formatMatchLeft = (left) => {
+        // Meta expressions (iifname, oifname, etc.)
+        if (left.meta) {
+            return left.meta.key;
+        }
+
+        // Payload expressions (tcp dport, ip saddr, etc.)
+        if (left.payload) {
+            const { protocol, field } = left.payload;
+            return `${protocol} ${field}`;
+        }
+
+        // CT state/status
+        if (left.ct) {
+            if (left.ct.key) return `ct ${left.ct.key}`;
+            if (left.ct.state) return `ct state`;
+            if (left.ct.status) return `ct status`;
+        }
+
+        return JSON.stringify(left);
+    };
+
+    // Format the right side of a match expression
+    const formatMatchRight = (right) => {
+        // Simple values
+        if (typeof right === 'string' || typeof right === 'number') {
+            return `"${right}"`;
+        }
+
+        // Array of values (e.g., ct state established,related)
+        if (Array.isArray(right)) {
+            return right.join(',');
+        }
+
+        // Prefix notation (CIDR)
+        if (right.prefix) {
+            return `${right.prefix.addr}/${right.prefix.len}`;
+        }
+
+        // Range
+        if (right.range) {
+            return `${right.range[0]}-${right.range[1]}`;
+        }
+
+        // Set
+        if (right.set) {
+            return `{ ${right.set.join(', ')} }`;
+        }
+
+        return JSON.stringify(right);
+    };
+
 
     const fetchRules = () => {
         setLoading(true);
