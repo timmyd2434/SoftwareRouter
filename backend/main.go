@@ -66,10 +66,17 @@ type LoginRequest struct {
 
 // Config represents the system configuration
 type Config struct {
-	AdGuard         AdGuardConfig `json:"adguard"`
-	TLS             TLSConfig     `json:"tls"`
-	CORS            CORSConfig    `json:"cors"`
-	ProtectedSubnet string        `json:"protected_subnet"`
+	AdGuard         AdGuardConfig   `json:"adguard"`
+	TLS             TLSConfig       `json:"tls"`
+	CORS            CORSConfig      `json:"cors"`
+	ProtectedSubnet string          `json:"protected_subnet"`
+	WebAccess       WebAccessConfig `json:"web_access"`
+}
+
+type WebAccessConfig struct {
+	AllowWAN     bool `json:"allow_wan"`
+	WANPortHTTP  int  `json:"wan_port_http"`
+	WANPortHTTPS int  `json:"wan_port_https"`
 }
 
 type AdGuardConfig struct {
@@ -1551,6 +1558,9 @@ func setInterfaceLabel(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("Interface %s labeled as %s\n", req.InterfaceName, req.Label)
 
+	// Trigger firewall update to respect new zones
+	go firewallManager.ApplyFirewallRules()
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"status":  "success",
@@ -1839,6 +1849,12 @@ func loadSystemConfig() {
 	if err != nil {
 		// File doesn't exist, use defaults
 		config = Config{
+			ProtectedSubnet: "10.0.0.0/24",
+			WebAccess: WebAccessConfig{
+				AllowWAN:     true,
+				WANPortHTTP:  980,
+				WANPortHTTPS: 9443,
+			},
 			AdGuard: AdGuardConfig{
 				URL:      getEnvOrDefault("AGH_URL", "http://localhost:3000"),
 				Username: os.Getenv("AGH_USERNAME"),
@@ -1853,13 +1869,13 @@ func loadSystemConfig() {
 	// Parse existing config
 	if err := json.Unmarshal(data, &config); err != nil {
 		fmt.Printf("Error parsing config file: %v. Using defaults.\n", err)
-		config = Config{
-			AdGuard: AdGuardConfig{
-				URL:      getEnvOrDefault("AGH_URL", "http://localhost:3000"),
-				Username: os.Getenv("AGH_USERNAME"),
-				Password: os.Getenv("AGH_PASSWORD"),
-			},
-		}
+	}
+
+	// Upgrade Logic: If WebAccess is uninitialized, set defaults
+	if config.WebAccess.WANPortHTTP == 0 {
+		config.WebAccess.AllowWAN = true
+		config.WebAccess.WANPortHTTP = 980
+		config.WebAccess.WANPortHTTPS = 9443
 	}
 
 	// Environment variables override config file
@@ -2332,10 +2348,17 @@ func main() {
 	loadSystemConfig()
 	loadTokenSecret()
 	initWireGuard()
-	initFirewall()
-	InitQoS() // Re-apply persistent QoS settings
+	// initFirewall() // Deprecated by FirewallManager
+	InitQoS() // 4. Initialize Networking
+	// initFirewall() // Deprecated by FirewallManager
+	// initPortForwarding() // Deprecated by FirewallManager
+
+	InitFirewallManager()
+	// Apply rules initially (will use default/detected WAN/LAN)
+	firewallManager.ApplyFirewallRules()
+
 	initTrafficStats()
-	initPortForwarding()
+	initDynamicRouting()
 
 	// Initialize audit logging
 	if err := initAuditLog(); err != nil {
@@ -2692,13 +2715,15 @@ func main() {
 		// Start HTTPS server
 		log.Fatal(http.ListenAndServeTLS(tlsPort, certFile, keyFile, handler))
 	} else {
-		// HTTP only mode (existing behavior)
-		log.Println("Starting HTTP server on :80 (TLS disabled)")
-		if err := http.ListenAndServe("0.0.0.0:80", handler); err != nil {
-			log.Printf("Primary port 80 binding failed: %v. Attempting fallback to 8080...", err)
-			if err := http.ListenAndServe("0.0.0.0:8080", handler); err != nil {
-				log.Fatalf("Critical Failure: Could not bind to any port: %v", err)
+		// Start HTTP Server
+		go func() {
+			// Secure Binding: Only listen on localhost.
+			// Access from LAN/WAN is handled by NFTables DNAT.
+			addr := "127.0.0.1:8080"
+			fmt.Printf("Starting HTTP server on %s\n", addr)
+			if err := http.ListenAndServe(addr, handler); err != nil {
+				log.Fatal(err)
 			}
-		}
+		}()
 	}
 }

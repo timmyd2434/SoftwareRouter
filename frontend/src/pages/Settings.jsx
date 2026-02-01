@@ -9,7 +9,12 @@ const Settings = () => {
         cf_token: '',
         protected_subnet: '10.0.0.0/24',
         ad_blocker: 'none',
-        openvpn_port: 1194
+        openvpn_port: 1194,
+        web_access: {
+            allow_wan: false,
+            wan_port_http: 980,
+            wan_port_https: 9443
+        }
     });
 
     const [adguardSettings, setAdguardSettings] = useState({
@@ -260,6 +265,72 @@ const Settings = () => {
                         <button type="submit" className="save-btn" disabled={saving}>
                             {saving === 'adguard' ? <Loader2 size={18} className="spin" /> : <Save size={18} />}
                             Save AdGuard Settings
+                        </button>
+                    </form>
+                </div>
+
+                {/* Access Control */}
+                <div className="settings-card glass-panel">
+                    <div className="card-header">
+                        <Lock size={20} className="header-icon shield" />
+                        <h3>Access Control</h3>
+                    </div>
+                    <form onSubmit={handleSaveConfig} className="card-form">
+                        <div className="form-group checkbox-group">
+                            <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={config.web_access?.allow_wan || false}
+                                    onChange={e => setConfig({
+                                        ...config,
+                                        web_access: { ...config.web_access, allow_wan: e.target.checked }
+                                    })}
+                                />
+                                Allow WAN Access to WebUI
+                            </label>
+                            <p className="hint" style={{ marginTop: '0.5rem' }}>
+                                If enabled, the WebUI will be accessible from the WAN IP on the specified ports.
+                                <strong> Use with caution.</strong>
+                            </p>
+                        </div>
+
+                        {config.web_access?.allow_wan && (
+                            <div className="form-row">
+                                <div className="input-group">
+                                    <label>WAN HTTP Port</label>
+                                    <div className="field-wrapper">
+                                        <Globe size={18} />
+                                        <input
+                                            type="number"
+                                            value={config.web_access?.wan_port_http || 980}
+                                            onChange={e => setConfig({
+                                                ...config,
+                                                web_access: { ...config.web_access, wan_port_http: parseInt(e.target.value) }
+                                            })}
+                                            placeholder="980"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="input-group">
+                                    <label>WAN HTTPS Port</label>
+                                    <div className="field-wrapper">
+                                        <Lock size={18} />
+                                        <input
+                                            type="number"
+                                            value={config.web_access?.wan_port_https || 9443}
+                                            onChange={e => setConfig({
+                                                ...config,
+                                                web_access: { ...config.web_access, wan_port_https: parseInt(e.target.value) }
+                                            })}
+                                            placeholder="9443"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        <button type="submit" className="save-btn" disabled={saving}>
+                            {saving === 'config' ? <Loader2 size={18} className="spin" /> : <Save size={18} />}
+                            Save Access Settings
                         </button>
                     </form>
                 </div>

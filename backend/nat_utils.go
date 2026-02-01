@@ -77,7 +77,22 @@ func savePortForwardingRules() error {
 	return os.WriteFile(pfConfigPath, data, 0644)
 }
 
+func GetPortForwardingRules() []PortForwardingRule {
+	pfStoreLock.RLock()
+	defer pfStoreLock.RUnlock()
+	// Return a copy to avoid races if caller modifies
+	rules := make([]PortForwardingRule, len(pfStore.Rules))
+	copy(rules, pfStore.Rules)
+	return rules
+}
+
 func applyPortForwardingRules() {
+	// Delegate to FirewallManager
+	firewallManager.ApplyFirewallRules()
+}
+
+// Deprecated local logic - retained but commented out or effectively replaced above
+func applyPortForwardingRulesLegacy() {
 	pfStoreLock.RLock()
 	rules := pfStore.Rules
 	pfStoreLock.RUnlock()
