@@ -16,13 +16,10 @@ type FirewallManager struct {
 var firewallManager = &FirewallManager{}
 
 // InitFirewallManager initializes the manager
+// Note: Table creation is handled by generateFullRuleset, not here
 func InitFirewallManager() {
-	// Ensure tables exist
-	exec.Command("nft", "add", "table", "inet", "softrouter").Run()
-	exec.Command("nft", "add", "table", "ip", "nat").Run()
-
 	// Enable route_localnet to allow DNAT to 127.0.0.1
-	// This is critical for the new security model where we bind to localhost but dnat from LAN
+	// This is critical for the security model where we bind to localhost but DNAT from LAN/WAN
 	exec.Command("sysctl", "-w", "net.ipv4.conf.all.route_localnet=1").Run()
 	exec.Command("sysctl", "-w", "net.ipv4.conf.default.route_localnet=1").Run()
 }
@@ -110,7 +107,14 @@ func (fm *FirewallManager) ApplyFirewallRules() error {
 	}
 	tmpfile.Close()
 
-	// 7. Apply atomically via nft -f
+	// 7. Validate syntax first (dry-run)
+	fmt.Println("Validating ruleset syntax...")
+	checkCmd := exec.Command("nft", "-c", "-f", tmpfile.Name())
+	if output, err := checkCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("Ruleset syntax validation failed: %v\nOutput: %s", err, string(output))
+	}
+
+	// 8. Apply atomically via nft -f
 	fmt.Printf("Applying ruleset from %s...\n", tmpfile.Name())
 	cmd := exec.Command("nft", "-f", tmpfile.Name())
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -166,6 +170,10 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 	// Accept SSH (port 22) - prevent lockout
 	b.WriteString("    tcp dport 22 accept comment \"SSH access\"\n")
 
+	// Accept DNS (port 53) - explicit rules for robustness
+	b.WriteString("    udp dport 53 accept comment \"DNS\"\n")
+	b.WriteString("    tcp dport 53 accept comment \"DNS\"\n")
+
 	// Accept all from LAN interfaces
 	for _, lan := range lanInterfaces {
 		b.WriteString(fmt.Sprintf("    iifname \"%s\" accept comment \"LAN trust\"\n", lan))
@@ -208,6 +216,17 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 	// PREROUTING Chain
 	b.WriteString("  chain prerouting {\n")
 	b.WriteString("    type nat hook prerouting priority dstnat; policy accept;\n\n")
+
+	// LAN Access to WebUI (DNAT to localhost)
+	for _, lan := range lanInterfaces {
+		b.WriteString(fmt.Sprintf("    iifname \"%s\" tcp dport 80 dnat to 127.0.0.1:8080 comment \"LAN WebUI HTTP\"\n", lan))
+		targetHTTPS := "443"
+		if cfg.TLS.Port != "" {
+			targetHTTPS = strings.TrimPrefix(cfg.TLS.Port, ":")
+		}
+		b.WriteString(fmt.Sprintf("    iifname \"%s\" tcp dport %s dnat to 127.0.0.1:%s comment \"LAN WebUI HTTPS\"\n",
+			lan, targetHTTPS, targetHTTPS))
+	}
 
 	// Port Forwarding Rules
 	for _, rule := range pfRules {
