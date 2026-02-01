@@ -1173,6 +1173,11 @@ func addFirewallRule(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Fields(rule.Raw)
 	args = append(args, parts...)
 
+	// Add comment if provided
+	if rule.Comment != "" {
+		args = append(args, "comment", fmt.Sprintf(`"%s"`, rule.Comment))
+	}
+
 	fmt.Printf("Executing NFT: nft %v\n", args) // Debug log
 
 	cmd := exec.Command("nft", args...)
