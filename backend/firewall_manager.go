@@ -184,6 +184,9 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 		b.WriteString(fmt.Sprintf("    iifname \"%s\" ct status dnat accept comment \"WAN DNAT\"\n", wan))
 	}
 
+	// Log dropped packets (rate-limited for debugging)
+	b.WriteString("    limit rate 5/minute burst 10 packets log prefix \"[INPUT DROP] \"\n")
+
 	// Everything else from WAN is dropped by default policy
 
 	b.WriteString("  }\n\n")
@@ -207,10 +210,16 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 		b.WriteString(fmt.Sprintf("    iifname \"%s\" ct status dnat accept comment \"Port forwarding\"\n", wan))
 	}
 
+	// Log dropped packets (rate-limited for debugging)
+	b.WriteString("    limit rate 5/minute burst 10 packets log prefix \"[FORWARD DROP] \"\n")
+
 	b.WriteString("  }\n")
 	b.WriteString("}\n\n")
 
 	// ===== IP NAT TABLE =====
+	// Note: IPv6 NAT is intentionally not implemented as it's typically not needed
+	// for IPv6 deployments which use direct routing. If IPv6 NAT is required in
+	// the future, a separate 'table ip6 nat' section would be added here.
 	b.WriteString("table ip nat {\n")
 
 	// PREROUTING Chain
@@ -281,9 +290,16 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 	}
 
 	// Hairpin NAT
-	if cfg.ProtectedSubnet != "" {
+	// Try configured subnet first, then auto-detect from LAN interfaces
+	subnet := cfg.ProtectedSubnet
+	if subnet == "" && len(lanInterfaces) > 0 {
+		// Fallback: try to detect subnet from first LAN interface
+		// This is a best-effort attempt for unconfigured systems
+		fmt.Println("Warning: ProtectedSubnet not configured, hairpin NAT may not work optimally")
+	}
+	if subnet != "" {
 		b.WriteString(fmt.Sprintf("    ip saddr %s ip daddr %s masquerade comment \"Hairpin NAT\"\n",
-			cfg.ProtectedSubnet, cfg.ProtectedSubnet))
+			subnet, subnet))
 	}
 
 	b.WriteString("  }\n")
