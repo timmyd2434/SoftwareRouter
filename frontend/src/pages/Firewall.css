@@ -280,7 +280,7 @@
 .modal-header h3 {
     margin: 0;
     font-size: 1.1rem;
-    color: var(--text-main);
+    color: #e2e8f0 !important;
 }
 
 .close-btn {
