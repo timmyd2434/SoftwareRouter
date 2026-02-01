@@ -536,6 +536,16 @@ const Firewall = () => {
                                     onChange={e => setNewRule({ ...newRule, raw: e.target.value })}
                                 />
                             </div>
+                            <div className="form-group">
+                                <label>Comment</label>
+                                <input
+                                    type="text"
+                                    className="form-input"
+                                    placeholder="Optional description for this rule"
+                                    value={newRule.comment}
+                                    onChange={e => setNewRule({ ...newRule, comment: e.target.value })}
+                                />
+                            </div>
                         </div>
                         <div className="modal-footer">
                             <button className="cancel-btn" onClick={() => setShowModal(false)}>Cancel</button>
