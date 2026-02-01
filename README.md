@@ -8,6 +8,7 @@ A modern, high-performance web-based router management interface built with **Re
 - **IDS/IPS (Suricata)**: Real-time network intrusion detection and prevention.
 - **Threat Intelligence (CrowdSec)**: Community-driven IP reputation and automated blocking.
 - **Firewall (NFTables)**: Full GUI for managing kernel-level network filtering with human-readable parsing.
+- **Access Control**: Zero Trust architecture with strict localhost binding and WAN/LAN zone management.
 - **Ad-Blocking**: Native support and management for **AdGuard Home** and **Pi-hole**.
 
 ### 🌐 Network & Interfaces
@@ -42,6 +43,13 @@ A modern, high-performance web-based router management interface built with **Re
   - Error code system for debugging
   - Separate user-facing vs internal error messages
   - Structured logging with error codes
+
+### 🔒 Access Control & Security (Latest)
+- **Secure Binding**: WebUI binds strictly to localhost (`127.0.0.1`), preventing accidental exposure.
+- **Zone-Based Firewall**:
+  - **LAN**: Trusted access via secure DNAT proxies.
+  - **WAN**: Blocked by default. Optionally enable access via custom, obscure ports (e.g., 980/9443).
+- **Port Forwarding**: Robust implementation with Hairpin NAT support, integrated directly into the NFTables pipeline.
 
 ---
 
@@ -83,6 +91,7 @@ After installation, access the **Settings** page to configure:
 - **Administrative Credentials**: Update username and password
 - **Backup & Restore**: Create system backups or restore from previous snapshots
 - **Session Management**: View and manage active sessions
+- **Access Control**: Configure WAN access rules and interface zones (LAN/WAN)
 
 Access the **Audit Logs** page to:
 - View complete audit trail of all security operations
