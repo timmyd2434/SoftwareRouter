@@ -307,6 +307,10 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
+    max-height: calc(80vh - 150px);
+    /* Ensure content fits in viewport */
+    overflow-y: auto;
+    /* Enable scrolling for tall content */
 }
 
 .form-group {
