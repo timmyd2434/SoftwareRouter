@@ -101,8 +101,8 @@ echo ""
 
 # Stop the backend service
 echo "🛑 Stopping SoftRouter backend service..."
-if systemctl is-active --quiet softrouter-backend; then
-    systemctl stop softrouter-backend
+if systemctl is-active --quiet softrouter; then
+    systemctl stop softrouter
     echo "  ✓ Service stopped"
 else
     echo "  ℹ️  Service not running"
@@ -209,13 +209,18 @@ echo ""
 
 # Restart the backend service
 echo "🚀 Starting SoftRouter backend service..."
-systemctl start softrouter-backend
-if systemctl is-active --quiet softrouter-backend; then
-    echo "  ✓ Service started successfully"
+if systemctl list-unit-files | grep -q "^softrouter.service"; then
+    systemctl start softrouter
+    if systemctl is-active --quiet softrouter; then
+        echo "  ✓ Service started successfully"
+    else
+        echo "  ❌ Failed to start service!"
+        echo "  Check logs: journalctl -u softrouter -n 50"
+        exit 1
+    fi
 else
-    echo "  ❌ Failed to start service!"
-    echo "  Check logs: journalctl -u softrouter-backend -n 50"
-    exit 1
+    echo "  ℹ️  systemd service not found - start manually if needed"
+    echo "  Run: sudo /usr/local/bin/softrouter-backend &"
 fi
 echo ""
 
@@ -224,8 +229,12 @@ echo "========================================="
 echo "  Update Complete!"
 echo "========================================="
 echo ""
-echo "Service Status:"
-systemctl status softrouter-backend --no-pager -l | head -n 10
+if systemctl list-unit-files | grep -q "^softrouter.service"; then
+    echo "Service Status:"
+    systemctl status softrouter --no-pager -l | head -n 10
+else
+    echo "Service not configured. Running in manual mode."
+fi
 echo ""
 echo "✅ SoftRouter has been updated successfully!"
 echo ""
