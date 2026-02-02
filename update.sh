@@ -90,6 +90,14 @@ if systemctl is-active --quiet softrouter-backend; then
 else
     echo "  ℹ️  Service not running"
 fi
+
+# Kill any running softrouter-backend processes (in case it's running outside systemd)
+if pgrep -f softrouter-backend > /dev/null; then
+    echo "  🔪 Killing running backend processes..."
+    pkill -f softrouter-backend
+    sleep 2  # Give processes time to terminate
+    echo "  ✓ Processes terminated"
+fi
 echo ""
 
 # Build backend
