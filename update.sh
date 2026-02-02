@@ -55,8 +55,14 @@ echo ""
 
 # Pull latest changes from git
 echo "🔄 Pulling latest changes from Git..."
-git fetch origin
-CURRENT_BRANCH=$(git branch --show-current)
+# Run git commands as the calling user (not root) to support SSH key passphrases
+if [ -n "$SUDO_USER" ]; then
+    sudo -u "$SUDO_USER" git fetch origin
+    CURRENT_BRANCH=$(sudo -u "$SUDO_USER" git branch --show-current)
+else
+    git fetch origin
+    CURRENT_BRANCH=$(git branch --show-current)
+fi
 echo "  Current branch: $CURRENT_BRANCH"
 
 # Check if there are updates
@@ -68,7 +74,11 @@ if git diff --quiet HEAD origin/$CURRENT_BRANCH; then
     exit 0
 fi
 
-git pull origin $CURRENT_BRANCH
+if [ -n "$SUDO_USER" ]; then
+    sudo -u "$SUDO_USER" git pull origin $CURRENT_BRANCH
+else
+    git pull origin $CURRENT_BRANCH
+fi
 echo "  ✓ Updated to latest version"
 echo ""
 
