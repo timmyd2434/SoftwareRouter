@@ -286,7 +286,7 @@ const Security = () => {
             </div>
 
             {/* Installation Notice */}
-            {(!stats || stats.suricata_stats.total_alerts === 0) && alerts.length === 0 && (
+            {!stats && (
                 <div className="installation-notice">
                     <AlertCircle size={20} />
                     <div>
