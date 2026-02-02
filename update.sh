@@ -99,6 +99,37 @@ else
     exit 1
 fi
 cd ..
+
+# Create dnsmasq base configuration if it doesn't exist
+echo "📡 Configuring dnsmasq..."
+if [ ! -f /etc/dnsmasq.d/softrouter-base.conf ]; then
+    cat > /tmp/softrouter-dnsmasq-base.conf <<'DNSMASQ_EOF'
+# SoftwareRouter dnsmasq base configuration
+# This file provides minimal configuration for dnsmasq to start
+
+# Don't read /etc/resolv.conf - we'll configure DNS servers explicitly
+no-resolv
+
+# Don't read /etc/hosts
+no-hosts
+
+# Listen only on specified interfaces (none by default, configured per-DHCP network)
+# bind-interfaces will be added per-network config
+
+# Log DHCP transactions for debugging
+log-dhcp
+
+# Enable authoritative mode for faster DHCP
+dhcp-authoritative
+
+# Cache size
+cache-size=1000
+DNSMASQ_EOF
+    mv /tmp/softrouter-dnsmasq-base.conf /etc/dnsmasq.d/softrouter-base.conf
+    echo "  ✓ Created /etc/dnsmasq.d/softrouter-base.conf"
+else
+    echo "  ✓ dnsmasq base config already exists"
+fi
 echo ""
 
 # Build frontend
