@@ -6,9 +6,20 @@ echo "  SoftRouter Update Script"
 echo "========================================="
 echo ""
 
+# Parse arguments
+FORCE_UPDATE=false
+if [ "$1" == "--force" ] || [ "$1" == "-f" ]; then
+    FORCE_UPDATE=true
+    echo "ℹ️  Force mode enabled - will rebuild even if up to date"
+    echo ""
+fi
+
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then 
     echo "Error: This script must be run as root (use sudo)"
+    echo ""
+    echo "Usage: sudo ./update.sh [--force]"
+    echo "  --force, -f    Force rebuild even if already up to date"
     exit 1
 fi
 
@@ -67,11 +78,17 @@ echo "  Current branch: $CURRENT_BRANCH"
 
 # Check if there are updates
 if git diff --quiet HEAD origin/$CURRENT_BRANCH; then
-    echo "  ℹ️  Already up to date!"
-    echo ""
-    echo "Cleaning up backup..."
-    rm -rf "$BACKUP_DIR"
-    exit 0
+    if [ "$FORCE_UPDATE" = false ]; then
+        echo "  ℹ️  Already up to date!"
+        echo ""
+        echo "Cleaning up backup..."
+        rm -rf "$BACKUP_DIR"
+        echo ""
+        echo "💡 Tip: Use 'sudo ./update.sh --force' to rebuild anyway"
+        exit 0
+    else
+        echo "  ℹ️  Already up to date, but continuing due to --force flag"
+    fi
 fi
 
 if [ -n "$SUDO_USER" ]; then
