@@ -170,20 +170,28 @@ echo ""
 # Build frontend
 echo "🎨 Building frontend..."
 cd frontend
-if [ -d "node_modules" ]; then
-    npm run build
-    if [ $? -eq 0 ]; then
-        echo "  ✓ Frontend built successfully"
-    else
-        echo "  ❌ Frontend build failed!"
-        cd ..
-        echo "  Restoring configuration from backup..."
-        cp -r $BACKUP_DIR/* "$SCRIPT_DIR/"
-        exit 1
-    fi
+
+# Install dependencies if node_modules doesn't exist
+if [ ! -d "node_modules" ]; then
+    echo "  📦 Installing npm dependencies..."
+    npm install
+fi
+
+npm run build
+if [ $? -eq 0 ]; then
+    echo "  ✓ Frontend built successfully"
+    
+    # Copy to web directory
+    echo "  📋 Deploying frontend to web directory..."
+    mkdir -p /var/www/softrouter/html
+    cp -r dist/* /var/www/softrouter/html/
+    echo "  ✓ Frontend deployed"
 else
-    echo "  ⚠️  node_modules not found, skipping frontend build"
-    echo "  Run 'npm install' in the frontend directory first"
+    echo "  ❌ Frontend build failed!"
+    cd ..
+    echo "  Restoring configuration from backup..."
+    cp -r $BACKUP_DIR/* "$SCRIPT_DIR/"
+    exit 1
 fi
 cd ..
 echo ""
