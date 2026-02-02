@@ -308,9 +308,27 @@
     flex-direction: column;
     gap: var(--space-4);
     max-height: calc(80vh - 150px);
-    /* Ensure content fits in viewport */
-    overflow-y: auto;
-    /* Enable scrolling for tall content */
+    overflow-y: scroll;
+    /* Always show scrollbar */
+}
+
+/* Custom scrollbar styling for better visibility */
+.modal-body::-webkit-scrollbar {
+    width: 8px;
+}
+
+.modal-body::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+}
+
+.modal-body::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+}
+
+.modal-body::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
 }
 
 .form-group {
