@@ -292,7 +292,7 @@ const Security = () => {
                     <div>
                         <strong>Security Stack Not Detected</strong>
                         <p>
-                            Run <code>sudo ./install-security.sh</code> to install Suricata and CrowdSec.
+                            Security features (Suricata/CrowdSec) can be installed using <code>sudo ./install.sh</code> and selecting IDS/IPS during configuration.
                             See the installation script in the project root directory.
                         </p>
                     </div>
