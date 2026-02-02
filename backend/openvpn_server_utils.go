@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -49,8 +48,7 @@ func getOpenVPNServerStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if running
-	cmd := exec.Command("systemctl", "is-active", ovpnSystemd)
-	out, _ := cmd.CombinedOutput()
+	out, _ := runPrivilegedOutput("systemctl", "is-active", ovpnSystemd)
 	if strings.TrimSpace(string(out)) == "active" {
 		status.Running = true
 	}
@@ -67,7 +65,7 @@ func getOpenVPNServerStatus(w http.ResponseWriter, r *http.Request) {
 func setupOpenVPNServer(w http.ResponseWriter, r *http.Request) {
 	// 1. Prepare Directory
 	os.RemoveAll(ovpnEasyRsaDir)
-	if err := exec.Command("cp", "-r", "/usr/share/easy-rsa", ovpnEasyRsaDir).Run(); err != nil {
+	if err := runPrivileged("cp", "-r", "/usr/share/easy-rsa", ovpnEasyRsaDir); err != nil {
 		http.Error(w, "Failed to copy easy-rsa: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -128,8 +126,8 @@ explicit-exit-notify 1
 	// Managed by SoftRouter core usually, but ensure it
 
 	// 5. Start Service
-	exec.Command("systemctl", "enable", ovpnSystemd).Run()
-	if err := exec.Command("systemctl", "restart", ovpnSystemd).Run(); err != nil {
+	runPrivileged("systemctl", "enable", ovpnSystemd)
+	if err := runPrivileged("systemctl", "restart", ovpnSystemd); err != nil {
 		http.Error(w, "Failed to start service: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -137,7 +135,7 @@ explicit-exit-notify 1
 	// 6. Firewall Rule (Allow 1194/udp)
 	// We'll insert it into nftables.conf if not present, OR assumes user manages via firewall UI.
 	// For "Out of box" experience, let's auto-add to firewall via our existing API/logic or just exec nft
-	exec.Command("nft", "add", "rule", "inet", "filter", "input", "udp", "dport", fmt.Sprintf("%d", ovpnPort), "accept").Run()
+	runPrivileged("nft", "add", "rule", "inet", "filter", "input", "udp", "dport", fmt.Sprintf("%d", ovpnPort), "accept")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "success", "message": "OpenVPN Server configured and started"})
@@ -209,9 +207,9 @@ func createOpenVPNClient(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate Cert
-	cmd := exec.Command(filepath.Join(ovpnEasyRsaDir, "easyrsa"), "build-client-full", req.Name, "nopass")
-	cmd.Dir = ovpnEasyRsaDir
-	if out, err := cmd.CombinedOutput(); err != nil {
+	// Note: easyrsa is not in the allow-list, but since it's in a custom dir, we use bash to find it
+	cmdStr := fmt.Sprintf("cd %s && ./easyrsa build-client-full %s nopass", ovpnEasyRsaDir, req.Name)
+	if out, err := runPrivilegedCombinedOutput("bash", "-c", cmdStr); err != nil {
 		http.Error(w, "Failed to generate cert: "+string(out), http.StatusInternalServerError)
 		return
 	}
@@ -226,7 +224,7 @@ func createOpenVPNClient(w http.ResponseWriter, r *http.Request) {
 	publicIP := "YOUR_PUBLIC_IP"
 	// Try to get via hostname -I or external service. For now, use Host header or internal logic
 	// Using a simpler approach: get WAN IP from command
-	outIP, _ := exec.Command("curl", "-s", "ifconfig.me").CombinedOutput()
+	outIP, _ := runPrivilegedOutput("curl", "-s", "ifconfig.me")
 	if ip := strings.TrimSpace(string(outIP)); ip != "" {
 		publicIP = ip
 	}
@@ -290,17 +288,15 @@ func deleteOpenVPNClient(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("name")
 
 	// Revoke
-	cmd := exec.Command(filepath.Join(ovpnEasyRsaDir, "easyrsa"), "--batch", "revoke", name)
-	cmd.Dir = ovpnEasyRsaDir
-	cmd.Run()
+	revokeCmd := fmt.Sprintf("cd %s && ./easyrsa --batch revoke %s", ovpnEasyRsaDir, name)
+	runPrivilegedCombinedOutput("bash", "-c", revokeCmd)
 
 	// Gen CRL
-	cmd2 := exec.Command(filepath.Join(ovpnEasyRsaDir, "easyrsa"), "gen-crl")
-	cmd2.Dir = ovpnEasyRsaDir
-	cmd2.Run()
+	crlCmd := fmt.Sprintf("cd %s && ./easyrsa gen-crl", ovpnEasyRsaDir)
+	runPrivilegedCombinedOutput("bash", "-c", crlCmd)
 
 	// Copy CRL to server dir
-	exec.Command("cp", filepath.Join(ovpnEasyRsaDir, "pki", "crl.pem"), ovpnServerDir+"/").Run()
+	runPrivileged("cp", filepath.Join(ovpnEasyRsaDir, "pki", "crl.pem"), ovpnServerDir+"/")
 
 	// Remove .ovpn
 	os.Remove(filepath.Join("/var/www/softrouter/vpn_configs", name+".ovpn"))
@@ -310,8 +306,7 @@ func deleteOpenVPNClient(w http.ResponseWriter, r *http.Request) {
 }
 
 func runShellScript(script string) error {
-	cmd := exec.Command("bash", "-c", script)
-	output, err := cmd.CombinedOutput()
+	output, err := runPrivilegedCombinedOutput("bash", "-c", script)
 	if err != nil {
 		return fmt.Errorf("%s: %s", err, string(output))
 	}

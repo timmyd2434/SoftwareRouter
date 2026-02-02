@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"sync"
 )
 
@@ -84,8 +83,7 @@ func applyRoutes() {
 			args = append(args, "metric", fmt.Sprintf("%d", route.Metric))
 		}
 
-		cmd := exec.Command("ip", args...)
-		if out, err := cmd.CombinedOutput(); err != nil {
+		if out, err := runPrivilegedCombinedOutput("ip", args...); err != nil {
 			fmt.Printf("Failed to apply route %s: %v (%s)\n", route.Destination, err, string(out))
 		} else {
 			fmt.Printf("Applied route: %s via %s\n", route.Destination, route.Gateway)
@@ -96,9 +94,8 @@ func applyRoutes() {
 // deleteSystemRoute removes the route from kernel
 func deleteSystemRoute(route StaticRoute) error {
 	// ip route del <dest> via <gateway>
-	cmd := exec.Command("ip", "route", "del", route.Destination, "via", route.Gateway)
 	// We ignore errors if route doesn't exist to allow cleanup of stale db entries
-	return cmd.Run()
+	return runPrivileged("ip", "route", "del", route.Destination, "via", route.Gateway)
 }
 
 // --- Handlers ---

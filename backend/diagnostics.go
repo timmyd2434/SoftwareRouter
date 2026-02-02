@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"net/http"
-	"os/exec"
 	"regexp"
 	"strconv"
 )
@@ -48,8 +47,7 @@ func handlePing(w http.ResponseWriter, r *http.Request) {
 
 	// Ping command: ping -c <count> -W 2 <target>
 	// -W 2: Wait 2 seconds for response
-	cmd := exec.Command("ping", "-c", strconv.Itoa(req.Count), "-W", "2", req.Target)
-	output, err := cmd.CombinedOutput()
+	output, err := runPrivilegedCombinedOutput("ping", "-c", strconv.Itoa(req.Count), "-W", "2", req.Target)
 
 	resp := ToolResponse{
 		Output: string(output),
@@ -78,8 +76,7 @@ func handleTraceroute(w http.ResponseWriter, r *http.Request) {
 	// Traceroute command: traceroute -w 2 -m 15 <target>
 	// -w 2: Wait 2 seconds
 	// -m 15: Max hops 15 (faster)
-	cmd := exec.Command("traceroute", "-w", "2", "-m", "15", req.Target)
-	output, err := cmd.CombinedOutput()
+	output, err := runPrivilegedCombinedOutput("traceroute", "-w", "2", "-m", "15", req.Target)
 
 	resp := ToolResponse{
 		Output: string(output),
@@ -107,8 +104,7 @@ func handleSystemLogs(w http.ResponseWriter, r *http.Request) {
 	// But let's try journalctl first as it is standard.
 	// Also include `-r` for reverse (newest first) ?? No, usually logs are oldest to newest.
 	// Let's do standard order.
-	cmd := exec.Command("journalctl", "-u", "softrouter", "-n", strconv.Itoa(lines), "--no-pager")
-	output, err := cmd.CombinedOutput()
+	output, err := runPrivilegedCombinedOutput("journalctl", "-u", "softrouter", "-n", strconv.Itoa(lines), "--no-pager")
 
 	// If empty, it might be because the service name is wrong or we are running manually.
 	// If running manually, maybe show the last few lines of the standard syslog or dmesg?

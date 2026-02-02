@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -185,7 +184,7 @@ func regenerateDnsmasqDHCPConfig(store *DHCPConfigStore) error {
 	}
 
 	// Restart dnsmasq to apply changes
-	exec.Command("systemctl", "restart", "dnsmasq").Run()
+	runPrivileged("systemctl", "restart", "dnsmasq")
 
 	return nil
 }

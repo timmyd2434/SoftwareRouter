@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 )
 
@@ -21,8 +20,7 @@ func initFirewall() {
 
 func enableIPForwarding() {
 	// Enable IPv4 forwarding
-	cmd := exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1")
-	if err := cmd.Run(); err != nil {
+	if err := runPrivileged("sysctl", "-w", "net.ipv4.ip_forward=1"); err != nil {
 		fmt.Printf("Error enabling IP forwarding: %v\n", err)
 	} else {
 		fmt.Println("IP Forwarding enabled.")
@@ -37,8 +35,7 @@ func setupNAT() {
 
 func getDefaultGatewayInterface() (string, error) {
 	// Use 'ip route list 0/0' to find the default route
-	cmd := exec.Command("ip", "route", "show", "default")
-	output, err := cmd.Output()
+	output, err := runPrivilegedOutput("ip", "route", "show", "default")
 	if err != nil {
 		return "", err
 	}

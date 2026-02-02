@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"sync"
 )
 
@@ -35,11 +34,11 @@ func initPortForwarding() {
 	fmt.Println("Initializing Port Forwarding...")
 
 	// ensure softrouter table exists (should be done by firewall init, but good to be safe)
-	exec.Command("nft", "add", "table", "inet", "softrouter").Run()
+	runPrivileged("nft", "add", "table", "inet", "softrouter")
 
 	// Create prerouting chain for DNAT
 	// type nat hook prerouting priority -100; policy accept;
-	exec.Command("nft", "add", "chain", "inet", "softrouter", "prerouting", "{ type nat hook prerouting priority -100; policy accept; }").Run()
+	runPrivileged("nft", "add", "chain", "inet", "softrouter", "prerouting", "{ type nat hook prerouting priority -100; policy accept; }")
 
 	loadPortForwardingRules()
 	applyPortForwardingRules()
@@ -91,52 +90,9 @@ func applyPortForwardingRules() {
 	firewallManager.ApplyFirewallRules()
 }
 
-// Deprecated local logic - retained but commented out or effectively replaced above
-func applyPortForwardingRulesLegacy() {
-	pfStoreLock.RLock()
-	rules := pfStore.Rules
-	pfStoreLock.RUnlock()
-
-	fmt.Println("Applying Port Forwarding Rules...")
-
-	// Flush the chain first
-	exec.Command("nft", "flush", "chain", "inet", "softrouter", "prerouting").Run()
-
-	// Get WAN interface for iifname filter (optional but recommended to avoid DNAT from LAN)
-	// For simplicity in this iteration, we might omit iifname or try to detect it.
-	// If we rely on the same detection as firewall_utils, we might need to export that or repeat logic.
-	// To keep it robust, let's just apply to all interfaces for now, or assume "eth0"/WAN detection later.
-	// Better: Apply to incoming traffic generally.
-
-	for _, rule := range rules {
-		if !rule.Enabled {
-			continue
-		}
-
-		// building nft command:
-		// nft add rule inet softrouter prerouting [protocol] dport [ext_port] dnat to [int_ip]:[int_port]
-
-		// Validating protocol
-		proto := rule.Protocol
-		if proto != "tcp" && proto != "udp" {
-			proto = "tcp"
-		}
-
-		args := []string{
-			"add", "rule", "inet", "softrouter", "prerouting",
-			proto, "dport", fmt.Sprintf("%d", rule.ExternalPort),
-			"dnat", "ip", "to", fmt.Sprintf("%s:%d", rule.InternalIP, rule.InternalPort),
-		}
-
-		cmd := exec.Command("nft", args...)
-		if output, err := cmd.CombinedOutput(); err != nil {
-			fmt.Printf("Failed to apply rule %s (%d->%s:%d): %v\nOutput: %s\n",
-				rule.ID, rule.ExternalPort, rule.InternalIP, rule.InternalPort, err, string(output))
-		} else {
-			fmt.Printf("Applied rule: %s %d -> %s:%d\n", proto, rule.ExternalPort, rule.InternalIP, rule.InternalPort)
-		}
-	}
-}
+// Deprecated and REMOVED for security reasons
+// applyPortForwardingRulesLegacy used unguarded exec.Command calls
+// All port forwarding now goes through FirewallManager.ApplyFirewallRules()
 
 func addPortForwardingRule(rule PortForwardingRule) error {
 	pfStoreLock.Lock()

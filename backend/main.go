@@ -114,12 +114,10 @@ func initWireGuard() {
 
 	if _, err := os.Stat(privPath); os.IsNotExist(err) {
 		fmt.Println("Initializing WireGuard Server Keys...")
-		privCmd := exec.Command("wg", "genkey")
-		privKey, _ := privCmd.Output()
+		privKey, _ := runPrivilegedOutput("wg", "genkey")
 		os.WriteFile(privPath, privKey, 0600)
 
-		pubCmd := exec.Command("sh", "-c", fmt.Sprintf("echo %s | wg pubkey", strings.TrimSpace(string(privKey))))
-		pubKey, _ := pubCmd.Output()
+		pubKey, _ := runPrivilegedCombinedOutput("sh", "-c", fmt.Sprintf("echo %s | wg pubkey", strings.TrimSpace(string(privKey))))
 		os.WriteFile(pubPath, pubKey, 0644)
 	}
 
@@ -749,7 +747,7 @@ func applyCloudflareConfig(cfg AppConfig) error {
 		fmt.Println("Installing cloudflared...")
 		// Download and install (Debian/Ubuntu specific)
 		installCmd := "curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb && sudo dpkg -i cloudflared.deb && rm cloudflared.deb"
-		err := exec.Command("bash", "-c", installCmd).Run()
+		err := runPrivileged("bash", "-c", installCmd)
 		if err != nil {
 			return fmt.Errorf("failed to install cloudflared: %v", err)
 		}
@@ -757,10 +755,10 @@ func applyCloudflareConfig(cfg AppConfig) error {
 
 	// 2. Install/Update the service with the token
 	// First, try to uninstall existing service to ensure clean state
-	exec.Command("cloudflared", "service", "uninstall").Run()
+	runPrivileged("cloudflared", "service", "uninstall")
 
 	// Install service
-	err = exec.Command("cloudflared", "service", "install", cfg.CloudflareToken).Run()
+	err = runPrivileged("cloudflared", "service", "install", cfg.CloudflareToken)
 	if err != nil {
 		return fmt.Errorf("failed to install cloudflared service: %v", err)
 	}
@@ -772,8 +770,8 @@ func applyCloudflareConfig(cfg AppConfig) error {
 func applyAdBlockerConfig(cfg AppConfig) error {
 	if cfg.AdBlocker == "none" {
 		// Ensure standard DNS services are running if we're not using an adblocker
-		exec.Command("systemctl", "start", "dnsmasq").Run()
-		exec.Command("systemctl", "start", "unbound").Run()
+		runPrivileged("systemctl", "start", "dnsmasq")
+		runPrivileged("systemctl", "start", "unbound")
 		return nil
 	}
 
@@ -786,23 +784,23 @@ func applyAdBlockerConfig(cfg AppConfig) error {
 			fmt.Println("Installing Pi-hole (Unattended)...")
 
 			// Stop conflicting services
-			exec.Command("systemctl", "stop", "dnsmasq").Run()
-			exec.Command("systemctl", "stop", "unbound").Run()
+			runPrivileged("systemctl", "stop", "dnsmasq")
+			runPrivileged("systemctl", "stop", "unbound")
 
 			// Pi-hole automated install command
 			// Note: We use --unattended and provide a basic config if needed,
 			// but we'll try the simplest route first.
 			installCmd := "curl -sSL https://install.pi-hole.net | bash /dev/stdin --unattended"
-			err := exec.Command("bash", "-c", installCmd).Run()
+			err := runPrivileged("bash", "-c", installCmd)
 			if err != nil {
 				return fmt.Errorf("failed to install Pi-hole: %v", err)
 			}
 		} else {
 			// Ensure it's running
-			exec.Command("pihole", "enable").Run()
+			runPrivileged("pihole", "enable")
 			// Stop conflicting services
-			exec.Command("systemctl", "stop", "dnsmasq").Run()
-			exec.Command("systemctl", "stop", "unbound").Run()
+			runPrivileged("systemctl", "stop", "dnsmasq")
+			runPrivileged("systemctl", "stop", "unbound")
 		}
 		fmt.Println("Pi-hole setup complete.")
 	}
@@ -885,12 +883,10 @@ func addVPNClient(w http.ResponseWriter, r *http.Request) {
 	os.MkdirAll(clientsDir, 0755)
 
 	// 1. Generate Client Keys
-	privCmd := exec.Command("wg", "genkey")
-	privKey, _ := privCmd.Output()
+	privKey, _ := runPrivilegedOutput("wg", "genkey")
 	cleanPriv := strings.TrimSpace(string(privKey))
 
-	pubCmd := exec.Command("sh", "-c", fmt.Sprintf("echo %s | wg pubkey", cleanPriv))
-	pubKey, _ := pubCmd.Output()
+	pubKey, _ := runPrivilegedCombinedOutput("sh", "-c", fmt.Sprintf("echo %s | wg pubkey", cleanPriv))
 	cleanPub := strings.TrimSpace(string(pubKey))
 
 	// 2. Determine an IP (Basic assignment for now)
@@ -905,7 +901,7 @@ func addVPNClient(w http.ResponseWriter, r *http.Request) {
 		f.WriteString(peerBlock)
 		f.Close()
 		// Reload wg0 without downtime
-		exec.Command("wg", "syncconf", "wg0", "/etc/wireguard/wg0.conf").Run()
+		runPrivileged("wg", "syncconf", "wg0", "/etc/wireguard/wg0.conf")
 	}
 
 	// 4. Generate Client .conf
@@ -966,7 +962,7 @@ func downloadVPNClient(w http.ResponseWriter, r *http.Request) {
 func getSystemStatus(w http.ResponseWriter, r *http.Request) {
 	hostname, _ := os.Hostname()
 	uptime := "unknown"
-	out, err := exec.Command("uptime", "-p").Output()
+	out, err := runPrivilegedOutput("uptime", "-p")
 	if err == nil {
 		uptime = strings.TrimSpace(string(out))
 	}
@@ -1048,8 +1044,7 @@ func getInterfaces(w http.ResponseWriter, r *http.Request) {
 func getFirewallRules(w http.ResponseWriter, r *http.Request) {
 	// Try to execute nft command
 	// Note: This often requires sudo in a real environment.
-	cmd := exec.Command("nft", "-j", "list", "ruleset")
-	out, err := cmd.Output()
+	out, err := runPrivilegedOutput("nft", "-j", "list", "ruleset")
 
 	if err != nil {
 		// keeping mock fallback but simplified for brevity
@@ -1180,10 +1175,9 @@ func addFirewallRule(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("Executing NFT: nft %v\n", args) // Debug log
 
-	cmd := exec.Command("nft", args...)
 	ruleJSON, _ := json.Marshal(rule)
 
-	if out, err := cmd.CombinedOutput(); err != nil {
+	if out, err := runPrivilegedCombinedOutput("nft", args...); err != nil {
 		errorMsg := fmt.Sprintf("NFT Error: %s (CMD: nft %v)", string(out), args)
 		fmt.Println(errorMsg)
 
@@ -1221,8 +1215,7 @@ func deleteFirewallRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Command: nft delete rule <family> <table> <chain> handle <handle>
-	cmd := exec.Command("nft", "delete", "rule", family, table, chain, "handle", handle)
-	if out, err := cmd.CombinedOutput(); err != nil {
+	if out, err := runPrivilegedCombinedOutput("nft", "delete", "rule", family, table, chain, "handle", handle); err != nil {
 		logAuditEvent(getUsernameFromToken(r), "firewall.delete",
 			fmt.Sprintf("%s/%s", table, chain),
 			fmt.Sprintf("{\"handle\":\"%s\",\"error\":\"%s\"}", handle, string(out)),
@@ -1241,14 +1234,12 @@ func deleteFirewallRule(w http.ResponseWriter, r *http.Request) {
 func getServiceStatus(name, serviceName string) ServiceStatus {
 	status := "Stopped"
 	// Check systemd status
-	cmd := exec.Command("systemctl", "is-active", serviceName)
-	if err := cmd.Run(); err == nil {
+	if err := runPrivileged("systemctl", "is-active", serviceName); err == nil {
 		status = "Running"
 	} else {
 		// Try fallback for AdGuard if the standard lowercase doesn't match
 		if serviceName == "adguardhome" {
-			fallbackCmd := exec.Command("systemctl", "is-active", "AdGuardHome")
-			if err := fallbackCmd.Run(); err == nil {
+			if err := runPrivileged("systemctl", "is-active", "AdGuardHome"); err == nil {
 				status = "Running"
 				serviceName = "AdGuardHome" // Use the correctly case-matched name
 			}
@@ -1258,7 +1249,7 @@ func getServiceStatus(name, serviceName string) ServiceStatus {
 	// Try to get version (generic approach, might need tailoring)
 	version := "-"
 	if name == "DHCP Server (dnsmasq)" {
-		out, _ := exec.Command("dnsmasq", "-v").Output()
+		out, _ := runPrivilegedOutput("dnsmasq", "-v")
 		if len(out) > 0 {
 			parts := strings.Fields(string(out))
 			if len(parts) >= 3 {
@@ -1266,7 +1257,7 @@ func getServiceStatus(name, serviceName string) ServiceStatus {
 			}
 		}
 	} else if name == "Cloudflare Tunnel" {
-		out, _ := exec.Command("cloudflared", "--version").Output()
+		out, _ := runPrivilegedOutput("cloudflared", "--version")
 		if len(out) > 0 {
 			parts := strings.Fields(string(out))
 			if len(parts) >= 3 {
@@ -1274,7 +1265,7 @@ func getServiceStatus(name, serviceName string) ServiceStatus {
 			}
 		}
 	} else if name == "OpenVPN Server" {
-		out, _ := exec.Command("openvpn", "--version").Output()
+		out, _ := runPrivilegedOutput("openvpn", "--version")
 		if len(out) > 0 {
 			parts := strings.Fields(string(out))
 			if len(parts) >= 2 {
@@ -1283,7 +1274,7 @@ func getServiceStatus(name, serviceName string) ServiceStatus {
 		}
 	} else if name == "Ad-blocking DNS" {
 		// Check for pihole version
-		out, _ := exec.Command("pihole", "-v").Output()
+		out, _ := runPrivilegedOutput("pihole", "-v")
 		if len(out) > 0 {
 			// Pi-hole version is v5.18.2 (usually)
 			parts := strings.Fields(string(out))
@@ -1381,15 +1372,13 @@ func createVLAN(w http.ResponseWriter, r *http.Request) {
 
 	// Create VLAN interface using ip link
 	// Using absolute path for safety and explicit arguments
-	cmd := exec.Command("/usr/sbin/ip", "link", "add", "link", req.ParentInterface, "name", vlanInterface, "type", "vlan", "id", fmt.Sprintf("%d", req.VLANId))
-	if _, err := cmd.CombinedOutput(); err != nil {
+	if _, err := runPrivilegedCombinedOutput("/usr/sbin/ip", "link", "add", "link", req.ParentInterface, "name", vlanInterface, "type", "vlan", "id", fmt.Sprintf("%d", req.VLANId)); err != nil {
 		http.Error(w, "Failed to create VLAN interface", http.StatusInternalServerError)
 		return
 	}
 
 	// Bring the VLAN interface up
-	upCmd := exec.Command("ip", "link", "set", "dev", vlanInterface, "up")
-	if output, err := upCmd.CombinedOutput(); err != nil {
+	if output, err := runPrivilegedCombinedOutput("ip", "link", "set", "dev", vlanInterface, "up"); err != nil {
 		fmt.Printf("Warning: Failed to bring up VLAN interface: %s\n", string(output))
 	}
 
@@ -1418,8 +1407,7 @@ func deleteVLAN(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("Deleting VLAN: %s\n", interfaceName)
 
-	cmd := exec.Command("ip", "link", "delete", interfaceName)
-	if output, err := cmd.CombinedOutput(); err != nil {
+	if output, err := runPrivilegedCombinedOutput("ip", "link", "delete", interfaceName); err != nil {
 		errMsg := fmt.Sprintf("Failed to delete VLAN: %s\nOutput: %s", err.Error(), string(output))
 		fmt.Printf("ERROR: %s\n", errMsg)
 		http.Error(w, errMsg, http.StatusInternalServerError)
@@ -1456,8 +1444,7 @@ func configureIP(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("Configuring IP: %s %s on %s\n", req.Action, req.IPAddress, req.InterfaceName)
 
 	// Use ip addr add/del
-	cmd := exec.Command("/usr/sbin/ip", "addr", req.Action, req.IPAddress, "dev", req.InterfaceName)
-	if _, err := cmd.CombinedOutput(); err != nil {
+	if _, err := runPrivilegedCombinedOutput("/usr/sbin/ip", "addr", req.Action, req.IPAddress, "dev", req.InterfaceName); err != nil {
 		http.Error(w, "Failed to configure IP address on interface", http.StatusInternalServerError)
 		return
 	}
@@ -1486,8 +1473,7 @@ func setInterfaceState(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("Setting interface %s to %s\n", req.InterfaceName, req.State)
 
-	cmd := exec.Command("ip", "link", "set", "dev", req.InterfaceName, req.State)
-	if output, err := cmd.CombinedOutput(); err != nil {
+	if output, err := runPrivilegedCombinedOutput("ip", "link", "set", "dev", req.InterfaceName, req.State); err != nil {
 		errMsg := fmt.Sprintf("Failed to set interface state: %s\nOutput: %s", err.Error(), string(output))
 		fmt.Printf("ERROR: %s\n", errMsg)
 		http.Error(w, errMsg, http.StatusInternalServerError)
@@ -1645,12 +1631,10 @@ func getTrafficStats(w http.ResponseWriter, r *http.Request) {
 
 func getActiveConnections(w http.ResponseWriter, r *http.Request) {
 	// Use 'ss' command to get active connections
-	cmd := exec.Command("ss", "-tunap")
-	output, err := cmd.Output()
+	output, err := runPrivilegedOutput("ss", "-tunap")
 	if err != nil {
 		// Fallback to netstat if ss fails
-		cmd = exec.Command("netstat", "-tunap")
-		output, err = cmd.Output()
+		output, err = runPrivilegedOutput("netstat", "-tunap")
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to get connections: %s", err.Error()), http.StatusInternalServerError)
 			return
@@ -1751,8 +1735,7 @@ func getSuricataAlerts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Use tail command to get last N lines
-	cmd := exec.Command("tail", "-n", fmt.Sprintf("%d", limit), eveLogPath)
-	output, err := cmd.Output()
+	output, err := runPrivilegedOutput("tail", "-n", fmt.Sprintf("%d", limit), eveLogPath)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to read Suricata logs: %s", err.Error()), http.StatusInternalServerError)
 		return
@@ -1822,8 +1805,7 @@ func getSuricataAlerts(w http.ResponseWriter, r *http.Request) {
 
 func getCrowdSecDecisions(w http.ResponseWriter, r *http.Request) {
 	// Execute cscli to get decisions
-	cmd := exec.Command("cscli", "decisions", "list", "-o", "json")
-	output, err := cmd.Output()
+	output, err := runPrivilegedOutput("cscli", "decisions", "list", "-o", "json")
 	if err != nil {
 		// CrowdSec might not be installed
 		w.Header().Set("Content-Type", "application/json")
@@ -2106,8 +2088,7 @@ func getSecurityStats(w http.ResponseWriter, r *http.Request) {
 	// Get Suricata statistics from eve.json
 	eveLogPath := "/var/log/suricata/eve.json"
 	if _, err := os.Stat(eveLogPath); err == nil {
-		cmd := exec.Command("tail", "-n", "1000", eveLogPath)
-		output, err := cmd.Output()
+		output, err := runPrivilegedOutput("tail", "-n", "1000", eveLogPath)
 		if err == nil {
 			lines := strings.Split(string(output), "\n")
 			signatureCounts := make(map[string]int)
@@ -2166,8 +2147,7 @@ func getSecurityStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get CrowdSec statistics
-	cmd := exec.Command("cscli", "decisions", "list", "-o", "json")
-	output, err := cmd.Output()
+	output, err := runPrivilegedOutput("cscli", "decisions", "list", "-o", "json")
 	if err == nil {
 		var decisions []map[string]interface{}
 		if err := json.Unmarshal(output, &decisions); err == nil {
@@ -2245,8 +2225,7 @@ func controlService(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("Controlling service: %s %s\n", req.Action, req.ServiceName)
 
 	// Execute systemctl command
-	cmd := exec.Command("systemctl", req.Action, req.ServiceName)
-	output, err := cmd.CombinedOutput()
+	output, err := runPrivilegedCombinedOutput("systemctl", req.Action, req.ServiceName)
 
 	if err != nil {
 		errMsg := fmt.Sprintf("Service control failed: %s\nOutput: %s", err.Error(), string(output))
@@ -2572,6 +2551,7 @@ func main() {
 	mux.HandleFunc("GET /api/firewall", authMiddleware(getFirewallRules))
 	mux.HandleFunc("POST /api/firewall", authMiddleware(addFirewallRule))
 	mux.HandleFunc("DELETE /api/firewall", authMiddleware(deleteFirewallRule))
+	mux.HandleFunc("POST /api/firewall/confirm", authMiddleware(csrfMiddleware(confirmFirewallChanges))) // Watchdog confirmation
 	mux.HandleFunc("GET /api/services", authMiddleware(getServices))
 	mux.HandleFunc("POST /api/services/control", authMiddleware(controlService))
 	mux.HandleFunc("GET /api/traffic/stats", authMiddleware(getTrafficStats))

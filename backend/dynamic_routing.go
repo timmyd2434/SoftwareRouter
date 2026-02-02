@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
 )
@@ -151,10 +150,9 @@ func generateFRRConfig() error {
 
 	// Reload FRR
 	// "systemctl reload frr" is standard
-	cmd := exec.Command("systemctl", "reload", "frr")
-	if out, err := cmd.CombinedOutput(); err != nil {
+	if out, err := runPrivilegedCombinedOutput("systemctl", "reload", "frr"); err != nil {
 		// Fallback to restart if reload fails
-		exec.Command("systemctl", "restart", "frr").Run()
+		runPrivileged("systemctl", "restart", "frr")
 		return fmt.Errorf("reload failed: %s", string(out))
 	}
 

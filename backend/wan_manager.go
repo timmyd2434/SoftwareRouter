@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"sync"
 	"time"
 )
@@ -105,8 +104,7 @@ func checkWANHealth() {
 		}
 
 		// -W 2 seconds timeout
-		cmd := exec.Command("ping", "-I", interfaces[i].Interface, "-c", "1", "-W", "2", target)
-		err := cmd.Run()
+		err := runPrivileged("ping", "-I", interfaces[i].Interface, "-c", "1", "-W", "2", target)
 
 		isOnline := (err == nil)
 		newState := "offline"
@@ -195,8 +193,7 @@ func applyLoadBalancing(interfaces []WANInterface) {
 	// But to avoid log spam, maybe only log if changes?
 	// Note: 'replace' is atomic.
 
-	cmd := exec.Command("ip", args...)
-	if out, err := cmd.CombinedOutput(); err != nil {
+	if out, err := runPrivilegedCombinedOutput("ip", args...); err != nil {
 		fmt.Printf("Failed to apply Load Balancing: %v (%s)\n", err, string(out))
 	} else {
 		// Success
@@ -222,8 +219,7 @@ func switchDefaultRoute(ifaceName string) {
 		return
 	}
 
-	cmd := exec.Command("ip", "route", "replace", "default", "via", gateway, "dev", ifaceName)
-	if out, err := cmd.CombinedOutput(); err != nil {
+	if out, err := runPrivilegedCombinedOutput("ip", "route", "replace", "default", "via", gateway, "dev", ifaceName); err != nil {
 		fmt.Printf("Failed to switch default route: %v (%s)\n", err, string(out))
 	} else {
 		fmt.Printf("Successfully switched default route to %s via %s\n", ifaceName, gateway)

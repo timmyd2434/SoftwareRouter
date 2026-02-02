@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"sync"
 )
 
@@ -87,8 +86,7 @@ func ApplyQoS(cfg QoSConfig) error {
 			args = append(args, "overhead", fmt.Sprintf("%d", cfg.Overhead))
 		}
 
-		cmd := exec.Command("tc", args...)
-		if out, err := cmd.CombinedOutput(); err != nil {
+		if out, err := runPrivilegedCombinedOutput("tc", args...); err != nil {
 			return fmt.Errorf("failed to apply egress cake: %s (%v)", string(out), err)
 		}
 	}
@@ -107,15 +105,14 @@ func ApplyQoS(cfg QoSConfig) error {
 
 		// Ensure IFB exists (might fail if module not loaded, but 'ip link add type ifb' works on modern kernels if supported)
 		// We catch errors but proceed.
-		exec.Command("ip", "link", "add", "name", ifbDev, "type", "ifb").Run()
-		exec.Command("ip", "link", "set", "dev", ifbDev, "up").Run()
+		runPrivileged("ip", "link", "add", "name", ifbDev, "type", "ifb")
+		runPrivileged("ip", "link", "set", "dev", ifbDev, "up")
 
 		// Ingress qdisc on real dev
-		exec.Command("tc", "qdisc", "add", "dev", cfg.Interface, "handle", "ffff:", "ingress").Run()
+		runPrivileged("tc", "qdisc", "add", "dev", cfg.Interface, "handle", "ffff:", "ingress")
 
 		// Redirect to IFB
-		redirectCmd := exec.Command("tc", "filter", "add", "dev", cfg.Interface, "parent", "ffff:", "matchall", "action", "mirred", "egress", "redirect", "dev", ifbDev)
-		if out, err := redirectCmd.CombinedOutput(); err != nil {
+		if out, err := runPrivilegedCombinedOutput("tc", "filter", "add", "dev", cfg.Interface, "parent", "ffff:", "matchall", "action", "mirred", "egress", "redirect", "dev", ifbDev); err != nil {
 			return fmt.Errorf("failed to redirect ingress to IFB: %s", string(out))
 		}
 
@@ -125,7 +122,7 @@ func ApplyQoS(cfg QoSConfig) error {
 			cakeArgs = append(cakeArgs, "overhead", fmt.Sprintf("%d", cfg.Overhead))
 		}
 
-		if out, err := exec.Command("tc", cakeArgs...).CombinedOutput(); err != nil {
+		if out, err := runPrivilegedCombinedOutput("tc", cakeArgs...); err != nil {
 			return fmt.Errorf("failed to apply ingress cake on %s: %s", ifbDev, string(out))
 		}
 	}
@@ -136,19 +133,19 @@ func ApplyQoS(cfg QoSConfig) error {
 // RemoveQoS deletes traffic control settings
 func RemoveQoS(iface string) {
 	// Remove Root (Egress)
-	exec.Command("tc", "qdisc", "del", "dev", iface, "root").Run()
+	runPrivileged("tc", "qdisc", "del", "dev", iface, "root")
 
 	// Remove Ingress
-	exec.Command("tc", "qdisc", "del", "dev", iface, "ingress").Run()
+	runPrivileged("tc", "qdisc", "del", "dev", iface, "ingress")
 
 	// Remove IFB if it exists
 	ifbDev := ifbDevicePrefix + iface
-	exec.Command("ip", "link", "del", "dev", ifbDev).Run()
+	runPrivileged("ip", "link", "del", "dev", ifbDev)
 }
 
 // GetQoSStatus returns the raw 'tc -s qdisc' output
 func GetQoSStatus(iface string) (string, error) {
-	out, err := exec.Command("tc", "-s", "qdisc", "show", "dev", iface).CombinedOutput()
+	out, err := runPrivilegedCombinedOutput("tc", "-s", "qdisc", "show", "dev", iface)
 	if err != nil {
 		return "", err
 	}

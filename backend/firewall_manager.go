@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
 )
@@ -20,8 +19,8 @@ var firewallManager = &FirewallManager{}
 func InitFirewallManager() {
 	// Enable route_localnet to allow DNAT to 127.0.0.1
 	// This is critical for the security model where we bind to localhost but DNAT from LAN/WAN
-	exec.Command("sysctl", "-w", "net.ipv4.conf.all.route_localnet=1").Run()
-	exec.Command("sysctl", "-w", "net.ipv4.conf.default.route_localnet=1").Run()
+	runPrivileged("sysctl", "-w", "net.ipv4.conf.all.route_localnet=1")
+	runPrivileged("sysctl", "-w", "net.ipv4.conf.default.route_localnet=1")
 }
 
 // ApplyFirewallRules regenerates and applies all firewall rules ATOMICALLY
@@ -89,7 +88,7 @@ func (fm *FirewallManager) ApplyFirewallRules() error {
 	}
 
 	// 5. Snapshot current ruleset for rollback
-	snapshot, err := exec.Command("nft", "list", "ruleset").Output()
+	snapshot, err := runPrivilegedOutput("nft", "list", "ruleset")
 	if err != nil {
 		fmt.Printf("Warning: Failed to snapshot current ruleset: %v\n", err)
 		snapshot = nil
@@ -109,15 +108,18 @@ func (fm *FirewallManager) ApplyFirewallRules() error {
 
 	// 7. Validate syntax first (dry-run)
 	fmt.Println("Validating ruleset syntax...")
-	checkCmd := exec.Command("nft", "-c", "-f", tmpfile.Name())
-	if output, err := checkCmd.CombinedOutput(); err != nil {
+	if output, err := runPrivilegedCombinedOutput("nft", "-c", "-f", tmpfile.Name()); err != nil {
 		return fmt.Errorf("Ruleset syntax validation failed: %v\nOutput: %s", err, string(output))
 	}
 
-	// 8. Apply atomically via nft -f
+	// 8. Install dead-man switch (emergency access protection)
+	if err := installDeadManSwitch(); err != nil {
+		fmt.Printf("Warning: Could not install dead-man switch: %v\n", err)
+	}
+
+	// 9. Apply atomically via nft -f
 	fmt.Printf("Applying ruleset from %s...\n", tmpfile.Name())
-	cmd := exec.Command("nft", "-f", tmpfile.Name())
-	if output, err := cmd.CombinedOutput(); err != nil {
+	if output, err := runPrivilegedCombinedOutput("nft", "-f", tmpfile.Name()); err != nil {
 		fmt.Printf("ERROR: Failed to apply ruleset: %v\nOutput: %s\n", err, string(output))
 
 		// Rollback if we have a snapshot
@@ -127,7 +129,7 @@ func (fm *FirewallManager) ApplyFirewallRules() error {
 			if rollbackFile != nil {
 				rollbackFile.Write(snapshot)
 				rollbackFile.Close()
-				exec.Command("nft", "-f", rollbackFile.Name()).Run()
+				runPrivileged("nft", "-f", rollbackFile.Name())
 				os.Remove(rollbackFile.Name())
 				fmt.Println("Rollback completed")
 			}
@@ -136,13 +138,31 @@ func (fm *FirewallManager) ApplyFirewallRules() error {
 		return fmt.Errorf("Firewall apply failed: %v", err)
 	}
 
+	// 10. Remove dead-man switch (rules applied successfully)
+	removeDeadManSwitch()
+
+	// 11. Start watchdog timer (user must confirm or rollback occurs)
+	if snapshot != nil {
+		if err := startWatchdogTimer(string(snapshot)); err != nil {
+			fmt.Printf("Warning: Could not start watchdog timer: %v\n", err)
+		}
+	}
+
+	// 12. Save known-good snapshot for boot-safe fallback
+	if err := saveKnownGoodSnapshot(ruleset); err != nil {
+		fmt.Printf("Warning: Could not save known-good snapshot: %v\n", err)
+	}
+
 	fmt.Println("✓ Firewall rules applied successfully (atomic)")
+	fmt.Println("⚠️  You have 60 seconds to confirm changes via WebUI or rules will rollback")
 	return nil
 }
 
 // generateFullRuleset creates a complete nftables configuration as text
 func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []string, cfg Config, pfRules []PortForwardingRule) (string, error) {
 	var b strings.Builder
+
+	// Control plane protection will be injected later
 
 	// Flush all existing rules
 	b.WriteString("flush ruleset\n\n")
@@ -305,5 +325,9 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 	b.WriteString("  }\n")
 	b.WriteString("}\n")
 
-	return b.String(), nil
+	// Inject control plane protection into the ruleset
+	ruleset := b.String()
+	ruleset = injectControlPlaneProtectionV2(ruleset)
+
+	return ruleset, nil
 }
