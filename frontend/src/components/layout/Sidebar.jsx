@@ -1,18 +1,26 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Network, ShieldCheck, Activity, Settings, Menu, X, LogOut, Lock, Server, Globe, ExternalLink, Box } from 'lucide-react';
+import { LayoutDashboard, Network, ShieldCheck, Activity, Settings, Menu, X, LogOut, Lock, Server, Globe, ExternalLink, Box, ArrowRight, FileText, Monitor, Route, Zap } from 'lucide-react';
 import './Sidebar.css';
 
 const Sidebar = ({ isOpen, toggleSidebar, onLogout }) => {
     const navItems = [
         { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
+        { icon: Monitor, label: 'Devices', path: '/clients' },
         { icon: Network, label: 'Interfaces', path: '/interfaces' },
+        { icon: Route, label: 'Routing', path: '/routing' },
+        { icon: Globe, label: 'Dynamic Routing', path: '/dynamic-routing' },
+        { icon: Zap, label: 'Multi-WAN', path: '/multi-wan' },
         { icon: ShieldCheck, label: 'Firewall', path: '/firewall' },
-        { icon: Activity, label: 'Traffic', path: '/traffic' },
+        { icon: Activity, label: 'Traffic Control', path: '/traffic' },
+        { icon: Activity, label: 'Traffic Stats', path: '/stats' },
         { icon: Lock, label: 'Security', path: '/security' },
+        { icon: FileText, label: 'Diagnostics', path: '/diagnostics' },
+        { icon: FileText, label: 'Audit Logs', path: '/audit-logs' },
         { icon: Globe, label: 'Remote Access', path: '/remote-access' },
         { icon: Server, label: 'Services', path: '/services' },
         { icon: ShieldCheck, label: 'DNS Analytics', path: '/dns-analytics' },
+        { icon: ArrowRight, label: 'Port Forwarding', path: '/port-forwarding' },
         { icon: Settings, label: 'Settings', path: '/settings' },
         {
             icon: Box,

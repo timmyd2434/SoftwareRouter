@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -60,22 +59,19 @@ func getVPNClientStatus(w http.ResponseWriter, r *http.Request) {
 	status := VPNClientStatus{ServiceName: vpnSystemdService}
 
 	// Check systemd status
-	cmd := exec.Command("systemctl", "is-active", vpnSystemdService)
-	output, _ := cmd.CombinedOutput()
+	output, _ := runPrivilegedOutput("systemctl", "is-active", vpnSystemdService)
 	isActive := strings.TrimSpace(string(output)) == "active"
 
 	status.Connected = isActive
 
 	if isActive {
 		// Get uptime
-		cmdUptime := exec.Command("systemctl", "show", vpnSystemdService, "--property=ActiveEnterTimestamp")
-		outUptime, _ := cmdUptime.CombinedOutput()
+		outUptime, _ := runPrivilegedOutput("systemctl", "show", vpnSystemdService, "--property=ActiveEnterTimestamp")
 		status.Uptime = strings.TrimPrefix(strings.TrimSpace(string(outUptime)), "ActiveEnterTimestamp=")
 
 		// Get IP from tun1 (assuming we force tun1) or trying to find the tun interface
 		// A robust way creates a specific device name, but let's try to find the one associated with the PID or just 'tun1'
-		cmdIP := exec.Command("ip", "-4", "addr", "show", "tun1")
-		outIP, err := cmdIP.CombinedOutput()
+		outIP, err := runPrivilegedOutput("ip", "-4", "addr", "show", "tun1")
 		if err == nil {
 			lines := strings.Split(string(outIP), "\n")
 			for _, line := range lines {
@@ -156,7 +152,7 @@ func uploadVPNClientConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enable service execution
-	exec.Command("systemctl", "daemon-reload").Run()
+	runPrivileged("systemctl", "daemon-reload")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "Configuration saved successfully. You can now connect."})
@@ -172,14 +168,15 @@ func controlVPNClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var cmd *exec.Cmd
+	var output []byte
+	var err error
 	if req.Action == "start" {
-		cmd = exec.Command("systemctl", "restart", vpnSystemdService)
+		output, err = runPrivilegedCombinedOutput("systemctl", "restart", vpnSystemdService)
 	} else {
-		cmd = exec.Command("systemctl", "stop", vpnSystemdService)
+		output, err = runPrivilegedCombinedOutput("systemctl", "stop", vpnSystemdService)
 	}
 
-	if output, err := cmd.CombinedOutput(); err != nil {
+	if err != nil {
 		http.Error(w, fmt.Sprintf("Action failed: %s\nOutput: %s", err.Error(), string(output)), http.StatusInternalServerError)
 		return
 	}
@@ -253,15 +250,14 @@ func deleteVPNPolicy(w http.ResponseWriter, r *http.Request) {
 func refreshVPNRouting() {
 	// 1. Ensure Table 100 uses VPN interface
 	// Check if tun1 is up
-	checkTun := exec.Command("ip", "link", "show", "tun1")
-	if err := checkTun.Run(); err != nil {
+	if err := runPrivileged("ip", "link", "show", "tun1"); err != nil {
 		// Tun1 down, no routing possible
 		return
 	}
 
 	// Add default route to table 100
 	// "ip route replace default dev tun1 table 100"
-	exec.Command("ip", "route", "replace", "default", "dev", "tun1", "table", "100").Run()
+	runPrivileged("ip", "route", "replace", "default", "dev", "tun1", "table", "100")
 
 	// 2. Flush existing rules for table 100 to avoid duplicates?
 	// It's hard to selectively flush only ours without tagging.
@@ -269,7 +265,7 @@ func refreshVPNRouting() {
 	// Or we can list all rules and delete ones looking up table 100.
 	// "ip rule del lookup 100" loops until error
 	for {
-		if err := exec.Command("ip", "rule", "del", "lookup", "100").Run(); err != nil {
+		if err := runPrivileged("ip", "rule", "del", "lookup", "100"); err != nil {
 			break
 		}
 	}
@@ -277,9 +273,9 @@ func refreshVPNRouting() {
 	// 3. Add rules for each policy
 	policies, _ := loadVPNPolicies()
 	for _, p := range policies {
-		exec.Command("ip", "rule", "add", "from", p.SourceIP, "lookup", "100").Run()
+		runPrivileged("ip", "rule", "add", "from", p.SourceIP, "lookup", "100")
 	}
 
 	// Ensure cache flush
-	exec.Command("ip", "route", "flush", "cache").Run()
+	runPrivileged("ip", "route", "flush", "cache")
 }

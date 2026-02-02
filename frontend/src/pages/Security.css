@@ -42,13 +42,13 @@
 }
 
 /* Statistics Cards */
-.stats-grid {
+.security-stats-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: var(--space-4);
 }
 
-.stat-card {
+.security-stat-card {
     display: flex;
     gap: var(--space-4);
     align-items: center;

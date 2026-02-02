@@ -98,8 +98,8 @@ const Security = () => {
 
             {/* Security Statistics Cards */}
             {stats && (
-                <div className="stats-grid">
-                    <div className="stat-card glass-panel">
+                <div className="security-stats-grid">
+                    <div className="security-stat-card glass-panel">
                         <div className="stat-icon suricata">
                             <Shield size={28} />
                         </div>
@@ -114,7 +114,7 @@ const Security = () => {
                         </div>
                     </div>
 
-                    <div className="stat-card glass-panel">
+                    <div className="security-stat-card glass-panel">
                         <div className="stat-icon crowdsec">
                             <Ban size={28} />
                         </div>
@@ -127,7 +127,7 @@ const Security = () => {
                         </div>
                     </div>
 
-                    <div className="stat-card glass-panel">
+                    <div className="security-stat-card glass-panel">
                         <div className="stat-icon status">
                             <CheckCircle size={28} />
                         </div>
@@ -286,13 +286,13 @@ const Security = () => {
             </div>
 
             {/* Installation Notice */}
-            {(!stats || stats.suricata_stats.total_alerts === 0) && alerts.length === 0 && (
+            {!stats && (
                 <div className="installation-notice">
                     <AlertCircle size={20} />
                     <div>
                         <strong>Security Stack Not Detected</strong>
                         <p>
-                            Run <code>sudo ./install-security.sh</code> to install Suricata and CrowdSec.
+                            Security features (Suricata/CrowdSec) can be installed using <code>sudo ./install.sh</code> and selecting IDS/IPS during configuration.
                             See the installation script in the project root directory.
                         </p>
                     </div>

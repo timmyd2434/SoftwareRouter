@@ -28,7 +28,19 @@ const Dashboard = () => {
             const res = await authFetch(API_ENDPOINTS.TRAFFIC_HISTORY);
             if (res.ok) {
                 const data = await res.json();
-                setTrafficHistory(data || []);
+                // Map API "rx_rate" to expected "rx_bps" if needed
+                if (Array.isArray(data)) {
+                    const mapped = data.map(pt => ({
+                        ...pt,
+                        rx_bps: pt.rx_rate || pt.rx_bps || 0,
+                        tx_bps: pt.tx_rate || pt.tx_bps || 0,
+                        // Ensure timestamp is valid (API sends unix epoch int)
+                        timestamp: pt.timestamp * 1000 // Convert to ms if needed by recharts or leave as is
+                    }));
+                    setTrafficHistory(mapped);
+                } else {
+                    setTrafficHistory([]);
+                }
             }
         } catch (err) {
             console.error("Failed to fetch traffic history", err);

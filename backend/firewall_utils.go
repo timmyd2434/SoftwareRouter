@@ -2,105 +2,40 @@ package main
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
-	"time"
 )
 
 // initFirewall sets up the basic networking environment
+// NOTE: This function ONLY handles sysctl settings.
+// All nftables/firewall logic is now handled by FirewallManager.
 func initFirewall() {
-	fmt.Println("Initializing Firewall...")
+	fmt.Println("Initializing basic networking (sysctl only)...")
 
-	// 1. Enable IP Forwarding
+	// Enable IP Forwarding
 	enableIPForwarding()
 
-	// 2. Setup Basic NFTables Rules (NAT)
-	setupNAT()
+	// Note: NAT, firewall rules, and all nftables configuration
+	// is now exclusively managed by FirewallManager.ApplyFirewallRules()
 }
 
 func enableIPForwarding() {
 	// Enable IPv4 forwarding
-	cmd := exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1")
-	if err := cmd.Run(); err != nil {
+	if err := runPrivileged("sysctl", "-w", "net.ipv4.ip_forward=1"); err != nil {
 		fmt.Printf("Error enabling IP forwarding: %v\n", err)
 	} else {
 		fmt.Println("IP Forwarding enabled.")
 	}
 }
 
+// setupNAT is deprecated - all NAT logic moved to FirewallManager
+// Keeping as stub in case of external references
 func setupNAT() {
-	// We need to apply masquerading to the WAN interface.
-	// 1. Check for an interface explicitly labeled "WAN" in metadata
-	wanIface := ""
-	metaStore, err := loadInterfaceMetadata()
-	if err == nil {
-		for ifaceName, meta := range metaStore.Metadata {
-			if strings.EqualFold(meta.Label, "WAN") {
-				wanIface = ifaceName
-				fmt.Printf("Using explicitly labeled WAN interface: %s\n", wanIface)
-				break
-			}
-		}
-	} else {
-		fmt.Printf("Error loading metadata: %v. Proceeding with auto-detection.\n", err)
-	}
-
-	// 2. Fallback: Auto-detect default gateway with retry
-	if wanIface == "" {
-		fmt.Println("No WAN label found. Attempting to auto-detect default gateway...")
-		maxRetries := 10
-		for i := 0; i < maxRetries; i++ {
-			wanIface, err = getDefaultGatewayInterface()
-			if err == nil && wanIface != "" {
-				break
-			}
-			if i < maxRetries-1 {
-				fmt.Printf("Waiting for default route... (attempt %d/%d)\n", i+1, maxRetries)
-				time.Sleep(2 * time.Second)
-			}
-		}
-	}
-
-	if wanIface == "" {
-		fmt.Printf("Warning: Could not determine WAN interface after retries. NAT may not work.\n")
-		return
-	}
-
-	fmt.Printf("Detected WAN Interface: %s. Applying NAT...\n", wanIface)
-
-	// Create table
-	exec.Command("nft", "add", "table", "inet", "softrouter").Run()
-
-	// Create chains
-	exec.Command("nft", "add", "chain", "inet", "softrouter", "postrouting", "{ type nat hook postrouting priority 100; policy accept; }").Run()
-	exec.Command("nft", "add", "chain", "inet", "softrouter", "forward", "{ type filter hook forward priority 0; policy accept; }").Run()
-	// Add input chain for local services like DNS
-	exec.Command("nft", "add", "chain", "inet", "softrouter", "input", "{ type filter hook input priority 0; policy accept; }").Run()
-
-	// Ensure DNS (Port 53) is allowed from LAN
-	exec.Command("nft", "add", "rule", "inet", "softrouter", "input", "udp", "dport", "53", "accept").Run()
-	exec.Command("nft", "add", "rule", "inet", "softrouter", "input", "tcp", "dport", "53", "accept").Run()
-
-	// Apply Masquerade to WAN
-	// rule: oifname "wanIface" masquerade
-	// We first flush the chain to avoid duplicates on restart
-	exec.Command("nft", "flush", "chain", "inet", "softrouter", "postrouting").Run()
-
-	cmd := exec.Command("nft", "add", "rule", "inet", "softrouter", "postrouting", "oifname", wanIface, "masquerade")
-	if output, err := cmd.CombinedOutput(); err != nil {
-		fmt.Printf("Error applying NAT rule: %v (%s)\n", err, string(output))
-	} else {
-		fmt.Println("NAT/Masquerading rule applied successfully.")
-	}
-
-	// Ensure forwarding is allowed
-	// For now we default to accept all forwarding.
+	fmt.Println("setupNAT() is deprecated - NAT configuration handled by FirewallManager")
 }
 
 func getDefaultGatewayInterface() (string, error) {
 	// Use 'ip route list 0/0' to find the default route
-	cmd := exec.Command("ip", "route", "show", "default")
-	output, err := cmd.Output()
+	output, err := runPrivilegedOutput("ip", "route", "show", "default")
 	if err != nil {
 		return "", err
 	}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Settings as SettingsIcon, Shield, Cloud, Terminal, Save, Lock, User, CheckCircle, AlertCircle, Loader2, Globe } from 'lucide-react';
 import { API_ENDPOINTS, authFetch } from '../apiConfig';
+import ConfirmModal from '../components/ConfirmModal';
 import './Settings.css';
 
 const Settings = () => {
@@ -8,7 +9,12 @@ const Settings = () => {
         cf_token: '',
         protected_subnet: '10.0.0.0/24',
         ad_blocker: 'none',
-        openvpn_port: 1194
+        openvpn_port: 1194,
+        web_access: {
+            allow_wan: false,
+            wan_port_http: 980,
+            wan_port_https: 9443
+        }
     });
 
     const [adguardSettings, setAdguardSettings] = useState({
@@ -263,6 +269,72 @@ const Settings = () => {
                     </form>
                 </div>
 
+                {/* Access Control */}
+                <div className="settings-card glass-panel">
+                    <div className="card-header">
+                        <Lock size={20} className="header-icon shield" />
+                        <h3>Access Control</h3>
+                    </div>
+                    <form onSubmit={handleSaveConfig} className="card-form">
+                        <div className="form-group checkbox-group">
+                            <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={config.web_access?.allow_wan || false}
+                                    onChange={e => setConfig({
+                                        ...config,
+                                        web_access: { ...config.web_access, allow_wan: e.target.checked }
+                                    })}
+                                />
+                                Allow WAN Access to WebUI
+                            </label>
+                            <p className="hint" style={{ marginTop: '0.5rem' }}>
+                                If enabled, the WebUI will be accessible from the WAN IP on the specified ports.
+                                <strong> Use with caution.</strong>
+                            </p>
+                        </div>
+
+                        {config.web_access?.allow_wan && (
+                            <div className="form-row">
+                                <div className="input-group">
+                                    <label>WAN HTTP Port</label>
+                                    <div className="field-wrapper">
+                                        <Globe size={18} />
+                                        <input
+                                            type="number"
+                                            value={config.web_access?.wan_port_http || 980}
+                                            onChange={e => setConfig({
+                                                ...config,
+                                                web_access: { ...config.web_access, wan_port_http: parseInt(e.target.value) }
+                                            })}
+                                            placeholder="980"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="input-group">
+                                    <label>WAN HTTPS Port</label>
+                                    <div className="field-wrapper">
+                                        <Lock size={18} />
+                                        <input
+                                            type="number"
+                                            value={config.web_access?.wan_port_https || 9443}
+                                            onChange={e => setConfig({
+                                                ...config,
+                                                web_access: { ...config.web_access, wan_port_https: parseInt(e.target.value) }
+                                            })}
+                                            placeholder="9443"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        <button type="submit" className="save-btn" disabled={saving}>
+                            {saving === 'config' ? <Loader2 size={18} className="spin" /> : <Save size={18} />}
+                            Save Access Settings
+                        </button>
+                    </form>
+                </div>
+
                 {/* Cloudflare Tunnel */}
                 <div className="settings-card glass-panel">
                     <div className="card-header">
@@ -373,7 +445,297 @@ const Settings = () => {
                         </p>
                     </div>
                 </div>
+
+                {/* Backup & Restore */}
+                <div className="settings-card glass-panel">
+                    <div className="card-header">
+                        <Save size={20} className="header-icon" />
+                        <h3>Backup & Restore</h3>
+                    </div>
+                    <BackupRestore />
+                </div>
+
+                {/* Session Management */}
+                <div className="settings-card glass-panel">
+                    <div className="card-header">
+                        <Shield size={20} className="header-icon" />
+                        <h3>Active Sessions</h3>
+                    </div>
+                    <SessionManagement />
+                </div>
             </div>
+        </div>
+    );
+};
+
+// Backup & Restore Component
+const BackupRestore = () => {
+    const [backups, setBackups] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [message, setMessage] = useState({ type: '', text: '' });
+    const [showRestoreModal, setShowRestoreModal] = useState(false);
+    const [selectedFile, setSelectedFile] = useState(null);
+
+    const fetchBackups = async () => {
+        try {
+            const res = await authFetch('/api/backup/list');
+            if (res.ok) {
+                const data = await res.json();
+                setBackups(data || []);
+            }
+        } catch (err) {
+            console.error('Failed to fetch backups', err);
+        }
+    };
+
+    useEffect(() => {
+        fetchBackups();
+    }, []);
+
+    const handleCreateBackup = async () => {
+        try {
+            setLoading(true);
+            setMessage({ type: '', text: '' });
+
+            const res = await authFetch('/api/backup/create');
+            if (res.ok) {
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `softrouter-backup-${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+
+                setMessage({ type: 'success', text: 'Backup created and downloaded!' });
+                fetchBackups();
+            } else {
+                setMessage({ type: 'error', text: 'Failed to create backup' });
+            }
+        } catch (err) {
+            setMessage({ type: 'error', text: 'Network error' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleRestoreBackup = async () => {
+        if (!selectedFile) return;
+
+        try {
+            setLoading(true);
+            setMessage({ type: '', text: '' });
+
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+
+            const res = await authFetch('/api/backup/restore', {
+                method: 'POST',
+                body: formData,
+                headers: {} // Let browser set content-type for FormData
+            });
+
+            if (res.ok) {
+                setMessage({ type: 'success', text: 'Backup restored successfully! Please review settings.' });
+                setShowRestoreModal(false);
+                setSelectedFile(null);
+            } else {
+                setMessage({ type: 'error', text: 'Failed to restore backup' });
+            }
+        } catch (err) {
+            setMessage({ type: 'error', text: 'Network error' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="backup-section">
+            {message.text && (
+                <div className={`alert ${message.type}`}>
+                    {message.type === 'success' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
+                    {message.text}
+                </div>
+            )}
+
+            <div className="backup-actions">
+                <button onClick={handleCreateBackup} className="btn-primary" disabled={loading}>
+                    {loading ? <Loader2 size={18} className="spin" /> : <Save size={18} />}
+                    Create Backup
+                </button>
+
+                <label className="btn-secondary file-upload-btn">
+                    <input
+                        type="file"
+                        accept=".json"
+                        onChange={(e) => {
+                            setSelectedFile(e.target.files[0]);
+                            setShowRestoreModal(true);
+                        }}
+                        style={{ display: 'none' }}
+                    />
+                    <Cloud size={18} />
+                    Upload & Restore
+                </label>
+            </div>
+
+            {backups.length > 0 && (
+                <div className="backup-list">
+                    <h4>Available Backups</h4>
+                    <table className="backup-table">
+                        <thead>
+                            <tr>
+                                <th>Filename</th>
+                                <th>Date</th>
+                                <th>Size</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {backups.map((backup, idx) => (
+                                <tr key={idx}>
+                                    <td>{backup.filename}</td>
+                                    <td>{new Date(backup.timestamp).toLocaleString()}</td>
+                                    <td>{(backup.size / 1024).toFixed(1)} KB</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
+            <ConfirmModal
+                isOpen={showRestoreModal}
+                title="Restore Backup"
+                message={`Are you sure you want to restore from ${selectedFile?.name}? This will create a pre-restore backup automatically.`}
+                onConfirm={handleRestoreBackup}
+                onCancel={() => {
+                    setShowRestoreModal(false);
+                    setSelectedFile(null);
+                }}
+                confirmText="Restore"
+                danger={true}
+            />
+        </div>
+    );
+};
+
+// Session Management Component
+const SessionManagement = () => {
+    const [sessions, setSessions] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [showRevokeModal, setShowRevokeModal] = useState(false);
+    const [sessionToRevoke, setSessionToRevoke] = useState(null);
+    const [message, setMessage] = useState({ type: '', text: '' });
+
+    const fetchSessions = async () => {
+        try {
+            setLoading(true);
+            const res = await authFetch('/api/sessions');
+            if (res.ok) {
+                const data = await res.json();
+                setSessions(data || []);
+            }
+        } catch (err) {
+            console.error('Failed to fetch sessions', err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchSessions();
+    }, []);
+
+    const handleRevokeSession = async () => {
+        if (!sessionToRevoke) return;
+
+        try {
+            const token = sessionToRevoke.token || localStorage.getItem('sr_token');
+            const res = await authFetch(`/api/sessions?token=${token}`, {
+                method: 'DELETE'
+            });
+
+            if (res.ok) {
+                setMessage({ type: 'success', text: 'Session revoked successfully' });
+                fetchSessions();
+            } else {
+                setMessage({ type: 'error', text: 'Failed to revoke session' });
+            }
+        } catch (err) {
+            setMessage({ type: 'error', text: 'Network error' });
+        } finally {
+            setShowRevokeModal(false);
+            setSessionToRevoke(null);
+        }
+    };
+
+    if (loading) {
+        return <div className="loading-sm"><Loader2 className="spin" /> Loading sessions...</div>;
+    }
+
+    return (
+        <div className="session-section">
+            {message.text && (
+                <div className={`alert ${message.type}`}>
+                    {message.type === 'success' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
+                    {message.text}
+                </div>
+            )}
+
+            {sessions.length === 0 ? (
+                <div className="empty-state-sm">No active sessions</div>
+            ) : (
+                <table className="session-table">
+                    <thead>
+                        <tr>
+                            <th>IP Address</th>
+                            <th>Last Used</th>
+                            <th>Expires</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {sessions.map((session, idx) => (
+                            <tr key={idx} className={session.is_current ? 'current-session' : ''}>
+                                <td>
+                                    {session.ip_address}
+                                    {session.is_current && <span className="current-badge">Current</span>}
+                                </td>
+                                <td>{new Date(session.last_used).toLocaleString()}</td>
+                                <td>{new Date(session.expires_at).toLocaleString()}</td>
+                                <td>
+                                    {!session.is_current && (
+                                        <button
+                                            onClick={() => {
+                                                setSessionToRevoke(session);
+                                                setShowRevokeModal(true);
+                                            }}
+                                            className="btn-revoke"
+                                        >
+                                            Revoke
+                                        </button>
+                                    )}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            )}
+
+            <ConfirmModal
+                isOpen={showRevokeModal}
+                title="Revoke Session"
+                message="Are you sure you want to revoke this session? The user will be logged out."
+                onConfirm={handleRevokeSession}
+                onCancel={() => {
+                    setShowRevokeModal(false);
+                    setSessionToRevoke(null);
+                }}
+                confirmText="Revoke"
+                danger={true}
+            />
         </div>
     );
 };

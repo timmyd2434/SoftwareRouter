@@ -4,6 +4,9 @@ import MainLayout from './components/layout/MainLayout';
 import Dashboard from './pages/Dashboard';
 import Interfaces from './pages/Interfaces';
 import Firewall from './pages/Firewall';
+import TrafficControl from './pages/TrafficControl';
+import TrafficStats from './pages/TrafficStats';
+import Diagnostics from './pages/Diagnostics';
 import Services from './pages/Services';
 import Traffic from './pages/Traffic';
 import Security from './pages/Security';
@@ -11,6 +14,12 @@ import Login from './pages/Login';
 import Settings from './pages/Settings';
 import RemoteAccess from './pages/RemoteAccess';
 import DNSAnalytics from './pages/DNSAnalytics';
+import PortForwarding from './pages/PortForwarding';
+import Routing from './pages/Routing';
+import MultiWAN from './pages/MultiWAN';
+import DynamicRouting from './pages/DynamicRouting';
+import AuditLogs from './pages/AuditLogs';
+import Clients from './pages/Clients';
 import './App.css';
 
 function App() {
@@ -35,13 +44,21 @@ function App() {
       <MainLayout onLogout={handleLogout}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/clients" element={<Clients />} />
           <Route path="/interfaces" element={<Interfaces />} />
           <Route path="/firewall" element={<Firewall />} />
-          <Route path="/traffic" element={<Traffic />} />
+          <Route path="/traffic" element={<TrafficControl />} />
+          <Route path="/stats" element={<TrafficStats />} />
+          <Route path="/diagnostics" element={<Diagnostics />} />
           <Route path="/security" element={<Security />} />
           <Route path="/remote-access" element={<RemoteAccess />} />
           <Route path="/services" element={<Services />} />
           <Route path="/dns-analytics" element={<DNSAnalytics />} />
+          <Route path="/port-forwarding" element={<PortForwarding />} />
+          <Route path="/routing" element={<Routing />} />
+          <Route path="/multi-wan" element={<MultiWAN />} />
+          <Route path="/dynamic-routing" element={<DynamicRouting />} />
+          <Route path="/audit-logs" element={<AuditLogs />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

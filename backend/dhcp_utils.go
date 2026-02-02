@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -96,6 +95,46 @@ func validateIPRange(interfaceName, startIP, endIP, gateway string) error {
 	return nil
 }
 
+// ARPEntry represents a row in /proc/net/arp
+type ARPEntry struct {
+	IP       string `json:"ip"`
+	MAC      string `json:"mac"`
+	Device   string `json:"device"`
+	Hostname string `json:"hostname"` // Enriched data
+	IsStatic bool   `json:"is_static"`
+	IsActive bool   `json:"is_active"` // In ARP table
+	Expires  string `json:"expires"`   // For DHCP leases
+}
+
+// getARPTable parses /proc/net/arp
+func getARPTable() ([]ARPEntry, error) {
+	file, err := os.Open("/proc/net/arp")
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var entries []ARPEntry
+	scanner := bufio.NewScanner(file)
+	scanner.Scan() // Skip header
+
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 6 {
+			continue
+		}
+		// IP HWType Flags HWAddr Mask Device
+		// 192.168.1.50 0x1 0x2 00:11:22:33:44:55 * eth0
+		entries = append(entries, ARPEntry{
+			IP:       fields[0],
+			MAC:      fields[3],
+			Device:   fields[5],
+			IsActive: true,
+		})
+	}
+	return entries, nil
+}
+
 // regenerateDnsmasqDHCPConfig generates the dnsmasq DHCP configuration file
 func regenerateDnsmasqDHCPConfig(store *DHCPConfigStore) error {
 	var config strings.Builder
@@ -126,6 +165,15 @@ func regenerateDnsmasqDHCPConfig(store *DHCPConfigStore) error {
 		config.WriteString("\n")
 	}
 
+	// Static Leases
+	if len(store.StaticLeases) > 0 {
+		config.WriteString("# Static Reservations\n")
+		for _, lease := range store.StaticLeases {
+			// dhcp-host=MAC,IP,HOSTNAME
+			config.WriteString(fmt.Sprintf("dhcp-host=%s,%s,%s\n", lease.MAC, lease.IP, lease.Hostname))
+		}
+	}
+
 	// Ensure directory exists
 	os.MkdirAll("/etc/dnsmasq.d", 0755)
 
@@ -136,7 +184,7 @@ func regenerateDnsmasqDHCPConfig(store *DHCPConfigStore) error {
 	}
 
 	// Restart dnsmasq to apply changes
-	exec.Command("systemctl", "restart", "dnsmasq").Run()
+	runPrivileged("systemctl", "restart", "dnsmasq")
 
 	return nil
 }
@@ -170,6 +218,11 @@ func parseDHCPLeases() ([]DHCPLease, error) {
 		expiryTime := time.Unix(0, 0) // Default
 		if ts, err := time.Parse("1136239445", expiryTimestamp); err == nil {
 			expiryTime = ts
+		} else {
+			// Try int parse if timestamp is robust
+			var tsInt int64
+			fmt.Sscanf(expiryTimestamp, "%d", &tsInt)
+			expiryTime = time.Unix(tsInt, 0)
 		}
 
 		lease := DHCPLease{
@@ -187,6 +240,161 @@ func parseDHCPLeases() ([]DHCPLease, error) {
 }
 
 // HTTP Handlers
+
+func getNetworkClients(w http.ResponseWriter, r *http.Request) {
+	// 1. Get ARP Table (Live devices)
+	arpEntries, _ := getARPTable()
+
+	// 2. Get DHCP Leases (Dynamic history)
+	dhcpLeases, _ := parseDHCPLeases()
+
+	// 3. Get Static Leases (Configured)
+	store, _ := loadDHCPConfig()
+
+	// Merge logic
+	// Map by MAC for deduplication
+	clientMap := make(map[string]ARPEntry)
+
+	// Add Static Leases first (Authoritative for config)
+	if store != nil {
+		for _, static := range store.StaticLeases {
+			clientMap[static.MAC] = ARPEntry{
+				MAC:      static.MAC,
+				IP:       static.IP,
+				Hostname: static.Hostname,
+				IsStatic: true,
+				Device:   "static", // Placeholder
+			}
+		}
+	}
+
+	// Add DHCP Leases (Update IP/Expires if exists, else create)
+	for _, lease := range dhcpLeases {
+		entry, exists := clientMap[lease.MAC]
+		if !exists {
+			entry = ARPEntry{
+				MAC:      lease.MAC,
+				IP:       lease.IP,
+				Hostname: lease.Hostname,
+			}
+		} else {
+			// Update dynamic fields if not strictly static overridden IP (though static usually matches)
+			if !entry.IsStatic {
+				entry.IP = lease.IP
+				entry.Hostname = lease.Hostname
+			}
+		}
+		entry.Expires = lease.Expires
+		clientMap[lease.MAC] = entry
+	}
+
+	// Add ARP Entries (Set IsActive)
+	for _, arp := range arpEntries {
+		// Ignore incomplete entries
+		if arp.MAC == "00:00:00:00:00:00" {
+			continue
+		}
+		entry, exists := clientMap[arp.MAC]
+		if !exists {
+			entry = arp
+			entry.IsStatic = false // Pure ARP = unknown/static config elsewhere or just talking
+		} else {
+			entry.IsActive = true
+			if entry.IP == "" {
+				entry.IP = arp.IP // Prefer ARP IP if lease missing
+			}
+			entry.Device = arp.Device
+		}
+		clientMap[arp.MAC] = entry
+	}
+
+	// Convert map to slice
+	clients := make([]ARPEntry, 0, len(clientMap))
+	for _, c := range clientMap {
+		clients = append(clients, c)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(clients)
+}
+
+func addStaticLease(w http.ResponseWriter, r *http.Request) {
+	var req StaticLease
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	if req.MAC == "" || req.IP == "" {
+		http.Error(w, "MAC and IP required", http.StatusBadRequest)
+		return
+	}
+
+	store, err := loadDHCPConfig()
+	if err != nil {
+		http.Error(w, "Failed to load config", http.StatusInternalServerError)
+		return
+	}
+
+	// Check if already exists, update if so
+	found := false
+	for i, lease := range store.StaticLeases {
+		if lease.MAC == req.MAC {
+			store.StaticLeases[i] = req
+			found = true
+			break
+		}
+	}
+	if !found {
+		store.StaticLeases = append(store.StaticLeases, req)
+	}
+
+	if err := saveDHCPConfig(store); err != nil {
+		http.Error(w, "Failed to save config", http.StatusInternalServerError)
+		return
+	}
+
+	if err := regenerateDnsmasqDHCPConfig(store); err != nil {
+		http.Error(w, "Failed to apply config", http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+func removeStaticLease(w http.ResponseWriter, r *http.Request) {
+	mac := r.URL.Query().Get("mac")
+	if mac == "" {
+		http.Error(w, "MAC address required", http.StatusBadRequest)
+		return
+	}
+
+	store, err := loadDHCPConfig()
+	if err != nil {
+		http.Error(w, "Failed to load config", http.StatusInternalServerError)
+		return
+	}
+
+	newLeases := []StaticLease{}
+	for _, lease := range store.StaticLeases {
+		if lease.MAC != mac {
+			newLeases = append(newLeases, lease)
+		}
+	}
+	store.StaticLeases = newLeases
+
+	if err := saveDHCPConfig(store); err != nil {
+		http.Error(w, "Failed to save config", http.StatusInternalServerError)
+		return
+	}
+
+	if err := regenerateDnsmasqDHCPConfig(store); err != nil {
+		http.Error(w, "Failed to apply config", http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
 
 func getDHCPConfig(w http.ResponseWriter, r *http.Request) {
 	store, err := loadDHCPConfig()

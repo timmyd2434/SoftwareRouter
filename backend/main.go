@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -15,6 +16,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Security Globals
@@ -22,6 +26,10 @@ var (
 	loginAttempts = make(map[string]int)
 	loginBanUntil = make(map[string]time.Time)
 	loginMu       sync.Mutex
+
+	// CSRF Protection
+	csrfTokens    sync.Map // map[token]time.Time
+	csrfExpiryDur = 24 * time.Hour
 )
 
 // Auth related constants and structs
@@ -58,13 +66,34 @@ type LoginRequest struct {
 
 // Config represents the system configuration
 type Config struct {
-	AdGuard AdGuardConfig `json:"adguard"`
+	AdGuard         AdGuardConfig   `json:"adguard"`
+	TLS             TLSConfig       `json:"tls"`
+	CORS            CORSConfig      `json:"cors"`
+	ProtectedSubnet string          `json:"protected_subnet"`
+	WebAccess       WebAccessConfig `json:"web_access"`
+}
+
+type WebAccessConfig struct {
+	AllowWAN     bool `json:"allow_wan"`
+	WANPortHTTP  int  `json:"wan_port_http"`
+	WANPortHTTPS int  `json:"wan_port_https"`
 }
 
 type AdGuardConfig struct {
 	URL      string `json:"url"`
 	Username string `json:"username"`
 	Password string `json:"password"`
+}
+
+type TLSConfig struct {
+	Enabled  bool   `json:"enabled"`
+	CertFile string `json:"cert_file"`
+	KeyFile  string `json:"key_file"`
+	Port     string `json:"port"` // Default ":443"
+}
+
+type CORSConfig struct {
+	AllowedOrigins []string `json:"allowed_origins"`
 }
 
 var (
@@ -85,12 +114,10 @@ func initWireGuard() {
 
 	if _, err := os.Stat(privPath); os.IsNotExist(err) {
 		fmt.Println("Initializing WireGuard Server Keys...")
-		privCmd := exec.Command("wg", "genkey")
-		privKey, _ := privCmd.Output()
+		privKey, _ := runPrivilegedOutput("wg", "genkey")
 		os.WriteFile(privPath, privKey, 0600)
 
-		pubCmd := exec.Command("sh", "-c", fmt.Sprintf("echo %s | wg pubkey", strings.TrimSpace(string(privKey))))
-		pubKey, _ := pubCmd.Output()
+		pubKey, _ := runPrivilegedCombinedOutput("sh", "-c", fmt.Sprintf("echo %s | wg pubkey", strings.TrimSpace(string(privKey))))
 		os.WriteFile(pubPath, pubKey, 0644)
 	}
 
@@ -145,21 +172,6 @@ type FirewallRule struct {
 	Comment string `json:"comment"`
 	Raw     string `json:"raw"`
 }
-
-// BandwidthSnapshot represents a point in time for the traffic graph
-type BandwidthSnapshot struct {
-	Timestamp string `json:"timestamp"`
-	RxBps     uint64 `json:"rx_bps"`
-	TxBps     uint64 `json:"tx_bps"`
-}
-
-var (
-	trafficHistory     []BandwidthSnapshot
-	historyLock        sync.Mutex
-	lastTotalRx        uint64
-	lastTotalTx        uint64
-	historyInitialized bool
-)
 
 // DNSStats represents aggregate metrics from the ad-blocker
 type DNSStats struct {
@@ -221,7 +233,15 @@ type DHCPConfig struct {
 
 // DHCPConfigStore manages all DHCP configurations
 type DHCPConfigStore struct {
-	Configs map[string]DHCPConfig `json:"configs"` // Key: interface name
+	Configs      map[string]DHCPConfig `json:"configs"` // Key: interface name
+	StaticLeases []StaticLease         `json:"static_leases"`
+}
+
+// StaticLease represents a static DHCP reservation
+type StaticLease struct {
+	MAC      string `json:"mac"`
+	IP       string `json:"ip"`
+	Hostname string `json:"hostname"`
 }
 
 // DHCPLease represents an active DHCP lease
@@ -260,7 +280,8 @@ func saveConfig(cfg AppConfig) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(configFilePath, data, 0644)
+	// Use 0640 permissions (owner read/write, group read)
+	return os.WriteFile(configFilePath, data, 0640)
 }
 
 // InterfaceMetadataStore manages interface metadata
@@ -371,10 +392,34 @@ func verifySecureToken(token string) bool {
 
 func enableCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// CORS
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		// Get allowed origins from config
+		configLock.RLock()
+		allowedOrigins := config.CORS.AllowedOrigins
+		configLock.RUnlock()
+
+		// Default to localhost for development if not configured
+		if len(allowedOrigins) == 0 {
+			allowedOrigins = []string{"http://localhost:5173"}
+		}
+
+		// Check if request origin is allowed
+		origin := r.Header.Get("Origin")
+		allowed := false
+		for _, allowedOrigin := range allowedOrigins {
+			if origin == allowedOrigin || allowedOrigin == "*" {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				allowed = true
+				break
+			}
+		}
+
+		// If origin not specifically allowed and no wildcard, don't set CORS headers
+		if !allowed {
+			w.Header().Set("Access-Control-Allow-Origin", allowedOrigins[0])
+		}
+
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token")
 
 		// Security Headers
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -394,9 +439,32 @@ func enableCORS(next http.Handler) http.Handler {
 
 // --- Auth Helpers ---
 
-func hashPassword(password string) string {
+// Legacy SHA256 hash (for migration only)
+func hashPasswordSHA256(password string) string {
 	hash := sha256.Sum256([]byte(password))
 	return hex.EncodeToString(hash[:])
+}
+
+// New bcrypt hash (secure)
+func hashPassword(password string) (string, error) {
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 12)
+	return string(bytes), err
+}
+
+// Verify password - supports both bcrypt and legacy SHA256
+func verifyPassword(password, hash string) bool {
+	// Try bcrypt first (starts with $2a$, $2b$, or $2y$)
+	if strings.HasPrefix(hash, "$2") {
+		err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+		return err == nil
+	}
+
+	// Fallback to legacy SHA256 (64 hex characters)
+	if len(hash) == 64 {
+		return hashPasswordSHA256(password) == hash
+	}
+
+	return false
 }
 
 func loadCredentials() UserCredentials {
@@ -429,7 +497,109 @@ func saveCredentials(creds UserCredentials) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(credentialsFilePath, data, 0644)
+	// Use 0600 permissions for security (owner read/write only)
+	return os.WriteFile(credentialsFilePath, data, 0600)
+}
+
+// --- CSRF Protection ---
+
+func generateCSRFToken() string {
+	token := uuid.New().String()
+	csrfTokens.Store(token, time.Now().Add(csrfExpiryDur))
+	return token
+}
+
+func validateCSRFToken(token string) bool {
+	if token == "" {
+		return false
+	}
+
+	val, ok := csrfTokens.Load(token)
+	if !ok {
+		return false
+	}
+
+	expiry, ok := val.(time.Time)
+	if !ok || time.Now().After(expiry) {
+		csrfTokens.Delete(token)
+		return false
+	}
+
+	return true
+}
+
+// Clean up expired CSRF tokens periodically
+func cleanupCSRFTokens() {
+	ticker := time.NewTicker(1 * time.Hour)
+	go func() {
+		for range ticker.C {
+			csrfTokens.Range(func(key, value interface{}) bool {
+				if expiry, ok := value.(time.Time); ok && time.Now().After(expiry) {
+					csrfTokens.Delete(key)
+				}
+				return true
+			})
+		}
+	}()
+}
+
+// csrfMiddleware validates CSRF tokens for state-changing operations
+func csrfMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Only check CSRF for state-changing methods
+		if r.Method != "GET" && r.Method != "OPTIONS" && r.Method != "HEAD" {
+			token := r.Header.Get("X-CSRF-Token")
+			if !validateCSRFToken(token) {
+				http.Error(w, "Invalid or missing CSRF token", http.StatusForbidden)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	}
+}
+
+// --- Audit Helpers ---
+
+// getClientIP extracts the client IP address from the request
+func getClientIP(r *http.Request) string {
+	// Check X-Forwarded-For header first (if behind proxy)
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		ips := strings.Split(xff, ",")
+		return strings.TrimSpace(ips[0])
+	}
+
+	// Check X-Real-IP header
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		return xri
+	}
+
+	// Fall back to RemoteAddr
+	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	return ip
+}
+
+// getUsernameFromToken extracts username from the Bearer token
+func getUsernameFromToken(r *http.Request) string {
+	token := r.Header.Get("Authorization")
+	if token == "" {
+		token = r.URL.Query().Get("token")
+		if token != "" {
+			token = "Bearer " + token
+		}
+	}
+
+	// Extract username from token (token format: "Bearer user:timestamp:signature")
+	if !strings.HasPrefix(token, "Bearer ") {
+		return "unknown"
+	}
+
+	tokenValue := strings.TrimPrefix(token, "Bearer ")
+	parts := strings.Split(tokenValue, ":")
+	if len(parts) >= 1 {
+		return parts[0]
+	}
+
+	return "unknown"
 }
 
 // Simple token based auth middleware
@@ -479,11 +649,25 @@ func login(w http.ResponseWriter, r *http.Request) {
 	}
 	loginMu.Unlock()
 
-	if req.Username == storedCreds.Username && hashPassword(req.Password) == storedCreds.Password {
+	if req.Username == storedCreds.Username && verifyPassword(req.Password, storedCreds.Password) {
 		// Success
 		loginMu.Lock()
 		delete(loginAttempts, ip)
 		loginMu.Unlock()
+
+		// Auto-migrate from SHA256 to bcrypt if needed
+		if len(storedCreds.Password) == 64 { // SHA256 hash detected
+			log.Printf("Auto-migrating password for user %s to bcrypt", req.Username)
+			newHash, err := hashPassword(req.Password)
+			if err == nil {
+				storedCreds.Password = newHash
+				if err := saveCredentials(storedCreds); err != nil {
+					log.Printf("WARNING: Failed to migrate password: %v", err)
+				} else {
+					log.Printf("Password successfully migrated to bcrypt for user %s", req.Username)
+				}
+			}
+		}
 
 		token := generateSecureToken(req.Username)
 		// Return just the part after "Bearer " for client storage
@@ -516,15 +700,30 @@ func updateCredentials(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Hash password with bcrypt
+	newHash, err := hashPassword(req.NewPassword)
+	if err != nil {
+		logAuditEvent(getUsernameFromToken(r), "credentials.update", "password",
+			fmt.Sprintf("{\"error\":\"%s\"}", err.Error()), getClientIP(r), false)
+		http.Error(w, "Failed to hash password", http.StatusInternalServerError)
+		return
+	}
+
 	newCreds := UserCredentials{
 		Username: req.NewUsername,
-		Password: hashPassword(req.NewPassword),
+		Password: newHash,
 	}
 
 	if err := saveCredentials(newCreds); err != nil {
+		logAuditEvent(getUsernameFromToken(r), "credentials.update", "password",
+			fmt.Sprintf("{\"error\":\"%s\"}", err.Error()), getClientIP(r), false)
 		http.Error(w, "Failed to save credentials", http.StatusInternalServerError)
 		return
 	}
+
+	// Log successful credential update
+	logAuditEvent(getUsernameFromToken(r), "credentials.update", "password",
+		fmt.Sprintf("{\"new_username\":\"%s\"}", req.NewUsername), getClientIP(r), true)
 
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
@@ -548,7 +747,7 @@ func applyCloudflareConfig(cfg AppConfig) error {
 		fmt.Println("Installing cloudflared...")
 		// Download and install (Debian/Ubuntu specific)
 		installCmd := "curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb && sudo dpkg -i cloudflared.deb && rm cloudflared.deb"
-		err := exec.Command("bash", "-c", installCmd).Run()
+		err := runPrivileged("bash", "-c", installCmd)
 		if err != nil {
 			return fmt.Errorf("failed to install cloudflared: %v", err)
 		}
@@ -556,10 +755,10 @@ func applyCloudflareConfig(cfg AppConfig) error {
 
 	// 2. Install/Update the service with the token
 	// First, try to uninstall existing service to ensure clean state
-	exec.Command("cloudflared", "service", "uninstall").Run()
+	runPrivileged("cloudflared", "service", "uninstall")
 
 	// Install service
-	err = exec.Command("cloudflared", "service", "install", cfg.CloudflareToken).Run()
+	err = runPrivileged("cloudflared", "service", "install", cfg.CloudflareToken)
 	if err != nil {
 		return fmt.Errorf("failed to install cloudflared service: %v", err)
 	}
@@ -571,8 +770,8 @@ func applyCloudflareConfig(cfg AppConfig) error {
 func applyAdBlockerConfig(cfg AppConfig) error {
 	if cfg.AdBlocker == "none" {
 		// Ensure standard DNS services are running if we're not using an adblocker
-		exec.Command("systemctl", "start", "dnsmasq").Run()
-		exec.Command("systemctl", "start", "unbound").Run()
+		runPrivileged("systemctl", "start", "dnsmasq")
+		runPrivileged("systemctl", "start", "unbound")
 		return nil
 	}
 
@@ -585,23 +784,23 @@ func applyAdBlockerConfig(cfg AppConfig) error {
 			fmt.Println("Installing Pi-hole (Unattended)...")
 
 			// Stop conflicting services
-			exec.Command("systemctl", "stop", "dnsmasq").Run()
-			exec.Command("systemctl", "stop", "unbound").Run()
+			runPrivileged("systemctl", "stop", "dnsmasq")
+			runPrivileged("systemctl", "stop", "unbound")
 
 			// Pi-hole automated install command
 			// Note: We use --unattended and provide a basic config if needed,
 			// but we'll try the simplest route first.
 			installCmd := "curl -sSL https://install.pi-hole.net | bash /dev/stdin --unattended"
-			err := exec.Command("bash", "-c", installCmd).Run()
+			err := runPrivileged("bash", "-c", installCmd)
 			if err != nil {
 				return fmt.Errorf("failed to install Pi-hole: %v", err)
 			}
 		} else {
 			// Ensure it's running
-			exec.Command("pihole", "enable").Run()
+			runPrivileged("pihole", "enable")
 			// Stop conflicting services
-			exec.Command("systemctl", "stop", "dnsmasq").Run()
-			exec.Command("systemctl", "stop", "unbound").Run()
+			runPrivileged("systemctl", "stop", "dnsmasq")
+			runPrivileged("systemctl", "stop", "unbound")
 		}
 		fmt.Println("Pi-hole setup complete.")
 	}
@@ -684,12 +883,10 @@ func addVPNClient(w http.ResponseWriter, r *http.Request) {
 	os.MkdirAll(clientsDir, 0755)
 
 	// 1. Generate Client Keys
-	privCmd := exec.Command("wg", "genkey")
-	privKey, _ := privCmd.Output()
+	privKey, _ := runPrivilegedOutput("wg", "genkey")
 	cleanPriv := strings.TrimSpace(string(privKey))
 
-	pubCmd := exec.Command("sh", "-c", fmt.Sprintf("echo %s | wg pubkey", cleanPriv))
-	pubKey, _ := pubCmd.Output()
+	pubKey, _ := runPrivilegedCombinedOutput("sh", "-c", fmt.Sprintf("echo %s | wg pubkey", cleanPriv))
 	cleanPub := strings.TrimSpace(string(pubKey))
 
 	// 2. Determine an IP (Basic assignment for now)
@@ -704,7 +901,7 @@ func addVPNClient(w http.ResponseWriter, r *http.Request) {
 		f.WriteString(peerBlock)
 		f.Close()
 		// Reload wg0 without downtime
-		exec.Command("wg", "syncconf", "wg0", "/etc/wireguard/wg0.conf").Run()
+		runPrivileged("wg", "syncconf", "wg0", "/etc/wireguard/wg0.conf")
 	}
 
 	// 4. Generate Client .conf
@@ -765,7 +962,7 @@ func downloadVPNClient(w http.ResponseWriter, r *http.Request) {
 func getSystemStatus(w http.ResponseWriter, r *http.Request) {
 	hostname, _ := os.Hostname()
 	uptime := "unknown"
-	out, err := exec.Command("uptime", "-p").Output()
+	out, err := runPrivilegedOutput("uptime", "-p")
 	if err == nil {
 		uptime = strings.TrimSpace(string(out))
 	}
@@ -799,7 +996,7 @@ func getSystemStatus(w http.ResponseWriter, r *http.Request) {
 
 	status := SystemStatus{
 		Hostname:    hostname,
-		OS:          fmt.Sprintf("%s (%s)", runtime.GOOS, runtime.GOARCH),
+		OS:          runtime.GOOS,
 		Uptime:      uptime,
 		CPUUsage:    cpuUsage,
 		MemoryUsed:  memUsed,
@@ -847,8 +1044,7 @@ func getInterfaces(w http.ResponseWriter, r *http.Request) {
 func getFirewallRules(w http.ResponseWriter, r *http.Request) {
 	// Try to execute nft command
 	// Note: This often requires sudo in a real environment.
-	cmd := exec.Command("nft", "-j", "list", "ruleset")
-	out, err := cmd.Output()
+	out, err := runPrivilegedOutput("nft", "-j", "list", "ruleset")
 
 	if err != nil {
 		// keeping mock fallback but simplified for brevity
@@ -972,15 +1168,32 @@ func addFirewallRule(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Fields(rule.Raw)
 	args = append(args, parts...)
 
+	// Add comment if provided
+	if rule.Comment != "" {
+		args = append(args, "comment", fmt.Sprintf(`"%s"`, rule.Comment))
+	}
+
 	fmt.Printf("Executing NFT: nft %v\n", args) // Debug log
 
-	cmd := exec.Command("nft", args...)
-	if out, err := cmd.CombinedOutput(); err != nil {
+	ruleJSON, _ := json.Marshal(rule)
+
+	if out, err := runPrivilegedCombinedOutput("nft", args...); err != nil {
 		errorMsg := fmt.Sprintf("NFT Error: %s (CMD: nft %v)", string(out), args)
 		fmt.Println(errorMsg)
+
+		// Log failed firewall rule addition
+		logAuditEvent(getUsernameFromToken(r), "firewall.add",
+			fmt.Sprintf("%s/%s", rule.Table, rule.Chain),
+			string(ruleJSON), getClientIP(r), false)
+
 		http.Error(w, errorMsg, http.StatusInternalServerError)
 		return
 	}
+
+	// Log successful firewall rule addition
+	logAuditEvent(getUsernameFromToken(r), "firewall.add",
+		fmt.Sprintf("%s/%s", rule.Table, rule.Chain),
+		string(ruleJSON), getClientIP(r), true)
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -1002,11 +1215,18 @@ func deleteFirewallRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Command: nft delete rule <family> <table> <chain> handle <handle>
-	cmd := exec.Command("nft", "delete", "rule", family, table, chain, "handle", handle)
-	if out, err := cmd.CombinedOutput(); err != nil {
+	if out, err := runPrivilegedCombinedOutput("nft", "delete", "rule", family, table, chain, "handle", handle); err != nil {
+		logAuditEvent(getUsernameFromToken(r), "firewall.delete",
+			fmt.Sprintf("%s/%s", table, chain),
+			fmt.Sprintf("{\"handle\":\"%s\",\"error\":\"%s\"}", handle, string(out)),
+			getClientIP(r), false)
 		http.Error(w, fmt.Sprintf("NFT Error: %s", string(out)), http.StatusInternalServerError)
 		return
 	}
+
+	logAuditEvent(getUsernameFromToken(r), "firewall.delete",
+		fmt.Sprintf("%s/%s", table, chain),
+		fmt.Sprintf("{\"handle\":\"%s\"}", handle), getClientIP(r), true)
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -1014,14 +1234,12 @@ func deleteFirewallRule(w http.ResponseWriter, r *http.Request) {
 func getServiceStatus(name, serviceName string) ServiceStatus {
 	status := "Stopped"
 	// Check systemd status
-	cmd := exec.Command("systemctl", "is-active", serviceName)
-	if err := cmd.Run(); err == nil {
+	if err := runPrivileged("systemctl", "is-active", serviceName); err == nil {
 		status = "Running"
 	} else {
 		// Try fallback for AdGuard if the standard lowercase doesn't match
 		if serviceName == "adguardhome" {
-			fallbackCmd := exec.Command("systemctl", "is-active", "AdGuardHome")
-			if err := fallbackCmd.Run(); err == nil {
+			if err := runPrivileged("systemctl", "is-active", "AdGuardHome"); err == nil {
 				status = "Running"
 				serviceName = "AdGuardHome" // Use the correctly case-matched name
 			}
@@ -1031,7 +1249,7 @@ func getServiceStatus(name, serviceName string) ServiceStatus {
 	// Try to get version (generic approach, might need tailoring)
 	version := "-"
 	if name == "DHCP Server (dnsmasq)" {
-		out, _ := exec.Command("dnsmasq", "-v").Output()
+		out, _ := runPrivilegedOutput("dnsmasq", "-v")
 		if len(out) > 0 {
 			parts := strings.Fields(string(out))
 			if len(parts) >= 3 {
@@ -1039,7 +1257,7 @@ func getServiceStatus(name, serviceName string) ServiceStatus {
 			}
 		}
 	} else if name == "Cloudflare Tunnel" {
-		out, _ := exec.Command("cloudflared", "--version").Output()
+		out, _ := runPrivilegedOutput("cloudflared", "--version")
 		if len(out) > 0 {
 			parts := strings.Fields(string(out))
 			if len(parts) >= 3 {
@@ -1047,7 +1265,7 @@ func getServiceStatus(name, serviceName string) ServiceStatus {
 			}
 		}
 	} else if name == "OpenVPN Server" {
-		out, _ := exec.Command("openvpn", "--version").Output()
+		out, _ := runPrivilegedOutput("openvpn", "--version")
 		if len(out) > 0 {
 			parts := strings.Fields(string(out))
 			if len(parts) >= 2 {
@@ -1056,7 +1274,7 @@ func getServiceStatus(name, serviceName string) ServiceStatus {
 		}
 	} else if name == "Ad-blocking DNS" {
 		// Check for pihole version
-		out, _ := exec.Command("pihole", "-v").Output()
+		out, _ := runPrivilegedOutput("pihole", "-v")
 		if len(out) > 0 {
 			// Pi-hole version is v5.18.2 (usually)
 			parts := strings.Fields(string(out))
@@ -1154,15 +1372,13 @@ func createVLAN(w http.ResponseWriter, r *http.Request) {
 
 	// Create VLAN interface using ip link
 	// Using absolute path for safety and explicit arguments
-	cmd := exec.Command("/usr/sbin/ip", "link", "add", "link", req.ParentInterface, "name", vlanInterface, "type", "vlan", "id", fmt.Sprintf("%d", req.VLANId))
-	if _, err := cmd.CombinedOutput(); err != nil {
+	if _, err := runPrivilegedCombinedOutput("/usr/sbin/ip", "link", "add", "link", req.ParentInterface, "name", vlanInterface, "type", "vlan", "id", fmt.Sprintf("%d", req.VLANId)); err != nil {
 		http.Error(w, "Failed to create VLAN interface", http.StatusInternalServerError)
 		return
 	}
 
 	// Bring the VLAN interface up
-	upCmd := exec.Command("ip", "link", "set", "dev", vlanInterface, "up")
-	if output, err := upCmd.CombinedOutput(); err != nil {
+	if output, err := runPrivilegedCombinedOutput("ip", "link", "set", "dev", vlanInterface, "up"); err != nil {
 		fmt.Printf("Warning: Failed to bring up VLAN interface: %s\n", string(output))
 	}
 
@@ -1191,8 +1407,7 @@ func deleteVLAN(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("Deleting VLAN: %s\n", interfaceName)
 
-	cmd := exec.Command("ip", "link", "delete", interfaceName)
-	if output, err := cmd.CombinedOutput(); err != nil {
+	if output, err := runPrivilegedCombinedOutput("ip", "link", "delete", interfaceName); err != nil {
 		errMsg := fmt.Sprintf("Failed to delete VLAN: %s\nOutput: %s", err.Error(), string(output))
 		fmt.Printf("ERROR: %s\n", errMsg)
 		http.Error(w, errMsg, http.StatusInternalServerError)
@@ -1229,8 +1444,7 @@ func configureIP(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("Configuring IP: %s %s on %s\n", req.Action, req.IPAddress, req.InterfaceName)
 
 	// Use ip addr add/del
-	cmd := exec.Command("/usr/sbin/ip", "addr", req.Action, req.IPAddress, "dev", req.InterfaceName)
-	if _, err := cmd.CombinedOutput(); err != nil {
+	if _, err := runPrivilegedCombinedOutput("/usr/sbin/ip", "addr", req.Action, req.IPAddress, "dev", req.InterfaceName); err != nil {
 		http.Error(w, "Failed to configure IP address on interface", http.StatusInternalServerError)
 		return
 	}
@@ -1259,8 +1473,7 @@ func setInterfaceState(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("Setting interface %s to %s\n", req.InterfaceName, req.State)
 
-	cmd := exec.Command("ip", "link", "set", "dev", req.InterfaceName, req.State)
-	if output, err := cmd.CombinedOutput(); err != nil {
+	if output, err := runPrivilegedCombinedOutput("ip", "link", "set", "dev", req.InterfaceName, req.State); err != nil {
 		errMsg := fmt.Sprintf("Failed to set interface state: %s\nOutput: %s", err.Error(), string(output))
 		fmt.Printf("ERROR: %s\n", errMsg)
 		http.Error(w, errMsg, http.StatusInternalServerError)
@@ -1335,6 +1548,9 @@ func setInterfaceLabel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fmt.Printf("Interface %s labeled as %s\n", req.InterfaceName, req.Label)
+
+	// Trigger firewall update to respect new zones
+	go firewallManager.ApplyFirewallRules()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
@@ -1412,86 +1628,13 @@ func getTrafficStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
 }
-func getTrafficHistory(w http.ResponseWriter, r *http.Request) {
-	historyLock.Lock()
-	defer historyLock.Unlock()
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(trafficHistory)
-}
-
-func collectTrafficHistory() {
-	for {
-		time.Sleep(1 * time.Second)
-
-		data, err := os.ReadFile("/proc/net/dev")
-		if err != nil {
-			continue
-		}
-
-		lines := strings.Split(string(data), "\n")
-		var currentTotalRx uint64
-		var currentTotalTx uint64
-
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line == "" || strings.HasPrefix(line, "Inter-") || strings.HasPrefix(line, "face") {
-				continue
-			}
-
-			parts := strings.Fields(line)
-			if len(parts) < 17 {
-				continue
-			}
-
-			iface := strings.TrimSuffix(parts[0], ":")
-			if iface == "lo" {
-				continue
-			}
-
-			var rx, tx uint64
-			fmt.Sscanf(parts[1], "%d", &rx)
-			fmt.Sscanf(parts[9], "%d", &tx)
-			currentTotalRx += rx
-			currentTotalTx += tx
-		}
-
-		historyLock.Lock()
-		if !historyInitialized {
-			lastTotalRx = currentTotalRx
-			lastTotalTx = currentTotalTx
-			historyInitialized = true
-			historyLock.Unlock()
-			continue
-		}
-
-		rxBps := currentTotalRx - lastTotalRx
-		txBps := currentTotalTx - lastTotalTx
-		lastTotalRx = currentTotalRx
-		lastTotalTx = currentTotalTx
-
-		snapshot := BandwidthSnapshot{
-			Timestamp: time.Now().Format("15:04:05"),
-			RxBps:     rxBps,
-			TxBps:     txBps,
-		}
-
-		trafficHistory = append(trafficHistory, snapshot)
-		if len(trafficHistory) > 60 {
-			trafficHistory = trafficHistory[1:]
-		}
-		historyLock.Unlock()
-	}
-}
 
 func getActiveConnections(w http.ResponseWriter, r *http.Request) {
 	// Use 'ss' command to get active connections
-	cmd := exec.Command("ss", "-tunap")
-	output, err := cmd.Output()
+	output, err := runPrivilegedOutput("ss", "-tunap")
 	if err != nil {
 		// Fallback to netstat if ss fails
-		cmd = exec.Command("netstat", "-tunap")
-		output, err = cmd.Output()
+		output, err = runPrivilegedOutput("netstat", "-tunap")
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to get connections: %s", err.Error()), http.StatusInternalServerError)
 			return
@@ -1592,8 +1735,7 @@ func getSuricataAlerts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Use tail command to get last N lines
-	cmd := exec.Command("tail", "-n", fmt.Sprintf("%d", limit), eveLogPath)
-	output, err := cmd.Output()
+	output, err := runPrivilegedOutput("tail", "-n", fmt.Sprintf("%d", limit), eveLogPath)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to read Suricata logs: %s", err.Error()), http.StatusInternalServerError)
 		return
@@ -1663,8 +1805,7 @@ func getSuricataAlerts(w http.ResponseWriter, r *http.Request) {
 
 func getCrowdSecDecisions(w http.ResponseWriter, r *http.Request) {
 	// Execute cscli to get decisions
-	cmd := exec.Command("cscli", "decisions", "list", "-o", "json")
-	output, err := cmd.Output()
+	output, err := runPrivilegedOutput("cscli", "decisions", "list", "-o", "json")
 	if err != nil {
 		// CrowdSec might not be installed
 		w.Header().Set("Content-Type", "application/json")
@@ -1695,6 +1836,12 @@ func loadSystemConfig() {
 	if err != nil {
 		// File doesn't exist, use defaults
 		config = Config{
+			ProtectedSubnet: "10.0.0.0/24",
+			WebAccess: WebAccessConfig{
+				AllowWAN:     true,
+				WANPortHTTP:  980,
+				WANPortHTTPS: 9443,
+			},
 			AdGuard: AdGuardConfig{
 				URL:      getEnvOrDefault("AGH_URL", "http://localhost:3000"),
 				Username: os.Getenv("AGH_USERNAME"),
@@ -1709,13 +1856,13 @@ func loadSystemConfig() {
 	// Parse existing config
 	if err := json.Unmarshal(data, &config); err != nil {
 		fmt.Printf("Error parsing config file: %v. Using defaults.\n", err)
-		config = Config{
-			AdGuard: AdGuardConfig{
-				URL:      getEnvOrDefault("AGH_URL", "http://localhost:3000"),
-				Username: os.Getenv("AGH_USERNAME"),
-				Password: os.Getenv("AGH_PASSWORD"),
-			},
-		}
+	}
+
+	// Upgrade Logic: If WebAccess is uninitialized, set defaults
+	if config.WebAccess.WANPortHTTP == 0 {
+		config.WebAccess.AllowWAN = true
+		config.WebAccess.WANPortHTTP = 980
+		config.WebAccess.WANPortHTTPS = 9443
 	}
 
 	// Environment variables override config file
@@ -1787,9 +1934,16 @@ func updateSettings(w http.ResponseWriter, r *http.Request) {
 
 	// Save to file
 	if err := saveConfigLocked(); err != nil {
+		logAuditEvent(getUsernameFromToken(r), "settings.update", "config",
+			fmt.Sprintf("{\"error\":\"%s\"}", err.Error()), getClientIP(r), false)
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
 		return
 	}
+
+	// Log successful settings update
+	configJSON, _ := json.Marshal(newConfig)
+	logAuditEvent(getUsernameFromToken(r), "settings.update", "config",
+		string(configJSON), getClientIP(r), true)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
@@ -1934,8 +2088,7 @@ func getSecurityStats(w http.ResponseWriter, r *http.Request) {
 	// Get Suricata statistics from eve.json
 	eveLogPath := "/var/log/suricata/eve.json"
 	if _, err := os.Stat(eveLogPath); err == nil {
-		cmd := exec.Command("tail", "-n", "1000", eveLogPath)
-		output, err := cmd.Output()
+		output, err := runPrivilegedOutput("tail", "-n", "1000", eveLogPath)
 		if err == nil {
 			lines := strings.Split(string(output), "\n")
 			signatureCounts := make(map[string]int)
@@ -1994,8 +2147,7 @@ func getSecurityStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get CrowdSec statistics
-	cmd := exec.Command("cscli", "decisions", "list", "-o", "json")
-	output, err := cmd.Output()
+	output, err := runPrivilegedOutput("cscli", "decisions", "list", "-o", "json")
 	if err == nil {
 		var decisions []map[string]interface{}
 		if err := json.Unmarshal(output, &decisions); err == nil {
@@ -2073,8 +2225,7 @@ func controlService(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("Controlling service: %s %s\n", req.Action, req.ServiceName)
 
 	// Execute systemctl command
-	cmd := exec.Command("systemctl", req.Action, req.ServiceName)
-	output, err := cmd.CombinedOutput()
+	output, err := runPrivilegedCombinedOutput("systemctl", req.Action, req.ServiceName)
 
 	if err != nil {
 		errMsg := fmt.Sprintf("Service control failed: %s\nOutput: %s", err.Error(), string(output))
@@ -2092,16 +2243,134 @@ func controlService(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// --- Port Forwarding Handlers ---
+
+func listPortForwardingRules(w http.ResponseWriter, r *http.Request) {
+	pfStoreLock.RLock()
+	defer pfStoreLock.RUnlock()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(pfStore.Rules)
+}
+
+func createPortForwardingRule(w http.ResponseWriter, r *http.Request) {
+	var rule PortForwardingRule
+	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	// Basic Validation
+	if rule.ExternalPort < 1 || rule.ExternalPort > 65535 || rule.InternalPort < 1 || rule.InternalPort > 65535 {
+		http.Error(w, "Invalid ports", http.StatusBadRequest)
+		return
+	}
+	if rule.InternalIP == "" {
+		http.Error(w, "Internal IP required", http.StatusBadRequest)
+		return
+	}
+
+	rule.ID = uuid.New().String()
+	rule.Enabled = true // Default to enabled
+
+	if err := addPortForwardingRule(rule); err != nil {
+		http.Error(w, "Failed to save rule: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(rule)
+}
+
+func removePortForwardingRule(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "ID required", http.StatusBadRequest)
+		return
+	}
+
+	if err := deletePortForwardingRule(id); err != nil {
+		http.Error(w, "Failed to delete rule: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+func updatePortForwardingRuleHandler(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "ID required", http.StatusBadRequest)
+		return
+	}
+
+	var rule PortForwardingRule
+	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	// Basic Validation
+	if rule.ExternalPort < 1 || rule.ExternalPort > 65535 || rule.InternalPort < 1 || rule.InternalPort > 65535 {
+		http.Error(w, "Invalid ports", http.StatusBadRequest)
+		return
+	}
+	if rule.InternalIP == "" {
+		http.Error(w, "Internal IP required", http.StatusBadRequest)
+		return
+	}
+
+	if err := updatePortForwardingRule(id, rule); err != nil {
+		http.Error(w, "Failed to update rule: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(rule)
+}
+
 func main() {
 	loadSystemConfig()
 	loadTokenSecret()
 	initWireGuard()
-	initFirewall()
-	go collectTrafficHistory()
+	// initFirewall() // Deprecated by FirewallManager
+	InitQoS() // 4. Initialize Networking
+	// initFirewall() // Deprecated by FirewallManager
+	// initPortForwarding() // Deprecated by FirewallManager
+
+	InitFirewallManager()
+	// Apply rules initially (will use default/detected WAN/LAN)
+	firewallManager.ApplyFirewallRules()
+
+	initTrafficStats()
+	initDynamicRouting()
+
+	// Initialize audit logging
+	if err := initAuditLog(); err != nil {
+		log.Printf("WARNING: Failed to initialize audit log: %v", err)
+	}
+	startAuditLogRotation()
+
+	// Initialize rate limiters
+	authLimiter := NewRateLimiter()  // 10 req/min for login
+	writeLimiter := NewRateLimiter() // 30 req/min for mutations
+	readLimiter := NewRateLimiter()  // 60 req/min for reads
+	_ = writeLimiter                 // TODO: apply to write endpoints
+	_ = readLimiter                  // TODO: apply to read endpoints
+
+	cleanupCSRFTokens()   // Start CSRF token cleanup
+	startSessionCleanup() // Start session cleanup
+
 	mux := http.NewServeMux()
 
-	// Public Auth Endpoints
-	mux.HandleFunc("POST /api/login", login)
+	// Public Auth Endpoints (strict 10 req/min to prevent brute force)
+	mux.HandleFunc("POST /api/login", rateLimitMiddleware(authLimiter, 10, time.Minute)(login))
+
+	// CSRF Token Endpoint  (authenticated)
+	mux.HandleFunc("GET /api/csrf-token", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		token := generateCSRFToken()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"token": token})
+	}))
 
 	// Protected Endpoints
 	mux.HandleFunc("GET /api/status", authMiddleware(getSystemStatus))
@@ -2111,6 +2380,154 @@ func main() {
 	mux.HandleFunc("GET /api/settings", authMiddleware(getSettings))
 	mux.HandleFunc("POST /api/settings", authMiddleware(updateSettings))
 
+	// Audit Logs
+	mux.HandleFunc("GET /api/audit/logs", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		// Parse query parameters for filtering
+		startTimeStr := r.URL.Query().Get("start")
+		endTimeStr := r.URL.Query().Get("end")
+		actionFilter := r.URL.Query().Get("action")
+		userFilter := r.URL.Query().Get("user")
+		limitStr := r.URL.Query().Get("limit")
+
+		var startTime, endTime time.Time
+		var limit int = 100 // Default limit
+
+		if startTimeStr != "" {
+			if t, err := time.Parse(time.RFC3339, startTimeStr); err == nil {
+				startTime = t
+			}
+		}
+		if endTimeStr != "" {
+			if t, err := time.Parse(time.RFC3339, endTimeStr); err == nil {
+				endTime = t
+			}
+		}
+		if limitStr != "" {
+			fmt.Sscanf(limitStr, "%d", &limit)
+		}
+
+		logs, err := getAuditLogs(startTime, endTime, actionFilter, userFilter, limit)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to retrieve audit logs: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(logs)
+	}))
+
+	// Backup & Restore
+	mux.HandleFunc("GET /api/backup/create", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		backupData, err := createBackup()
+		if err != nil {
+			logAuditEvent(getUsernameFromToken(r), "backup.create", "system",
+				fmt.Sprintf("{\"error\":\"%s\"}", err.Error()), getClientIP(r), false)
+			http.Error(w, fmt.Sprintf("Failed to create backup: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		logAuditEvent(getUsernameFromToken(r), "backup.create", "system",
+			"{\"status\":\"success\"}", getClientIP(r), true)
+
+		// Send backup as downloadable file
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"softrouter-backup-%s.json\"",
+			time.Now().Format("2006-01-02-150405")))
+		w.Write(backupData)
+	}))
+
+	mux.HandleFunc("POST /api/backup/restore", authMiddleware(csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		// Read multipart form file or JSON body
+		var backupData []byte
+
+		if err := r.ParseMultipartForm(10 << 20); err == nil { // 10 MB max
+			file, _, err := r.FormFile("file")
+			if err == nil {
+				defer file.Close()
+				backupData, err = io.ReadAll(file)
+				if err != nil {
+					http.Error(w, "Failed to read uploaded file", http.StatusBadRequest)
+					return
+				}
+			}
+		}
+
+		// Fallback to JSON body if no file upload
+		if len(backupData) == 0 {
+			backupData, _ = io.ReadAll(r.Body)
+		}
+
+		if len(backupData) == 0 {
+			http.Error(w, "No backup data provided", http.StatusBadRequest)
+			return
+		}
+
+		// Restore system
+		if err := restoreBackup(backupData); err != nil {
+			logAuditEvent(getUsernameFromToken(r), "backup.restore", "system",
+				fmt.Sprintf("{\"error\":\"%s\"}", err.Error()), getClientIP(r), false)
+			http.Error(w, fmt.Sprintf("Failed to restore backup: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		logAuditEvent(getUsernameFromToken(r), "backup.restore", "system",
+			"{\"status\":\"success\"}", getClientIP(r), true)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":  "success",
+			"message": "System restored from backup. Please review settings and restart services if needed.",
+		})
+	})))
+
+	mux.HandleFunc("GET /api/backup/list", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		backups, err := listBackups()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to list backups: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(backups)
+	}))
+
+	// Session Management
+	mux.HandleFunc("GET /api/sessions", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		username := getUsernameFromToken(r)
+		sessions := sessionStore.ListSessions(username)
+
+		currentToken := r.Header.Get("Authorization")
+		safeInfo := make([]SessionInfo, len(sessions))
+		for i, s := range sessions {
+			safeInfo[i] = s.ToSafeInfo(currentToken)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(safeInfo)
+	}))
+
+	mux.HandleFunc("DELETE /api/sessions", authMiddleware(csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		tokenToRevoke := r.URL.Query().Get("token")
+		username := getUsernameFromToken(r)
+
+		if tokenToRevoke == "" {
+			http.Error(w, "Token parameter required", http.StatusBadRequest)
+			return
+		}
+
+		session, exists := sessionStore.GetSession("Bearer " + tokenToRevoke)
+		if !exists || session.Username != username {
+			http.Error(w, "Cannot revoke this session", http.StatusForbidden)
+			return
+		}
+
+		sessionStore.DeleteSession("Bearer " + tokenToRevoke)
+		logAuditEvent(username, "session.revoke", "token",
+			fmt.Sprintf("{\"token\":\"%s\"}", tokenToRevoke), getClientIP(r), true)
+
+		json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+	})))
+
 	mux.HandleFunc("GET /api/interfaces", authMiddleware(getInterfaces))
 	mux.HandleFunc("POST /api/interfaces/vlan", authMiddleware(createVLAN))
 	mux.HandleFunc("DELETE /api/interfaces/vlan", authMiddleware(deleteVLAN))
@@ -2118,13 +2535,27 @@ func main() {
 	mux.HandleFunc("POST /api/interfaces/state", authMiddleware(setInterfaceState))
 	mux.HandleFunc("GET /api/interfaces/metadata", authMiddleware(getInterfaceMetadata))
 	mux.HandleFunc("POST /api/interfaces/label", authMiddleware(setInterfaceLabel))
+
+	// Traffic Control / QoS
+	mux.HandleFunc("GET /api/qos", authMiddleware(getQoSConfig))
+	mux.HandleFunc("POST /api/qos", authMiddleware(updateQoSConfig))
+	mux.HandleFunc("DELETE /api/qos", authMiddleware(deleteQoSConfig))
+
+	// Diagnostics
+	mux.HandleFunc("POST /api/tools/ping", authMiddleware(handlePing))
+	mux.HandleFunc("POST /api/tools/traceroute", authMiddleware(handleTraceroute))
+	mux.HandleFunc("GET /api/system/logs", authMiddleware(handleSystemLogs))
+
+	// Traffic History
+	mux.HandleFunc("GET /api/traffic/history", authMiddleware(getTrafficHistory))
 	mux.HandleFunc("GET /api/firewall", authMiddleware(getFirewallRules))
 	mux.HandleFunc("POST /api/firewall", authMiddleware(addFirewallRule))
 	mux.HandleFunc("DELETE /api/firewall", authMiddleware(deleteFirewallRule))
+	mux.HandleFunc("POST /api/firewall/confirm", authMiddleware(csrfMiddleware(confirmFirewallChanges))) // Watchdog confirmation
 	mux.HandleFunc("GET /api/services", authMiddleware(getServices))
 	mux.HandleFunc("POST /api/services/control", authMiddleware(controlService))
 	mux.HandleFunc("GET /api/traffic/stats", authMiddleware(getTrafficStats))
-	mux.HandleFunc("GET /api/traffic/history", authMiddleware(getTrafficHistory))
+
 	mux.HandleFunc("GET /api/traffic/connections", authMiddleware(getActiveConnections))
 	mux.HandleFunc("GET /api/security/suricata/alerts", authMiddleware(getSuricataAlerts))
 	mux.HandleFunc("GET /api/security/crowdsec/decisions", authMiddleware(getCrowdSecDecisions))
@@ -2136,6 +2567,9 @@ func main() {
 	mux.HandleFunc("POST /api/dhcp/config", authMiddleware(setDHCPConfig))
 	mux.HandleFunc("DELETE /api/dhcp/config", authMiddleware(deleteDHCPConfig))
 	mux.HandleFunc("GET /api/dhcp/leases", authMiddleware(getDHCPLeases))
+	mux.HandleFunc("POST /api/dhcp/static", authMiddleware(addStaticLease))
+	mux.HandleFunc("DELETE /api/dhcp/static", authMiddleware(removeStaticLease))
+	mux.HandleFunc("GET /api/network/clients", authMiddleware(getNetworkClients))
 
 	// VPN Endpoints
 	mux.HandleFunc("GET /api/vpn/clients", authMiddleware(listVPNClients))
@@ -2157,7 +2591,36 @@ func main() {
 	mux.HandleFunc("GET /api/vpn/server-openvpn/clients", authMiddleware(listOpenVPNClients))
 	mux.HandleFunc("POST /api/vpn/server-openvpn/clients", authMiddleware(createOpenVPNClient))
 	mux.HandleFunc("DELETE /api/vpn/server-openvpn/clients", authMiddleware(deleteOpenVPNClient))
+
 	mux.HandleFunc("GET /api/vpn/server-openvpn/download", authMiddleware(downloadOpenVPNClient))
+
+	// Port Forwarding
+	mux.HandleFunc("GET /api/port-forwarding", authMiddleware(listPortForwardingRules))
+	mux.HandleFunc("POST /api/port-forwarding", authMiddleware(createPortForwardingRule))
+	mux.HandleFunc("PUT /api/port-forwarding", authMiddleware(updatePortForwardingRuleHandler))
+	mux.HandleFunc("DELETE /api/port-forwarding", authMiddleware(removePortForwardingRule))
+
+	// Routes (Static)
+	mux.HandleFunc("GET /api/routes", authMiddleware(getRoutes))
+	mux.HandleFunc("POST /api/routes", authMiddleware(createRoute))
+	mux.HandleFunc("DELETE /api/routes", authMiddleware(deleteRoute))
+
+	// Multi-WAN
+	mux.HandleFunc("GET /api/wan", authMiddleware(getWANInterfaces))
+	mux.HandleFunc("POST /api/wan", authMiddleware(updateWANInterfaces))
+
+	// Dynamic Routing
+	mux.HandleFunc("GET /api/routing/dynamic", authMiddleware(getDynamicRouting))
+	mux.HandleFunc("POST /api/routing/dynamic", authMiddleware(updateDynamicRouting))
+
+	// Start Background Services
+	go func() {
+		// Wait a bit for network to settle then apply routes
+		time.Sleep(5 * time.Second)
+		initRoutes()
+		initWANManager()
+		initDynamicRouting()
+	}()
 
 	// SPA Static File Server
 	// Serve from /var/www/softrouter/html
@@ -2180,16 +2643,70 @@ func main() {
 		http.FileServer(http.Dir(staticDir)).ServeHTTP(w, r)
 	})
 
-	port := ":80"
-	log.Printf("SoftRouter Governance Service starting on port %s", port)
-
 	handler := enableCORS(mux)
 
-	// Attempt to bind to standard port 80, fallback to 8080 if needed
-	if err := http.ListenAndServe("0.0.0.0:80", handler); err != nil {
-		log.Printf("Primary port 80 binding failed: %v. Attempting fallback to 8080...", err)
-		if err := http.ListenAndServe("0.0.0.0:8080", handler); err != nil {
-			log.Fatalf("Critical Failure: Could not bind to any port: %v", err)
+	// Load TLS configuration
+	configLock.RLock()
+	tlsEnabled := config.TLS.Enabled
+	tlsPort := config.TLS.Port
+	certFile := config.TLS.CertFile
+	keyFile := config.TLS.KeyFile
+	configLock.RUnlock()
+
+	// Set default TLS port if not configured
+	if tlsPort == "" {
+		tlsPort = ":443"
+	}
+
+	if tlsEnabled && certFile != "" && keyFile != "" {
+		// Verify certificate files exist
+		if _, err := os.Stat(certFile); os.IsNotExist(err) {
+			log.Fatalf("CRITICAL: TLS cert file not found: %s", certFile)
+		}
+		if _, err := os.Stat(keyFile); os.IsNotExist(err) {
+			log.Fatalf("CRITICAL: TLS key file not found: %s", keyFile)
+		}
+
+		log.Printf("Starting HTTPS server on %s", tlsPort)
+
+		// Start HTTP redirect server in background
+		go func() {
+			redirectMux := http.NewServeMux()
+			redirectMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+				// Extract host without port
+				host := r.Host
+				if idx := strings.Index(host, ":"); idx != -1 {
+					host = host[:idx]
+				}
+
+				// Build HTTPS URL
+				target := "https://" + host
+				if tlsPort != ":443" {
+					target += tlsPort
+				}
+				target += r.URL.Path
+				if r.URL.RawQuery != "" {
+					target += "?" + r.URL.RawQuery
+				}
+
+				http.Redirect(w, r, target, http.StatusMovedPermanently)
+			})
+			log.Println("Starting HTTP->HTTPS redirect server on :80")
+			if err := http.ListenAndServe(":80", redirectMux); err != nil {
+				log.Printf("HTTP redirect server failed: %v", err)
+			}
+		}()
+
+		// Start HTTPS server
+		log.Fatal(http.ListenAndServeTLS(tlsPort, certFile, keyFile, handler))
+	} else {
+		// Start HTTP Server
+		// Secure Binding: Only listen on localhost.
+		// Access from LAN/WAN is handled by NFTables DNAT.
+		addr := "127.0.0.1:8080"
+		fmt.Printf("Starting HTTP server on %s\n", addr)
+		if err := http.ListenAndServe(addr, handler); err != nil {
+			log.Fatal(err)
 		}
 	}
 }
