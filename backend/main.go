@@ -2818,9 +2818,9 @@ func main() {
 		log.Fatal(http.ListenAndServeTLS(tlsPort, certFile, keyFile, handler))
 	} else {
 		// Start HTTP Server
-		// Secure Binding: Only listen on localhost.
-		// Access from LAN/WAN is handled by NFTables DNAT.
-		addr := "127.0.0.1:8090" // Changed from 8080 (CrowdSec) and 8081 (UniFi) to avoid conflicts
+		// Changed to 0.0.0.0 to allow access from management tools (NPM) on WAN network
+		// Protected by NFTables rate limiting (100 conn/min)
+		addr := "0.0.0.0:8090"
 		fmt.Printf("Starting HTTP server on %s\n", addr)
 		if err := http.ListenAndServe(addr, handler); err != nil {
 			log.Fatal(err)
