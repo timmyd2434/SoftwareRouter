@@ -29,11 +29,11 @@ var allowedCommands = map[string]bool{
 	"ping":        true, // Diagnostics
 	"traceroute":  true, // Diagnostics
 	"journalctl":  true, // Log access
-	"bash":        true, // Shell (use sparingly - for complex operations only)
-	"sh":          true, // Shell (use sparingly)
-	"curl":        true, // HTTP client (for downloads during setup)
-	"pihole":      true, // Pi-hole CLI
-	"cscli":       true, // CrowdSec CLI
+	// SECURITY FIX (HIGH-1): bash/sh removed - shell access eliminated
+	// Any operations requiring shell must be refactored to use native Go
+	"curl":   true, // HTTP client (for downloads during setup)
+	"pihole": true, // Pi-hole CLI
+	"cscli":  true, // CrowdSec CLI
 }
 
 // commandExecutionLog stores recent command executions for debugging
@@ -87,31 +87,33 @@ func validateCommand(cmd string, args []string) error {
 		return fmt.Errorf("SECURITY: command '%s' is not in the allowed command list", cmd)
 	}
 
-	// Basic argument validation - prevent obvious injection attempts
+	// SECURITY FIX (HIGH-2): Strict argument validation - zero exceptions
+	// Comprehensive blocklist of dangerous shell metacharacters
+	dangerousChars := []string{
+		";", "|", "&", // Command separators/backgrounding
+		"`", "$", // Command substitution/variables
+		">", "<", // Redirects
+		"\n", "\r", // Line breaks
+		"(", ")", // Subshells
+		"{", "}", // Command grouping
+	}
+
 	for _, arg := range args {
-		// Check for shell metacharacters that could indicate injection
-		// Note: This is defense in depth - we already use exec.Command which doesn't invoke a shell
-		// But this catches potential issues before they become problems
-		if strings.Contains(arg, ";") || strings.Contains(arg, "|") ||
-			strings.Contains(arg, "&") && !strings.HasPrefix(arg, "--") || // Allow --flag=value
-			strings.Contains(arg, "`") || strings.Contains(arg, "$") && !strings.Contains(arg, "=$(") {
-			// $ is allowed in some contexts (like variable refs in systemd)
-			// but be very suspicious of it
-			log.Printf("[PRIV_EXEC] WARNING: Suspicious argument detected: %s", arg)
+		for _, char := range dangerousChars {
+			if strings.Contains(arg, char) {
+				log.Printf("SECURITY: Blocked dangerous character '%s' in argument: %s", char, arg)
+				return fmt.Errorf("SECURITY: dangerous character '%s' in argument", char)
+			}
 		}
 	}
 
 	// Command-specific validation
 	switch cmd {
 	case "bash", "sh":
-		// Shell commands are high-risk - only allow if using -c with controlled input
-		if len(args) == 0 || args[0] != "-c" {
-			return fmt.Errorf("SECURITY: shell commands must use -c flag with explicit command string")
-		}
-		log.Printf("[PRIV_EXEC] WARNING: Shell command execution: bash %s", strings.Join(args, " "))
+		// Shell commands completely removed from allow-list
+		return fmt.Errorf("SECURITY: shell commands are not permitted (HIGH-1 fix)")
 	case "nft":
 		// NFTables should generally use -f for file-based application
-		// But also allow individual rule operations
 		if len(args) == 0 {
 			return fmt.Errorf("nft requires arguments")
 		}
