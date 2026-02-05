@@ -747,21 +747,57 @@ func login(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
-			"token": tokenValue,
-			"user":  req.Username,
+			"token":   tokenValue,
+			"message": "Login successful",
+			"user":    req.Username,
 		})
-	} else {
-		// Failure
-		loginMu.Lock()
-		loginAttempts[ip]++
-		if loginAttempts[ip] >= 5 {
-			loginBanUntil[ip] = time.Now().Add(15 * time.Minute)
-			log.Printf("Banned IP %s due to excessive login failures", ip)
-		}
-		loginMu.Unlock()
+		// Log successful login
+		logAuditEvent(req.Username, "login", "success",
+			fmt.Sprintf("{\"ip\":\"%s\"}", ip), ip, true)
+		return
+	}
 
-		time.Sleep(500 * time.Millisecond) // Artificial delay
-		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+	// Failure
+	loginMu.Lock()
+	loginAttempts[ip]++
+	if loginAttempts[ip] >= 5 {
+		loginBanUntil[ip] = time.Now().Add(15 * time.Minute)
+		log.Printf("Banned IP %s due to excessive login failures", ip)
+	}
+	loginMu.Unlock()
+
+	time.Sleep(2 * time.Second)
+	http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+	logAuditEvent(req.Username, "login", "failure",
+		fmt.Sprintf("{\"ip\":\"%s\"}", ip), ip, false)
+}
+
+// logout handler for session management (Tier 4 improvement)
+// Client-side logout - server remains stateless
+func logout(w http.ResponseWriter, r *http.Request) {
+	// Extract IP for audit logging
+	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+
+	// Optional: Extract username from token for logging
+	token := r.Header.Get("Authorization")
+	username := "unknown"
+	if token != "" {
+		// Assuming token format "Bearer user:timestamp:signature"
+		tokenValue := strings.TrimPrefix(token, "Bearer ")
+		parts := strings.Split(tokenValue, ":")
+		if len(parts) >= 1 {
+			username = parts[0]
+		}
+	}
+
+	logAuditEvent(username, "logout", "success",
+		fmt.Sprintf("{\"ip\":\"%s\"}", ip), ip, true)
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]string{
+		"message": "Logged out successfully",
+	}); err != nil {
+		log.Printf("ERROR: Failed to encode logout response: %v", err)
 	}
 }
 
@@ -2444,6 +2480,7 @@ func main() {
 
 	// Public Auth Endpoints (strict 10 req/min to prevent brute force)
 	mux.HandleFunc("POST /api/login", rateLimitMiddleware(authLimiter, 10, time.Minute)(login))
+	mux.HandleFunc("POST /api/logout", authMiddleware(logout)) // Tier 4: Session management
 
 	// CSRF Token Endpoint  (authenticated)
 	mux.HandleFunc("GET /api/csrf-token", authMiddleware(func(w http.ResponseWriter, r *http.Request) {

@@ -22,18 +22,72 @@ import AuditLogs from './pages/AuditLogs';
 import Clients from './pages/Clients';
 import './App.css';
 
+// Tier 4: Session timeout configuration (30 minutes of inactivity)
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('sr_token'));
+  const [lastActivity, setLastActivity] = useState(Date.now());
 
   const handleLogin = (data) => {
     setIsAuthenticated(true);
+    setLastActivity(Date.now());
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('sr_token');
-    localStorage.removeItem('sr_user');
-    setIsAuthenticated(false);
+  const handleLogout = async () => {
+    try {
+      // Call logout endpoint (Tier 4: Session management)
+      const token = localStorage.getItem('sr_token');
+      if (token) {
+        await fetch('/api/logout', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        }).catch(() => {
+          // Ignore errors - logout locally regardless
+        });
+      }
+    } finally {
+      // Always clear local storage and log out
+      localStorage.removeItem('sr_token');
+      localStorage.removeItem('sr_user');
+      setIsAuthenticated(false);
+    }
   };
+
+  // Tier 4: Track user activity and auto-logout after idle timeout
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const activityEvents = ['mousedown', 'keydown', 'scroll', 'touchstart'];
+
+    const resetActivity = () => {
+      setLastActivity(Date.now());
+    };
+
+    // Add event listeners for activity tracking
+    activityEvents.forEach(event => {
+      document.addEventListener(event, resetActivity);
+    });
+
+    // Check for idle timeout every minute
+    const timeoutCheck = setInterval(() => {
+      const idleTime = Date.now() - lastActivity;
+      if (idleTime > SESSION_TIMEOUT_MS) {
+        console.log('Session timed out due to inactivity');
+        handleLogout();
+      }
+    }, 60000); // Check every minute
+
+    return () => {
+      activityEvents.forEach(event => {
+        document.removeEventListener(event, resetActivity);
+      });
+      clearInterval(timeoutCheck);
+    };
+  }, [isAuthenticated, lastActivity]);
 
   if (!isAuthenticated) {
     return <Login onLogin={handleLogin} />;
