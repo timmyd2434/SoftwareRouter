@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 )
@@ -104,16 +106,33 @@ func (fm *FirewallManager) ApplyFirewallRules() error {
 		return fmt.Errorf("Failed to create temp file: %v", err)
 	}
 	defer os.Remove(tmpfile.Name())
+	tmpPath := tmpfile.Name() // Store the path before closing
+	defer func() {            // Only delete on success or if validation passes
+		if err == nil {
+			os.Remove(tmpPath)
+		}
+	}()
 
 	if _, err := tmpfile.WriteString(ruleset); err != nil {
 		return fmt.Errorf("Failed to write ruleset: %v", err)
 	}
 	tmpfile.Close()
 
-	// 7. Validate syntax first (dry-run)
+	// Validate with nft -c (check mode)
 	fmt.Println("Validating ruleset syntax...")
-	if output, err := runPrivilegedCombinedOutput("nft", "-c", "-f", tmpfile.Name()); err != nil {
-		return fmt.Errorf("Ruleset syntax validation failed: %v\nOutput: %s", err, string(output))
+	validateCmd := exec.Command("nft", "-c", "-f", tmpPath)
+	validateOutput, validateErr := validateCmd.CombinedOutput()
+
+	if validateErr != nil {
+		// KEEP the file for debugging and log detailed error
+		log.Printf("NFTables validation FAILED - preserving file: %s", tmpPath)
+		log.Printf("NFT validation error output:\n%s", string(validateOutput))
+		// Attempt to get a more detailed error from nft if the combined output wasn't enough
+		if err := runPrivileged("nft", "-c", "-f", tmpPath); err != nil {
+			log.Printf("Detailed NFT error: %v", err)
+		}
+		// Return error but continue to start server
+		return fmt.Errorf("nftables validation failed - check %s for details: %v", tmpPath, validateErr)
 	}
 
 	// 8. Install dead-man switch (emergency access protection)
