@@ -2820,7 +2820,7 @@ func main() {
 		// Start HTTP Server
 		// Secure Binding: Only listen on localhost.
 		// Access from LAN/WAN is handled by NFTables DNAT.
-		addr := "127.0.0.1:8080"
+		addr := "127.0.0.1:8081" // Changed from 8080 to avoid CrowdSec conflict
 		fmt.Printf("Starting HTTP server on %s\n", addr)
 		if err := http.ListenAndServe(addr, handler); err != nil {
 			log.Fatal(err)
