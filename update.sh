@@ -215,6 +215,25 @@ rm -rf "$BACKUP_DIR"
 echo "  ✓ Backup cleaned"
 echo ""
 
+# SECURITY CHECK: Verify token_secret.key exists (required as of Tier 3 fixes)
+echo "🔐 Security pre-flight checks..."
+if [ ! -f "/etc/softrouter/token_secret.key" ]; then
+    echo "  ⚠️  WARNING: token_secret.key not found!"
+    echo ""
+    echo "  The backend now requires /etc/softrouter/token_secret.key for security."
+    echo "  Generating a new secret key..."
+    mkdir -p /etc/softrouter
+    head -c 32 /dev/urandom | base64 > /etc/softrouter/token_secret.key
+    chmod 600 /etc/softrouter/token_secret.key
+    echo "  ✓ New token_secret.key generated"
+    echo ""
+    echo "  ⚠️  IMPORTANT: All existing sessions will be invalidated."
+    echo "     You will need to log in again after the update."
+else
+    echo "  ✓ token_secret.key exists"
+fi
+echo ""
+
 # Restart the backend service
 echo "🚀 Starting SoftRouter backend service..."
 if systemctl list-unit-files | grep -q "^softrouter.service"; then
