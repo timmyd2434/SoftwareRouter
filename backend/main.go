@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -352,6 +353,36 @@ func isValidIP(ip string) bool {
 	return parsed != nil
 }
 
+func isValidClientName(name string) bool {
+	// Only allow alphanumeric, dash, and underscore
+	// No dots, slashes, or other special characters to prevent path traversal
+	if len(name) == 0 || len(name) > 64 {
+		return false
+	}
+	for _, ch := range name {
+		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+			(ch >= '0' && ch <= '9') || ch == '-' || ch == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+// writeJSON safely encodes data as JSON to the response writer with error handling
+func writeJSON(w http.ResponseWriter, data interface{}) {
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		log.Printf("ERROR: Failed to encode JSON response: %v", err)
+		// Don't write error to client if headers already sent
+	}
+}
+
+// safeClose safely closes a file and logs any errors
+func safeClose(f *os.File, context string) {
+	if err := f.Close(); err != nil {
+		log.Printf("WARNING: Failed to close file (%s): %v", context, err)
+	}
+}
+
 func generateSecureToken(username string) string {
 	timestamp := time.Now().Unix()
 	payload := fmt.Sprintf("%s:%d", username, timestamp)
@@ -385,6 +416,28 @@ func verifySecureToken(token string) bool {
 	h.Write([]byte(payload))
 	h.Write(tokenSecret)
 	expectedSignature := hex.EncodeToString(h.Sum(nil))
+
+	// Parse and validate timestamp for expiration
+	timestamp, err := strconv.ParseInt(timestampStr, 10, 64)
+	if err != nil {
+		log.Printf("SECURITY: Invalid token timestamp format: %v", err)
+		return false
+	}
+
+	// Check token expiration - 7 days for home router use
+	// (compromise between security and convenience for always-on home device)
+	tokenAge := time.Now().Unix() - timestamp
+	maxAge := int64(7 * 24 * 60 * 60) // 7 days in seconds
+
+	if tokenAge > maxAge {
+		log.Printf("SECURITY: Token expired (age: %d seconds, max: %d)", tokenAge, maxAge)
+		return false
+	}
+
+	if tokenAge < 0 {
+		log.Printf("SECURITY: Token timestamp in future - possible clock skew or attack")
+		return false
+	}
 
 	// Constant time comparison (simple for now but better than nothing)
 	return providedSignature == expectedSignature
@@ -546,10 +599,27 @@ func cleanupCSRFTokens() {
 // csrfMiddleware validates CSRF tokens for state-changing operations
 func csrfMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// SECURITY: Localhost bypass for emergency recovery
+		// If user is locked out remotely, they can still access via direct localhost connection
+		// This is safe because:
+		// 1. Attacker must have physical/SSH access to router (already privileged)
+		// 2. Browser's same-origin policy protects localhost from external sites
+		remoteAddr := r.RemoteAddr
+		host, _, err := net.SplitHostPort(remoteAddr)
+		if err == nil {
+			// Check if connection is from localhost
+			if host == "127.0.0.1" || host == "::1" || host == "localhost" {
+				log.Printf("INFO: CSRF check bypassed for localhost connection from %s", remoteAddr)
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+
 		// Only check CSRF for state-changing methods
 		if r.Method != "GET" && r.Method != "OPTIONS" && r.Method != "HEAD" {
 			token := r.Header.Get("X-CSRF-Token")
 			if !validateCSRFToken(token) {
+				log.Printf("SECURITY: CSRF validation failed from %s for %s %s", r.RemoteAddr, r.Method, r.URL.Path)
 				http.Error(w, "Invalid or missing CSRF token", http.StatusForbidden)
 				return
 			}

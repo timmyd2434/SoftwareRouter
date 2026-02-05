@@ -62,7 +62,9 @@ table inet deadman {
 	if _, err := tmpfile.WriteString(deadManRules); err != nil {
 		return fmt.Errorf("failed to write dead-man switch rules: %w", err)
 	}
-	tmpfile.Close()
+	if err := tmpfile.Close(); err != nil {
+		log.Printf("WARNING: Failed to close dead-man temp file: %v", err)
+	}
 
 	// Apply dead-man switch rules
 	if err := runPrivileged("nft", "-f", tmpfile.Name()); err != nil {
@@ -253,7 +255,9 @@ func performRollback(snapshot string) error {
 	if _, err := tmpfile.WriteString(snapshot); err != nil {
 		return fmt.Errorf("failed to write rollback rules: %w", err)
 	}
-	tmpfile.Close()
+	if err := tmpfile.Close(); err != nil {
+		log.Printf("WARNING: Failed to close rollback temp file: %v", err)
+	}
 
 	// Apply rollback
 	if err := runPrivileged("nft", "-f", tmpfile.Name()); err != nil {
@@ -280,7 +284,9 @@ func applyBootSafeFallback() error {
 	if _, err := tmpfile.WriteString(fallbackRules); err != nil {
 		return fmt.Errorf("failed to write emergency rules: %w", err)
 	}
-	tmpfile.Close()
+	if err := tmpfile.Close(); err != nil {
+		log.Printf("WARNING: Failed to close emergency temp file: %v", err)
+	}
 
 	if err := runPrivileged("nft", "-f", tmpfile.Name()); err != nil {
 		return fmt.Errorf("failed to apply emergency rules: %w", err)

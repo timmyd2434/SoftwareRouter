@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"log"
 	"net/http"
 )
@@ -82,7 +81,7 @@ func respondWithError(w http.ResponseWriter, code string, userMessage string, ht
 	// Send sanitized error to client
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(httpStatus)
-	json.NewEncoder(w).Encode(newSanitizedError(code, userMessage))
+	writeJSON(w, newSanitizedError(code, userMessage))
 }
 
 // Common error responses

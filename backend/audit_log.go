@@ -61,7 +61,7 @@ func logAuditEvent(user, action, resource, details, ipAddress string, success bo
 		fmt.Fprintf(os.Stderr, "AUDIT LOG ERROR: Failed to open log file: %v\n", err)
 		return
 	}
-	defer file.Close()
+	defer file.Close() //nolint:errcheck
 
 	jsonData, err := json.Marshal(entry)
 	if err != nil {

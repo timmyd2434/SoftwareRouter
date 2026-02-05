@@ -19,8 +19,12 @@ var firewallManager = &FirewallManager{}
 func InitFirewallManager() {
 	// Enable route_localnet to allow DNAT to 127.0.0.1
 	// This is critical for the security model where we bind to localhost but DNAT from LAN/WAN
-	runPrivileged("sysctl", "-w", "net.ipv4.conf.all.route_localnet=1")
-	runPrivileged("sysctl", "-w", "net.ipv4.conf.default.route_localnet=1")
+	if err := runPrivileged("sysctl", "-w", "net.ipv4.conf.all.route_localnet=1"); err != nil {
+		fmt.Printf("WARNING: Failed to set route_localnet on all interfaces: %v\n", err)
+	}
+	if err := runPrivileged("sysctl", "-w", "net.ipv4.conf.default.route_localnet=1"); err != nil {
+		fmt.Printf("WARNING: Failed to set route_localnet on default interface: %v\n", err)
+	}
 }
 
 // ApplyFirewallRules regenerates and applies all firewall rules ATOMICALLY
@@ -127,10 +131,20 @@ func (fm *FirewallManager) ApplyFirewallRules() error {
 			fmt.Println("Attempting rollback...")
 			rollbackFile, _ := os.CreateTemp("", "softrouter-rollback-*.nft")
 			if rollbackFile != nil {
-				rollbackFile.Write(snapshot)
-				rollbackFile.Close()
-				runPrivileged("nft", "-f", rollbackFile.Name())
-				os.Remove(rollbackFile.Name())
+				if _, err := rollbackFile.Write(snapshot); err != nil {
+					fmt.Printf("ERROR: Failed to write rollback file: %v\n", err)
+				}
+				if err := rollbackFile.Close(); err != nil {
+					fmt.Printf("WARNING: Failed to close rollback file: %v\n", err)
+				}
+				if err := runPrivileged("nft", "-f", rollbackFile.Name()); err != nil {
+					fmt.Printf("ERROR: Rollback failed: %v\n", err)
+				} else {
+					fmt.Println("Rollback completed successfully")
+				}
+				if err := os.Remove(rollbackFile.Name()); err != nil {
+					fmt.Printf("WARNING: Failed to remove rollback file: %v\n", err)
+				}
 				fmt.Println("Rollback completed")
 			}
 		}
@@ -139,7 +153,9 @@ func (fm *FirewallManager) ApplyFirewallRules() error {
 	}
 
 	// 10. Remove dead-man switch (rules applied successfully)
-	removeDeadManSwitch()
+	if err := removeDeadManSwitch(); err != nil {
+		fmt.Printf("WARNING: Failed to remove dead-man switch: %v\n", err)
+	}
 
 	// 11. Start watchdog timer (user must confirm or rollback occurs)
 	if snapshot != nil {

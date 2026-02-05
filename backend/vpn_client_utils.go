@@ -105,7 +105,7 @@ func uploadVPNClientConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Config file required", http.StatusBadRequest)
 		return
 	}
-	defer file.Close()
+	defer file.Close() //nolint:errcheck
 
 	// 1. Ensure directories exist
 	os.MkdirAll(vpnClientConfigDir, 0755)

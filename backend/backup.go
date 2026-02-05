@@ -256,13 +256,13 @@ func createCompressedBackup() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
+	defer file.Close() //nolint:errcheck
 
 	gzWriter := gzip.NewWriter(file)
-	defer gzWriter.Close()
+	defer gzWriter.Close() //nolint:errcheck
 
 	tarWriter := tar.NewWriter(gzWriter)
-	defer tarWriter.Close()
+	defer tarWriter.Close() //nolint:errcheck
 
 	// Add backup JSON to tar
 	header := &tar.Header{

@@ -70,7 +70,9 @@ func loadDRConfig() {
 		fmt.Printf("Error loading DR config: %v\n", err)
 		return
 	}
-	json.Unmarshal(data, &drConfig)
+	if err := json.Unmarshal(data, &drConfig); err != nil {
+		fmt.Printf("WARNING: Failed to unmarshal dynamic routing config: %v\n", err)
+	}
 }
 
 func saveDRConfig() error {
@@ -152,7 +154,9 @@ func generateFRRConfig() error {
 	// "systemctl reload frr" is standard
 	if out, err := runPrivilegedCombinedOutput("systemctl", "reload", "frr"); err != nil {
 		// Fallback to restart if reload fails
-		runPrivileged("systemctl", "restart", "frr")
+		if err := runPrivileged("systemctl", "restart", "frr"); err != nil {
+			fmt.Printf("ERROR: Failed to restart FRR: %v\n", err)
+		}
 		return fmt.Errorf("reload failed: %s", string(out))
 	}
 
@@ -166,7 +170,7 @@ func getDynamicRouting(w http.ResponseWriter, r *http.Request) {
 	data := drConfig
 	drLock.RUnlock()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
+	writeJSON(w, data)
 }
 
 func updateDynamicRouting(w http.ResponseWriter, r *http.Request) {
@@ -180,7 +184,9 @@ func updateDynamicRouting(w http.ResponseWriter, r *http.Request) {
 	drConfig = req
 	drLock.Unlock()
 
-	saveDRConfig()
+	if err := saveDRConfig(); err != nil {
+		fmt.Printf("WARNING: Failed to save dynamic routing config: %v\n", err)
+	}
 
 	if err := generateFRRConfig(); err != nil {
 		http.Error(w, "Failed to apply FRR config: "+err.Error(), http.StatusInternalServerError)
@@ -188,5 +194,5 @@ func updateDynamicRouting(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "applied"})
+	writeJSON(w, map[string]string{"status": "applied"})
 }

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -41,7 +42,10 @@ func saveDHCPConfig(store *DHCPConfigStore) error {
 	}
 
 	// Ensure directory exists
-	os.MkdirAll("/etc/softrouter", 0755)
+	if err := os.MkdirAll("/etc/softrouter", 0755); err != nil {
+		log.Printf("ERROR: Failed to create /etc/softrouter directory: %v", err)
+		return err
+	}
 
 	return os.WriteFile(dhcpConfigPath, data, 0644)
 }
@@ -112,7 +116,7 @@ func getARPTable() ([]ARPEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer file.Close() //nolint:errcheck
 
 	var entries []ARPEntry
 	scanner := bufio.NewScanner(file)
@@ -175,7 +179,10 @@ func regenerateDnsmasqDHCPConfig(store *DHCPConfigStore) error {
 	}
 
 	// Ensure directory exists
-	os.MkdirAll("/etc/dnsmasq.d", 0755)
+	if err := os.MkdirAll("/etc/dnsmasq.d", 0755); err != nil {
+		log.Printf("ERROR: Failed to create /etc/dnsmasq.d directory: %v", err)
+		return fmt.Errorf("failed to create dnsmasq.d directory: %w", err)
+	}
 
 	// Write the configuration file
 	err := os.WriteFile(dnsmasqDHCPPath, []byte(config.String()), 0644)
@@ -184,7 +191,10 @@ func regenerateDnsmasqDHCPConfig(store *DHCPConfigStore) error {
 	}
 
 	// Restart dnsmasq to apply changes
-	runPrivileged("systemctl", "restart", "dnsmasq")
+	if err := runPrivileged("systemctl", "restart", "dnsmasq"); err != nil {
+		log.Printf("WARNING: Failed to restart dnsmasq: %v", err)
+		return fmt.Errorf("failed to restart dnsmasq: %w", err)
+	}
 
 	return nil
 }
@@ -200,7 +210,7 @@ func parseDHCPLeases() ([]DHCPLease, error) {
 		}
 		return nil, err
 	}
-	defer file.Close()
+	defer file.Close() //nolint:errcheck
 
 	var leases []DHCPLease
 	scanner := bufio.NewScanner(file)
@@ -221,8 +231,11 @@ func parseDHCPLeases() ([]DHCPLease, error) {
 		} else {
 			// Try int parse if timestamp is robust
 			var tsInt int64
-			fmt.Sscanf(expiryTimestamp, "%d", &tsInt)
-			expiryTime = time.Unix(tsInt, 0)
+			if _, err := fmt.Sscanf(expiryTimestamp, "%d", &tsInt); err != nil {
+				log.Printf("WARNING: Failed to parse DHCP lease timestamp: %v", err)
+			} else {
+				expiryTime = time.Unix(tsInt, 0)
+			}
 		}
 
 		lease := DHCPLease{
@@ -315,7 +328,7 @@ func getNetworkClients(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(clients)
+	writeJSON(w, clients)
 }
 
 func addStaticLease(w http.ResponseWriter, r *http.Request) {
@@ -359,7 +372,7 @@ func addStaticLease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+	writeJSON(w, map[string]string{"status": "success"})
 }
 
 func removeStaticLease(w http.ResponseWriter, r *http.Request) {
@@ -393,7 +406,7 @@ func removeStaticLease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+	writeJSON(w, map[string]string{"status": "success"})
 }
 
 func getDHCPConfig(w http.ResponseWriter, r *http.Request) {
@@ -404,7 +417,7 @@ func getDHCPConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(store)
+	writeJSON(w, store)
 }
 
 func setDHCPConfig(w http.ResponseWriter, r *http.Request) {
@@ -455,7 +468,7 @@ func setDHCPConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+	writeJSON(w, map[string]string{"status": "success"})
 }
 
 func deleteDHCPConfig(w http.ResponseWriter, r *http.Request) {
@@ -487,7 +500,7 @@ func deleteDHCPConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+	writeJSON(w, map[string]string{"status": "success"})
 }
 
 func getDHCPLeases(w http.ResponseWriter, r *http.Request) {
@@ -498,5 +511,5 @@ func getDHCPLeases(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(leases)
+	writeJSON(w, leases)
 }
