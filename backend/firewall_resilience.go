@@ -44,7 +44,7 @@ table inet deadman {
 		tcp dport 22 accept comment "Dead-man switch: SSH"
 		
 		# Accept WebUI on localhost
-		iif lo tcp dport 8081 accept comment "Dead-man switch: WebUI"
+		iif lo tcp dport 8090 accept comment "Dead-man switch: WebUI"
 		iif lo tcp dport 443 accept comment "Dead-man switch: WebUI HTTPS"
 		
 		# Accept established connections

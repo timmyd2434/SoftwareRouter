@@ -264,7 +264,7 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 
 	// LAN Access to WebUI (DNAT to localhost)
 	for _, lan := range lanInterfaces {
-		b.WriteString(fmt.Sprintf("    iifname \"%s\" tcp dport 80 dnat to 127.0.0.1:8081 comment \"LAN WebUI HTTP\"\n", lan))
+		b.WriteString(fmt.Sprintf("    iifname \"%s\" tcp dport 80 dnat to 127.0.0.1:8090 comment \"LAN WebUI HTTP\"\n", lan))
 		targetHTTPS := "443"
 		if cfg.TLS.Port != "" {
 			targetHTTPS = strings.TrimPrefix(cfg.TLS.Port, ":")
@@ -307,7 +307,7 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 		}
 
 		for _, wan := range wanInterfaces {
-			b.WriteString(fmt.Sprintf("    iifname \"%s\" tcp dport %d dnat to 127.0.0.1:8081 comment \"WAN WebUI HTTP\"\n",
+			b.WriteString(fmt.Sprintf("    iifname \"%s\" tcp dport %d dnat to 127.0.0.1:8090 comment \"WAN WebUI HTTP\"\n",
 				wan, httpPort))
 			b.WriteString(fmt.Sprintf("    iifname \"%s\" tcp dport %d dnat to 127.0.0.1:%s comment \"WAN WebUI HTTPS\"\n",
 				wan, httpsPort, targetHTTPS))

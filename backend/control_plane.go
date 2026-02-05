@@ -24,7 +24,7 @@ func generateControlPlaneRules() string {
 
 	// WebUI HTTP Rate Limiting
 	b.WriteString("  # WebUI HTTP rate limiting: max 100 new connections per minute per source\n")
-	b.WriteString("  tcp dport 8080 ct state new limit rate 100/minute burst 50 accept comment \"WebUI HTTP rate limit\"\n")
+	b.WriteString("  tcp dport 8090 ct state new limit rate 100/minute burst 50 accept comment \"WebUI HTTP rate limit\"\n")
 	b.WriteString("  tcp dport 80 ct state new limit rate 100/minute burst 50 accept comment \"WebUI HTTP rate limit\"\n\n")
 
 	// WebUI HTTPS Rate Limiting
