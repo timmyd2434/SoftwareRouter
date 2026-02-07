@@ -781,6 +781,10 @@ func login(w http.ResponseWriter, r *http.Request) {
 		// Return just the part after "Bearer " for client storage
 		tokenValue := strings.TrimPrefix(token, "Bearer ")
 
+		// Track session
+		userAgent := r.Header.Get("User-Agent")
+		sessionStore.AddSession(tokenValue, req.Username, ip, userAgent)
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
 			"token":   tokenValue,
