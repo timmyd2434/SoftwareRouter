@@ -2513,8 +2513,72 @@ func main() {
 
 	// Protected Endpoints
 	mux.HandleFunc("GET /api/status", authMiddleware(getSystemStatus))
+	// Configuration
 	mux.HandleFunc("GET /api/config", authMiddleware(getConfig))
-	mux.HandleFunc("POST /api/config", authMiddleware(updateConfig))
+	mux.HandleFunc("POST /api/config", authMiddleware(csrfMiddleware(updateConfig)))
+
+	// System Setup Wizard
+	mux.HandleFunc("GET /api/system/needs-setup", func(w http.ResponseWriter, r *http.Request) {
+		// This endpoint doesn't require auth - it's checked before login
+		needsSetup := isFirstBoot() && needsWANConfiguration()
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{
+			"needs_setup": needsSetup,
+		})
+	})
+
+	mux.HandleFunc("POST /api/interface/metadata/bulk", authMiddleware(csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Updates []struct {
+				Interface string `json:"interface"`
+				Label     string `json:"label"`
+			} `json:"updates"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request", http.StatusBadRequest)
+			return
+		}
+
+		metaStore, _ := loadInterfaceMetadata()
+		if metaStore == nil {
+			metaStore = &InterfaceMetadataStore{
+				Metadata: make(map[string]InterfaceMetadata),
+			}
+		}
+
+		// Apply all updates
+		for _, update := range req.Updates {
+			metaStore.Metadata[update.Interface] = InterfaceMetadata{
+				Label: update.Label,
+			}
+		}
+
+		if err := saveInterfaceMetadata(metaStore); err != nil {
+			http.Error(w, "Failed to save metadata", http.StatusInternalServerError)
+			return
+		}
+
+		// Mark first boot complete
+		if err := markFirstBootComplete(); err != nil {
+			log.Printf("Warning: Failed to mark first boot complete: %v", err)
+		}
+
+		// Log audit event
+		logAuditEvent(getUsernameFromToken(r), "system.setup", "interface_labels",
+			fmt.Sprintf("{\"updates\":%d}", len(req.Updates)), getClientIP(r), true)
+
+		// Regenerate firewall with new labels
+		go func() {
+			if err := firewallManager.ApplyFirewallRules(); err != nil {
+				log.Printf("Error regenerating firewall after setup: %v", err)
+			}
+		}()
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+	})))
 	mux.HandleFunc("POST /api/auth/update-credentials", authMiddleware(updateCredentials))
 	mux.HandleFunc("GET /api/settings", authMiddleware(getSettings))
 	mux.HandleFunc("POST /api/settings", authMiddleware(updateSettings))
