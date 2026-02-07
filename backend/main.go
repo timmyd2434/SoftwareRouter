@@ -215,10 +215,11 @@ type VPNClientConfig struct {
 
 // AppConfig handles persistent settings for advanced modules
 type AppConfig struct {
-	CloudflareToken string `json:"cf_token"`
-	ProtectedSubnet string `json:"protected_subnet"`
-	AdBlocker       string `json:"ad_blocker"` // "none", "adguard", "pihole"
-	OpenVPNPort     int    `json:"openvpn_port"`
+	CloudflareToken string          `json:"cf_token"`
+	ProtectedSubnet string          `json:"protected_subnet"`
+	AdBlocker       string          `json:"ad_blocker"` // "none", "adguard", "pihole"
+	OpenVPNPort     int             `json:"openvpn_port"`
+	WebAccess       WebAccessConfig `json:"web_access"`
 	VPNServer       struct {
 		Endpoint     string `json:"endpoint"`      // Empty = auto-detect, or IP/hostname
 		EndpointType string `json:"endpoint_type"` // "auto", "ip", "hostname"
@@ -273,6 +274,11 @@ func loadConfig() AppConfig {
 	defaultCfg.VPNServer.Port = 1194
 	defaultCfg.VPNServer.Protocol = "udp"
 
+	// Set WebAccess defaults
+	defaultCfg.WebAccess.AllowWAN = false
+	defaultCfg.WebAccess.WANPortHTTP = 980
+	defaultCfg.WebAccess.WANPortHTTPS = 9443
+
 	data, err := os.ReadFile(configFilePath)
 	if err != nil {
 		return defaultCfg
@@ -292,6 +298,14 @@ func loadConfig() AppConfig {
 	}
 	if cfg.VPNServer.Protocol == "" {
 		cfg.VPNServer.Protocol = "udp"
+	}
+
+	// Apply WebAccess defaults if not set
+	if cfg.WebAccess.WANPortHTTP == 0 {
+		cfg.WebAccess.WANPortHTTP = 980
+	}
+	if cfg.WebAccess.WANPortHTTPS == 0 {
+		cfg.WebAccess.WANPortHTTPS = 9443
 	}
 
 	return cfg
