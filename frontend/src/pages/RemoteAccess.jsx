@@ -35,6 +35,12 @@ const RemoteAccess = () => {
     const [newOvpnClientName, setNewOvpnClientName] = useState('');
     const [showOvpnModal, setShowOvpnModal] = useState(false);
 
+    // --- VPN Endpoint Configuration State ---
+    const [vpnEndpoint, setVpnEndpoint] = useState({ endpoint: '', endpoint_type: 'auto' });
+    const [testingEndpoint, setTestingEndpoint] = useState(false);
+    const [endpointResult, setEndpointResult] = useState(null);
+    const [savingConfig, setSavingConfig] = useState(false);
+
     useEffect(() => {
         if (activeTab === 'server') {
             fetchClients();
@@ -117,6 +123,71 @@ const RemoteAccess = () => {
         const token = localStorage.getItem('sr_token');
         window.open(`${API_ENDPOINTS.OVPN_SERVER_DOWNLOAD}?name=${name}&token=${token}`, '_blank');
     };
+
+    const handleTestEndpoint = async () => {
+        setTestingEndpoint(true);
+        setEndpointResult(null);
+        try {
+            const res = await authFetch('/api/vpn/endpoint');
+            if (res.ok) {
+                const data = await res.json();
+                setEndpointResult(data);
+            }
+        } catch (err) {
+            setEndpointResult({ success: false, error: 'Network error' });
+        } finally {
+            setTestingEndpoint(false);
+        }
+    };
+
+    const handleSaveEndpointConfig = async () => {
+        setSavingConfig(true);
+        try {
+            const configRes = await authFetch('/api/config');
+            const config = await configRes.json();
+
+            // Update VPN endpoint configuration
+            config.vpn_server = {
+                endpoint: vpnEndpoint.endpoint,
+                endpoint_type: vpnEndpoint.endpoint_type,
+                port: 1194,
+                protocol: 'udp'
+            };
+
+            const res = await authFetch('/api/config', {
+                method: 'POST',
+                body: JSON.stringify(config)
+            });
+
+            if (res.ok) {
+                alert('VPN endpoint configuration saved successfully!');
+                handleTestEndpoint(); // Test the new configuration
+            } else {
+                alert('Failed to save configuration');
+            }
+        } catch (err) {
+            alert('Error saving: ' + err.message);
+        } finally {
+            setSavingConfig(false);
+        }
+    };
+
+    // Load current VPN endpoint configuration
+    useEffect(() => {
+        if (activeTab === 'openvpn-server') {
+            authFetch('/api/config')
+                .then(r => r.json())
+                .then(config => {
+                    if (config.vpn_server) {
+                        setVpnEndpoint({
+                            endpoint: config.vpn_server.endpoint || '',
+                            endpoint_type: config.vpn_server.endpoint_type || 'auto'
+                        });
+                    }
+                })
+                .catch(err => console.error('Failed to load config:', err));
+        }
+    }, [activeTab]);
 
     // --- Server Handlers ---
     const fetchClients = async () => {
@@ -399,6 +470,81 @@ const RemoteAccess = () => {
                                         <div className="stat-row"><span>Active Certs</span><strong>{ovpnStatus.client_count}</strong></div>
                                     </div>
                                 </div>
+
+                                {/* VPN Endpoint Configuration */}
+                                <div className="info-card glass-panel">
+                                    <h3>VPN Endpoint Configuration</h3>
+                                    <div className="config-form">
+                                        <div className="form-group">
+                                            <label>Endpoint Type</label>
+                                            <select
+                                                value={vpnEndpoint.endpoint_type}
+                                                onChange={e => setVpnEndpoint({ ...vpnEndpoint, endpoint_type: e.target.value })}
+                                                className="form-select"
+                                            >
+                                                <option value="auto">Auto-detect (ifconfig.me)</option>
+                                                <option value="ip">Static IP Address</option>
+                                                <option value="hostname">Hostname/DDNS</option>
+                                            </select>
+                                        </div>
+
+                                        {vpnEndpoint.endpoint_type !== 'auto' && (
+                                            <div className="form-group">
+                                                <label>
+                                                    {vpnEndpoint.endpoint_type === 'ip' ? 'Static IP Address' : 'Hostname (DDNS)'}
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    placeholder={vpnEndpoint.endpoint_type === 'ip' ? '203.0.113.42' : 'vpn.example.com'}
+                                                    value={vpnEndpoint.endpoint}
+                                                    onChange={e => setVpnEndpoint({ ...vpnEndpoint, endpoint: e.target.value })}
+                                                />
+                                            </div>
+                                        )}
+
+                                        <div className="endpoint-actions">
+                                            <button
+                                                className="secondary-btn"
+                                                onClick={handleTestEndpoint}
+                                                disabled={testingEndpoint}
+                                            >
+                                                {testingEndpoint ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}
+                                                Test Endpoint
+                                            </button>
+                                            <button
+                                                className="primary-btn"
+                                                onClick={handleSaveEndpointConfig}
+                                                disabled={savingConfig}
+                                            >
+                                                {savingConfig ? <Loader2 className="spin" size={14} /> : <CheckCircle size={14} />}
+                                                Save Configuration
+                                            </button>
+                                        </div>
+
+                                        {endpointResult && (
+                                            <div className={`endpoint-result ${endpointResult.success ? 'success' : 'error'}`}>
+                                                {endpointResult.success ? (
+                                                    <>
+                                                        <CheckCircle size={16} />
+                                                        <span><strong>Resolved:</strong> {endpointResult.endpoint}</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <AlertCircle size={16} />
+                                                        <span><strong>Error:</strong> {endpointResult.error}</span>
+                                                    </>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        <p className="help-text">
+                                            <small>
+                                                This endpoint will be used in generated .ovpn client configurations.
+                                                {vpnEndpoint.endpoint_type === 'auto' && ' Auto-detect may take up to 10 seconds.'}
+                                            </small>
+                                        </p>
+                                    </div>
+                                </div>
                             </div>
                         </>
                     )}
@@ -539,13 +685,13 @@ const RemoteAccess = () => {
                         <form onSubmit={handleAddOvpnClient}>
                             <div className="input-group">
                                 <label>Client Name (No spaces)</label>
-                                <input 
-                                    type="text" 
-                                    autoFocus 
+                                <input
+                                    type="text"
+                                    autoFocus
                                     placeholder="laptop-user"
-                                    value={newOvpnClientName} 
-                                    onChange={e => setNewOvpnClientName(e.target.value.replace(/\s/g, ''))} 
-                                    required 
+                                    value={newOvpnClientName}
+                                    onChange={e => setNewOvpnClientName(e.target.value.replace(/\s/g, ''))}
+                                    required
                                 />
                             </div>
                             <div className="modal-actions">

@@ -20,6 +20,7 @@ import MultiWAN from './pages/MultiWAN';
 import DynamicRouting from './pages/DynamicRouting';
 import AuditLogs from './pages/AuditLogs';
 import Clients from './pages/Clients';
+import SetupWizard from './components/SetupWizard';
 import './App.css';
 
 // Tier 4: Session timeout configuration (30 minutes of inactivity)
@@ -28,6 +29,7 @@ const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('sr_token'));
   const [lastActivity, setLastActivity] = useState(Date.now());
+  const [showWizard, setShowWizard] = useState(false);
 
   const handleLogin = (data) => {
     setIsAuthenticated(true);
@@ -89,12 +91,34 @@ function App() {
     };
   }, [isAuthenticated, lastActivity]);
 
+  // Tier 4: Check if setup wizard is needed (first boot with no WAN configured)
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetch('/api/system/needs-setup')
+        .then(r => r.json())
+        .then(data => {
+          if (data.needs_setup) {
+            setShowWizard(true);
+          }
+        })
+        .catch(err => console.error('Failed to check setup status:', err));
+    }
+  }, [isAuthenticated]);
+
   if (!isAuthenticated) {
     return <Login onLogin={handleLogin} />;
   }
 
   return (
     <Router>
+      <SetupWizard
+        show={showWizard}
+        onComplete={() => {
+          setShowWizard(false);
+          // Optionally reload to apply new firewall rules
+          window.location.reload();
+        }}
+      />
       <MainLayout onLogout={handleLogout}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
