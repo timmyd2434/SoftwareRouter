@@ -219,6 +219,12 @@ type AppConfig struct {
 	ProtectedSubnet string `json:"protected_subnet"`
 	AdBlocker       string `json:"ad_blocker"` // "none", "adguard", "pihole"
 	OpenVPNPort     int    `json:"openvpn_port"`
+	VPNServer       struct {
+		Endpoint     string `json:"endpoint"`      // Empty = auto-detect, or IP/hostname
+		EndpointType string `json:"endpoint_type"` // "auto", "ip", "hostname"
+		Port         int    `json:"port"`
+		Protocol     string `json:"protocol"`
+	} `json:"vpn_server"`
 }
 
 // DHCPConfig represents DHCP configuration for a single interface
@@ -262,6 +268,10 @@ func loadConfig() AppConfig {
 		AdBlocker:       "none",
 		OpenVPNPort:     1194,
 	}
+	// Set VPN server defaults
+	defaultCfg.VPNServer.EndpointType = "auto"
+	defaultCfg.VPNServer.Port = 1194
+	defaultCfg.VPNServer.Protocol = "udp"
 
 	data, err := os.ReadFile(configFilePath)
 	if err != nil {
@@ -272,6 +282,18 @@ func loadConfig() AppConfig {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return defaultCfg
 	}
+
+	// Apply defaults if not set
+	if cfg.VPNServer.EndpointType == "" {
+		cfg.VPNServer.EndpointType = "auto"
+	}
+	if cfg.VPNServer.Port == 0 {
+		cfg.VPNServer.Port = 1194
+	}
+	if cfg.VPNServer.Protocol == "" {
+		cfg.VPNServer.Protocol = "udp"
+	}
+
 	return cfg
 }
 
@@ -2708,8 +2730,27 @@ func main() {
 	mux.HandleFunc("GET /api/vpn/server-openvpn/clients", authMiddleware(listOpenVPNClients))
 	mux.HandleFunc("POST /api/vpn/server-openvpn/clients", authMiddleware(createOpenVPNClient))
 	mux.HandleFunc("DELETE /api/vpn/server-openvpn/clients", authMiddleware(deleteOpenVPNClient))
-
+	// Download .ovpn without CSRF (it's a GET with auth)
 	mux.HandleFunc("GET /api/vpn/server-openvpn/download", authMiddleware(downloadOpenVPNClient))
+
+	// VPN Endpoint configuration test
+	mux.HandleFunc("GET /api/vpn/endpoint", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		endpoint, err := getVPNEndpoint()
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+			})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success":  true,
+			"endpoint": endpoint,
+		})
+	}))
 
 	// Port Forwarding
 	mux.HandleFunc("GET /api/port-forwarding", authMiddleware(listPortForwardingRules))

@@ -4,11 +4,55 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+// getVPNEndpoint resolves the VPN endpoint based on configuration
+// Supports: auto-detection, static IP, or hostname/DDNS
+func getVPNEndpoint() (string, error) {
+	cfg := loadConfig()
+
+	switch cfg.VPNServer.EndpointType {
+	case "hostname":
+		if cfg.VPNServer.Endpoint == "" {
+			return "", fmt.Errorf("hostname configured but empty - please set VPN endpoint in settings")
+		}
+		// Allow hostname/DDNS without validation (it's user's responsibility)
+		return cfg.VPNServer.Endpoint, nil
+
+	case "ip":
+		if cfg.VPNServer.Endpoint == "" {
+			return "", fmt.Errorf("static IP configured but empty - please set VPN endpoint in settings")
+		}
+		// Validate IP format
+		if net.ParseIP(cfg.VPNServer.Endpoint) == nil {
+			return "", fmt.Errorf("invalid IP address: %s", cfg.VPNServer.Endpoint)
+		}
+		return cfg.VPNServer.Endpoint, nil
+
+	case "auto":
+		fallthrough
+	default:
+		// Auto-detect using external service
+		outIP, err := runPrivilegedOutput("curl", "-s", "-m", "10", "ifconfig.me")
+		if err != nil {
+			return "", fmt.Errorf("auto-detection failed (network error): %v", err)
+		}
+		ip := strings.TrimSpace(string(outIP))
+		if ip == "" {
+			return "", fmt.Errorf("auto-detection returned empty response")
+		}
+		// Validate it's actually an IP
+		if net.ParseIP(ip) == nil {
+			return "", fmt.Errorf("auto-detection returned invalid IP: %s", ip)
+		}
+		return ip, nil
+	}
+}
 
 // OpenVPNServerStatus structure
 type OpenVPNServerStatus struct {
@@ -220,13 +264,11 @@ func createOpenVPNClient(w http.ResponseWriter, r *http.Request) {
 	cert, _ := ioutil.ReadFile(filepath.Join(ovpnEasyRsaDir, "pki", "issued", req.Name+".crt"))
 	key, _ := ioutil.ReadFile(filepath.Join(ovpnEasyRsaDir, "pki", "private", req.Name+".key"))
 
-	// Determine public IP
-	publicIP := "YOUR_PUBLIC_IP"
-	// Try to get via hostname -I or external service. For now, use Host header or internal logic
-	// Using a simpler approach: get WAN IP from command
-	outIP, _ := runPrivilegedOutput("curl", "-s", "ifconfig.me")
-	if ip := strings.TrimSpace(string(outIP)); ip != "" {
-		publicIP = ip
+	// Get VPN endpoint from configuration
+	publicIP, err := getVPNEndpoint()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to determine VPN endpoint: %v", err), http.StatusInternalServerError)
+		return
 	}
 
 	ovpnConfig := fmt.Sprintf(`client
