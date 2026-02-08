@@ -1,0 +1,315 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"net"
+	"net/http"
+	"os"
+	"strings"
+)
+
+// --- Validation Functions ---
+
+func isValidInterfaceName(name string) bool {
+	if len(name) == 0 || len(name) > 16 {
+		return false
+	}
+	for _, ch := range name {
+		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '.' || ch == '-' || ch == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+func isValidIP(ip string) bool {
+	// Simple check for CIDR or plain IP
+	_, _, err := net.ParseCIDR(ip)
+	if err == nil {
+		return true
+	}
+	parsed := net.ParseIP(ip)
+	return parsed != nil
+}
+
+// --- Metadata Storage ---
+
+func loadInterfaceMetadata() (*InterfaceMetadataStore, error) {
+	store := &InterfaceMetadataStore{
+		Metadata: make(map[string]InterfaceMetadata),
+	}
+
+	data, err := os.ReadFile(metadataFilePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// File doesn't exist yet, return empty store
+			return store, nil
+		}
+		return nil, err
+	}
+
+	if err := json.Unmarshal(data, store); err != nil {
+		return nil, err
+	}
+
+	return store, nil
+}
+
+func saveInterfaceMetadata(store *InterfaceMetadataStore) error {
+	data, err := json.MarshalIndent(store, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(metadataFilePath, data, 0644)
+}
+
+// --- HTTP Handlers ---
+
+func getInterfaces(w http.ResponseWriter, r *http.Request) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var result []InterfaceInfo
+	for _, i := range ifaces {
+		addrs, _ := i.Addrs()
+		var ipList []string
+		for _, addr := range addrs {
+			ipList = append(ipList, addr.String())
+		}
+
+		isUp := (i.Flags & net.FlagUp) != 0
+
+		result = append(result, InterfaceInfo{
+			Index:       i.Index,
+			Name:        i.Name,
+			MAC:         i.HardwareAddr.String(),
+			IPAddresses: ipList,
+			MTU:         i.MTU,
+			Flags:       i.Flags.String(),
+			IsUp:        isUp,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func setInterfaceState(w http.ResponseWriter, r *http.Request) {
+	var req InterfaceStateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate state
+	if req.State != "up" && req.State != "down" {
+		http.Error(w, "State must be 'up' or 'down'", http.StatusBadRequest)
+		return
+	}
+
+	fmt.Printf("Setting interface %s to %s\n", req.InterfaceName, req.State)
+
+	if output, err := runPrivilegedCombinedOutput("ip", "link", "set", "dev", req.InterfaceName, req.State); err != nil {
+		errMsg := fmt.Sprintf("Failed to set interface state: %s\nOutput: %s", err.Error(), string(output))
+		fmt.Printf("ERROR: %s\n", errMsg)
+		http.Error(w, errMsg, http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Printf("Interface %s set to %s successfully\n", req.InterfaceName, req.State)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "success",
+		"message": fmt.Sprintf("Interface %s is now %s", req.InterfaceName, req.State),
+	})
+}
+
+func getInterfaceMetadata(w http.ResponseWriter, r *http.Request) {
+	store, err := loadInterfaceMetadata()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load metadata: %s", err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(store.Metadata)
+}
+
+
+type SetInterfaceLabelRequest struct {
+	InterfaceName string `json:"interfaceName"`
+	Label         string `json:"label"`
+	Description   string `json:"description"`
+	Color         string `json:"color"`
+}
+func setInterfaceLabel(w http.ResponseWriter, r *http.Request) {
+	var req SetInterfaceLabelRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.InterfaceName == "" {
+		http.Error(w, "Interface name is required", http.StatusBadRequest)
+		return
+	}
+
+	// Validate label (optional but recommended values)
+	validLabels := map[string]bool{
+		"WAN": true, "LAN": true, "DMZ": true, "Guest": true,
+		"Management": true, "Trunk": true, "": true, // Empty is allowed (to clear)
+	}
+	if req.Label != "" && !validLabels[req.Label] {
+		fmt.Printf("Warning: Non-standard label '%s' used\n", req.Label)
+	}
+
+	store, err := loadInterfaceMetadata()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load metadata: %s", err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	// Update or create metadata
+	store.Metadata[req.InterfaceName] = InterfaceMetadata{
+		InterfaceName: req.InterfaceName,
+		Label:         req.Label,
+		Description:   req.Description,
+		Color:         req.Color,
+	}
+
+	if err := saveInterfaceMetadata(store); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to save metadata: %s", err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Printf("Interface %s labeled as %s\n", req.InterfaceName, req.Label)
+
+	// Trigger firewall update to respect new zones
+	go firewallManager.ApplyFirewallRules()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "success",
+		"message": fmt.Sprintf("Interface %s updated", req.InterfaceName),
+	})
+}
+
+// --- VLAN Management ---
+
+func createVLAN(w http.ResponseWriter, r *http.Request) {
+	var req VLANCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate inputs to prevent command injection
+	if !isValidInterfaceName(req.ParentInterface) {
+		http.Error(w, "Invalid parent interface name", http.StatusBadRequest)
+		return
+	}
+
+	// Validate VLAN ID (1-4094)
+	if req.VLANId < 1 || req.VLANId > 4094 {
+		http.Error(w, "VLAN ID must be between 1 and 4094", http.StatusBadRequest)
+		return
+	}
+
+	vlanInterface := fmt.Sprintf("%s.%d", req.ParentInterface, req.VLANId)
+	fmt.Printf("Creating VLAN: %s\n", vlanInterface)
+
+	// Create VLAN interface using ip link
+	// Using absolute path for safety and explicit arguments
+	if _, err := runPrivilegedCombinedOutput("/usr/sbin/ip", "link", "add", "link", req.ParentInterface, "name", vlanInterface, "type", "vlan", "id", fmt.Sprintf("%d", req.VLANId)); err != nil {
+		http.Error(w, "Failed to create VLAN interface", http.StatusInternalServerError)
+		return
+	}
+
+	// Bring the VLAN interface up
+	if output, err := runPrivilegedCombinedOutput("ip", "link", "set", "dev", vlanInterface, "up"); err != nil {
+		fmt.Printf("Warning: Failed to bring up VLAN interface: %s\n", string(output))
+	}
+
+	fmt.Printf("VLAN %s created successfully\n", vlanInterface)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":    "success",
+		"interface": vlanInterface,
+		"message":   fmt.Sprintf("VLAN interface %s created successfully", vlanInterface),
+	})
+}
+
+func deleteVLAN(w http.ResponseWriter, r *http.Request) {
+	interfaceName := r.URL.Query().Get("interface")
+	if interfaceName == "" {
+		http.Error(w, "Missing interface parameter", http.StatusBadRequest)
+		return
+	}
+
+	// Safety check: only allow deletion of VLAN interfaces (contain a dot)
+	if !strings.Contains(interfaceName, ".") || !isValidInterfaceName(interfaceName) {
+		http.Error(w, "Invalid VLAN interface name", http.StatusBadRequest)
+		return
+	}
+
+	fmt.Printf("Deleting VLAN: %s\n", interfaceName)
+
+	if output, err := runPrivilegedCombinedOutput("ip", "link", "delete", interfaceName); err != nil {
+		errMsg := fmt.Sprintf("Failed to delete VLAN: %s\nOutput: %s", err.Error(), string(output))
+		fmt.Printf("ERROR: %s\n", errMsg)
+		http.Error(w, errMsg, http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Printf("VLAN %s deleted successfully\n", interfaceName)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "success",
+		"message": fmt.Sprintf("VLAN interface %s deleted successfully", interfaceName),
+	})
+}
+
+// --- IP Configuration ---
+
+func configureIP(w http.ResponseWriter, r *http.Request) {
+	var req IPConfigRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate action
+	if req.Action != "add" && req.Action != "del" {
+		http.Error(w, "Action must be 'add' or 'del'", http.StatusBadRequest)
+		return
+	}
+
+	if !isValidInterfaceName(req.InterfaceName) || !isValidIP(req.IPAddress) {
+		http.Error(w, "Invalid interface name or IP address format", http.StatusBadRequest)
+		return
+	}
+
+	fmt.Printf("Configuring IP: %s %s on %s\n", req.Action, req.IPAddress, req.InterfaceName)
+
+	// Use ip addr add/del
+	if _, err := runPrivilegedCombinedOutput("/usr/sbin/ip", "addr", req.Action, req.IPAddress, "dev", req.InterfaceName); err != nil {
+		http.Error(w, "Failed to configure IP address on interface", http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Printf("IP %s %sed on %s successfully\n", req.IPAddress, req.Action, req.InterfaceName)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "success",
+		"message": fmt.Sprintf("IP %s %sed on %s", req.IPAddress, req.Action, req.InterfaceName),
+	})
+}
