@@ -54,13 +54,32 @@ const Traffic = () => {
         fetchStats();
         fetchConnections();
 
-        // Auto-refresh every 2 seconds
-        const interval = setInterval(() => {
+        // Auto-refresh every 5 seconds (optimized from 2s)
+        let interval = setInterval(() => {
             fetchStats();
             fetchConnections();
-        }, 2000);
+        }, 5000);
 
-        return () => clearInterval(interval);
+        // Pause polling when tab is not visible
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                clearInterval(interval);
+            } else {
+                fetchStats();
+                fetchConnections();
+                interval = setInterval(() => {
+                    fetchStats();
+                    fetchConnections();
+                }, 5000);
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            clearInterval(interval);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
     }, []);
 
     const interfaceList = Object.keys(stats).filter(name => !name.startsWith('lo'));

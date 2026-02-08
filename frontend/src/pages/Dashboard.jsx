@@ -66,14 +66,36 @@ const Dashboard = () => {
         fetchTrafficHistory();
         fetchSecurityAlerts();
 
-        const statusInterval = setInterval(fetchStatus, 5000);
-        const trafficInterval = setInterval(fetchTrafficHistory, 1000);
-        const securityInterval = setInterval(fetchSecurityAlerts, 10000); // 10s security updates
+        // Optimized polling intervals (reduced from 1s/5s/10s to 2s/10s/30s)
+        let statusInterval = setInterval(fetchStatus, 10000);
+        let trafficInterval = setInterval(fetchTrafficHistory, 2000);
+        let securityInterval = setInterval(fetchSecurityAlerts, 30000);
+
+        // Pause polling when tab is not visible (performance optimization)
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                // Tab is hidden - pause all polling
+                clearInterval(statusInterval);
+                clearInterval(trafficInterval);
+                clearInterval(securityInterval);
+            } else {
+                // Tab is visible - resume polling and fetch immediately
+                fetchStatus();
+                fetchTrafficHistory();
+                fetchSecurityAlerts();
+                statusInterval = setInterval(fetchStatus, 10000);
+                trafficInterval = setInterval(fetchTrafficHistory, 2000);
+                securityInterval = setInterval(fetchSecurityAlerts, 30000);
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
 
         return () => {
             clearInterval(statusInterval);
             clearInterval(trafficInterval);
             clearInterval(securityInterval);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
     }, []);
 

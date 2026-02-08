@@ -17,8 +17,24 @@ const TrafficStats = () => {
     useEffect(() => {
         if (selectedInterface) {
             fetchHistory();
-            const interval = setInterval(fetchHistory, 1000);
-            return () => clearInterval(interval);
+            let interval = setInterval(fetchHistory, 2000); // Optimized from 1000ms
+
+            // Pause polling when tab is not visible
+            const handleVisibilityChange = () => {
+                if (document.hidden) {
+                    clearInterval(interval);
+                } else {
+                    fetchHistory();
+                    interval = setInterval(fetchHistory, 2000);
+                }
+            };
+
+            document.addEventListener('visibilitychange', handleVisibilityChange);
+
+            return () => {
+                clearInterval(interval);
+                document.removeEventListener('visibilitychange', handleVisibilityChange);
+            };
         }
     }, [selectedInterface]);
 
