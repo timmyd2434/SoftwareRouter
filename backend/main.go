@@ -1837,6 +1837,7 @@ func getTrafficStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "private, max-age=2") // Stats change frequently
 	json.NewEncoder(w).Encode(stats)
 }
 

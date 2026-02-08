@@ -171,19 +171,32 @@ func getTrafficHistory(w http.ResponseWriter, r *http.Request) {
 	historyMutex.RLock()
 	defer historyMutex.RUnlock()
 
+	// Add cache headers - data updates every second
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "private, max-age=1, must-revalidate")
+
 	// If interface specified, return only that
 	if iface != "" {
 		if h, ok := history[iface]; ok {
-			json.NewEncoder(w).Encode(h.Points)
+			// Return only last 120 points for performance (2 minutes at 1s interval)
+			start := 0
+			if len(h.Points) > 120 {
+				start = len(h.Points) - 120
+			}
+			json.NewEncoder(w).Encode(h.Points[start:])
 			return
 		}
 		json.NewEncoder(w).Encode([]TrafficPoint{})
 		return
 	}
 
-	// Else return total history if available
+	// Else return total history if available (limited to recent data)
 	if h, ok := history["total"]; ok {
-		json.NewEncoder(w).Encode(h.Points)
+		start := 0
+		if len(h.Points) > 120 {
+			start = len(h.Points) - 120
+		}
+		json.NewEncoder(w).Encode(h.Points[start:])
 		return
 	}
 
