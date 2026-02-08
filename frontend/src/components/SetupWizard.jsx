@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Button, Form, Alert, Spinner, Card } from 'react-bootstrap';
+import { Loader2 } from 'lucide-react';
 import './SetupWizard.css';
 
 export default function SetupWizard({ show, onComplete }) {
@@ -92,163 +92,165 @@ export default function SetupWizard({ show, onComplete }) {
     const upInterfaces = interfaces.filter(i => i.state === 'UP');
     const availableLANs = upInterfaces.filter(i => i.name !== selectedWAN);
 
+    if (!show) return null;
+
     return (
-        <Modal show={show} backdrop="static" keyboard={false} size="lg" centered>
-            <Modal.Header className="setup-wizard-header">
-                <Modal.Title>
-                    <i className="bi bi-router me-2"></i>
-                    Initial Setup Wizard
-                </Modal.Title>
-            </Modal.Header>
-            <Modal.Body>
-                {loading && !interfaces.length ? (
-                    <div className="text-center py-5">
-                        <Spinner animation="border" variant="primary" />
-                        <p className="mt-3">Loading network interfaces...</p>
+        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div className="modal-dialog modal-lg modal-dialog-centered">
+                <div className="modal-content">
+                    <div className="modal-header setup-wizard-header">
+                        <h5 className="modal-title">
+                            <i className="bi bi-router me-2"></i>
+                            Initial Setup Wizard
+                        </h5>
                     </div>
-                ) : (
-                    <>
-                        <Alert variant="info" className="d-flex align-items-start">
-                            <i className="bi bi-info-circle-fill me-2 mt-1"></i>
-                            <div>
-                                <strong>Welcome to SoftRouter!</strong>
-                                <br />
-                                Please identify your WAN (internet) and LAN (internal network) interfaces.
-                                This is required to configure firewall rules correctly.
+                    <div className="modal-body">
+                        {loading && !interfaces.length ? (
+                            <div className="text-center py-5">
+                                <Loader2 className="spin" size={40} />
+                                <p className="mt-3">Loading network interfaces...</p>
                             </div>
-                        </Alert>
+                        ) : (
+                            <>
+                                <div className="alert alert-info d-flex align-items-start">
+                                    <i className="bi bi-info-circle-fill me-2 mt-1"></i>
+                                    <div>
+                                        <strong>Welcome to SoftRouter!</strong>
+                                        <br />
+                                        Please identify your WAN (internet) and LAN (internal network) interfaces.
+                                        This is required to configure firewall rules correctly.
+                                    </div>
+                                </div>
 
-                        {error && (
-                            <Alert variant="danger" onClose={() => setError('')} dismissible>
-                                <i className="bi bi-exclamation-triangle-fill me-2"></i>
-                                {error}
-                            </Alert>
-                        )}
-
-                        <Card className="mb-4">
-                            <Card.Header className="bg-primary text-white">
-                                <i className="bi bi-globe me-2"></i>
-                                <strong>Step 1:</strong> Select WAN Interface (Internet Connection)
-                            </Card.Header>
-                            <Card.Body>
-                                {upInterfaces.length === 0 ? (
-                                    <Alert variant="warning">
-                                        No active interfaces found. Please ensure at least one interface is connected.
-                                    </Alert>
-                                ) : (
-                                    <Form.Group>
-                                        {upInterfaces.map(iface => (
-                                            <Form.Check
-                                                key={iface.name}
-                                                type="radio"
-                                                id={`wan-${iface.name}`}
-                                                name="wan"
-                                                label={
-                                                    <div className="d-flex justify-content-between align-items-center w-100">
-                                                        <div>
-                                                            <strong>{iface.name}</strong>
-                                                            {iface.ipv4 && <span className="text-muted ms-2">({iface.ipv4})</span>}
-                                                        </div>
-                                                        <small className="text-muted">{iface.mac}</small>
-                                                    </div>
-                                                }
-                                                value={iface.name}
-                                                checked={selectedWAN === iface.name}
-                                                onChange={(e) => {
-                                                    setSelectedWAN(e.target.value);
-                                                    // Remove from LANs if was selected
-                                                    setSelectedLANs(selectedLANs.filter(n => n !== e.target.value));
-                                                }}
-                                                className="interface-radio"
-                                            />
-                                        ))}
-                                    </Form.Group>
+                                {error && (
+                                    <div className="alert alert-danger alert-dismissible fade show">
+                                        <i className="bi bi-exclamation-triangle-fill me-2"></i>
+                                        {error}
+                                        <button type="button" className="btn-close" onClick={() => setError('')}></button>
+                                    </div>
                                 )}
-                            </Card.Body>
-                        </Card>
 
-                        <Card>
-                            <Card.Header className="bg-success text-white">
-                                <i className="bi bi-hdd-network me-2"></i>
-                                <strong>Step 2:</strong> Select LAN Interfaces (Internal Network)
-                            </Card.Header>
-                            <Card.Body>
-                                {!selectedWAN ? (
-                                    <Alert variant="info">
-                                        <i className="bi bi-arrow-up me-2"></i>
-                                        Please select a WAN interface first
-                                    </Alert>
-                                ) : availableLANs.length === 0 ? (
-                                    <Alert variant="warning">
-                                        No additional interfaces available for LAN
-                                    </Alert>
-                                ) : (
-                                    <Form.Group>
-                                        {availableLANs.map(iface => (
-                                            <Form.Check
-                                                key={iface.name}
-                                                type="checkbox"
-                                                id={`lan-${iface.name}`}
-                                                label={
-                                                    <div className="d-flex justify-content-between align-items-center w-100">
-                                                        <div>
-                                                            <strong>{iface.name}</strong>
-                                                            {iface.ipv4 && <span className="text-muted ms-2">({iface.ipv4})</span>}
-                                                        </div>
-                                                        <small className="text-muted">{iface.mac}</small>
+                                <div className="card mb-4">
+                                    <div className="card-header bg-primary text-white">
+                                        <i className="bi bi-globe me-2"></i>
+                                        <strong>Step 1:</strong> Select WAN Interface (Internet Connection)
+                                    </div>
+                                    <div className="card-body">
+                                        {upInterfaces.length === 0 ? (
+                                            <div className="alert alert-warning">
+                                                No active interfaces found. Please ensure at least one interface is connected.
+                                            </div>
+                                        ) : (
+                                            <div>
+                                                {upInterfaces.map(iface => (
+                                                    <div key={iface.name} className="form-check mb-2">
+                                                        <input
+                                                            className="form-check-input"
+                                                            type="radio"
+                                                            name="wan"
+                                                            id={`wan-${iface.name}`}
+                                                            value={iface.name}
+                                                            checked={selectedWAN === iface.name}
+                                                            onChange={(e) => {
+                                                                setSelectedWAN(e.target.value);
+                                                                setSelectedLANs(selectedLANs.filter(n => n !== e.target.value));
+                                                            }}
+                                                        />
+                                                        <label className="form-check-label d-flex justify-content-between w-100" htmlFor={`wan-${iface.name}`}>
+                                                            <div>
+                                                                <strong>{iface.name}</strong>
+                                                                {iface.ipv4 && <span className="text-muted ms-2">({iface.ipv4})</span>}
+                                                            </div>
+                                                            <small className="text-muted">{iface.mac}</small>
+                                                        </label>
                                                     </div>
-                                                }
-                                                value={iface.name}
-                                                checked={selectedLANs.includes(iface.name)}
-                                                onChange={(e) => {
-                                                    if (e.target.checked) {
-                                                        setSelectedLANs([...selectedLANs, iface.name]);
-                                                    } else {
-                                                        setSelectedLANs(selectedLANs.filter(n => n !== iface.name));
-                                                    }
-                                                }}
-                                                className="interface-checkbox"
-                                            />
-                                        ))}
-                                    </Form.Group>
-                                )}
-                            </Card.Body>
-                        </Card>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
 
-                        {selectedWAN && selectedLANs.length > 0 && (
-                            <Alert variant="success" className="mt-3">
-                                <i className="bi bi-check-circle-fill me-2"></i>
-                                <strong>Configuration Summary:</strong>
-                                <ul className="mb-0 mt-2">
-                                    <li><strong>WAN:</strong> {selectedWAN}</li>
-                                    <li><strong>LAN:</strong> {selectedLANs.join(', ')}</li>
-                                </ul>
-                            </Alert>
+                                <div className="card">
+                                    <div className="card-header bg-success text-white">
+                                        <i className="bi bi-hdd-network me-2"></i>
+                                        <strong>Step 2:</strong> Select LAN Interfaces (Internal Network)
+                                    </div>
+                                    <div className="card-body">
+                                        {!selectedWAN ? (
+                                            <div className="alert alert-info">
+                                                <i className="bi bi-arrow-up me-2"></i>
+                                                Please select a WAN interface first
+                                            </div>
+                                        ) : availableLANs.length === 0 ? (
+                                            <div className="alert alert-warning">
+                                                No additional interfaces available for LAN
+                                            </div>
+                                        ) : (
+                                            <div>
+                                                {availableLANs.map(iface => (
+                                                    <div key={iface.name} className="form-check mb-2">
+                                                        <input
+                                                            className="form-check-input"
+                                                            type="checkbox"
+                                                            id={`lan-${iface.name}`}
+                                                            value={iface.name}
+                                                            checked={selectedLANs.includes(iface.name)}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) {
+                                                                    setSelectedLANs([...selectedLANs, iface.name]);
+                                                                } else {
+                                                                    setSelectedLANs(selectedLANs.filter(n => n !== iface.name));
+                                                                }
+                                                            }}
+                                                        />
+                                                        <label className="form-check-label d-flex justify-content-between w-100" htmlFor={`lan-${iface.name}`}>
+                                                            <div>
+                                                                <strong>{iface.name}</strong>
+                                                                {iface.ipv4 && <span className="text-muted ms-2">({iface.ipv4})</span>}
+                                                            </div>
+                                                            <small className="text-muted">{iface.mac}</small>
+                                                        </label>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {selectedWAN && selectedLANs.length > 0 && (
+                                    <div className="alert alert-success mt-3">
+                                        <i className="bi bi-check-circle-fill me-2"></i>
+                                        <strong>Configuration Summary:</strong>
+                                        <ul className="mb-0 mt-2">
+                                            <li><strong>WAN:</strong> {selectedWAN}</li>
+                                            <li><strong>LAN:</strong> {selectedLANs.join(', ')}</li>
+                                        </ul>
+                                    </div>
+                                )}
+                            </>
                         )}
-                    </>
-                )}
-            </Modal.Body>
-            <Modal.Footer>
-                <Button
-                    variant="primary"
-                    size="lg"
-                    onClick={handleComplete}
-                    disabled={!selectedWAN || selectedLANs.length === 0 || loading}
-                    className="w-100"
-                >
-                    {loading ? (
-                        <>
-                            <Spinner animation="border" size="sm" className="me-2" />
-                            Applying Configuration...
-                        </>
-                    ) : (
-                        <>
-                            <i className="bi bi-check-lg me-2"></i>
-                            Complete Setup
-                        </>
-                    )}
-                </Button>
-            </Modal.Footer>
-        </Modal>
+                    </div>
+                    <div className="modal-footer">
+                        <button
+                            className="btn btn-primary btn-lg w-100"
+                            onClick={handleComplete}
+                            disabled={!selectedWAN || selectedLANs.length === 0 || loading}
+                        >
+                            {loading ? (
+                                <>
+                                    <Loader2 className="spin me-2" size={18} />
+                                    Applying Configuration...
+                                </>
+                            ) : (
+                                <>
+                                    <i className="bi bi-check-lg me-2"></i>
+                                    Complete Setup
+                                </>
+                            )}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
     );
 }
