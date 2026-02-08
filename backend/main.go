@@ -696,14 +696,22 @@ func getUsernameFromToken(r *http.Request) string {
 		}
 	}
 
-	// Extract username from token (token format: "Bearer user:timestamp:signature")
+	// Extract username from token (token format: "Bearer sr-username-timestamp-signature")
 	if !strings.HasPrefix(token, "Bearer ") {
 		return "unknown"
 	}
 
 	tokenValue := strings.TrimPrefix(token, "Bearer ")
-	parts := strings.Split(tokenValue, ":")
-	if len(parts) >= 1 {
+	// Remove "sr-" prefix
+	if !strings.HasPrefix(tokenValue, "sr-") {
+		return "unknown"
+	}
+
+	tokenValue = strings.TrimPrefix(tokenValue, "sr-")
+	// Split by "-" to get username-timestamp-signature
+	parts := strings.Split(tokenValue, "-")
+	if len(parts) >= 3 {
+		// Username is the first part
 		return parts[0]
 	}
 
@@ -784,6 +792,7 @@ func login(w http.ResponseWriter, r *http.Request) {
 		// Track session
 		userAgent := r.Header.Get("User-Agent")
 		sessionStore.AddSession(tokenValue, req.Username, ip, userAgent)
+		log.Printf("Session created for user %s (IP: %s, token: %s...)", req.Username, ip, tokenValue[:20])
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
@@ -2716,8 +2725,10 @@ func main() {
 	mux.HandleFunc("GET /api/sessions", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		username := getUsernameFromToken(r)
 		sessions := sessionStore.ListSessions(username)
+		log.Printf("GET /api/sessions: user=%s, found %d sessions", username, len(sessions))
 
-		currentToken := r.Header.Get("Authorization")
+		// Extract token value without "Bearer " prefix for comparison
+		currentToken := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		safeInfo := make([]SessionInfo, len(sessions))
 		for i, s := range sessions {
 			safeInfo[i] = s.ToSafeInfo(currentToken)
