@@ -34,6 +34,7 @@ var allowedCommands = map[string]bool{
 	"curl":   true, // HTTP client (for downloads during setup)
 	"pihole": true, // Pi-hole CLI
 	"cscli":  true, // CrowdSec CLI
+	"tail":   true, // Log reading (for Suricata alerts)
 }
 
 // commandExecutionLog stores recent command executions for debugging
