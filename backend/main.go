@@ -145,6 +145,20 @@ type SystemStatus struct {
 	Timestamp   time.Time `json:"timestamp"`
 }
 
+// Response cache for expensive operations
+type CachedResponse struct {
+	Data      interface{}
+	Timestamp time.Time
+	mu        sync.RWMutex
+}
+
+// Global caches for performance optimization
+var (
+	statusCache   *CachedResponse
+	statusCacheMu sync.RWMutex
+	cacheDuration = 5 * time.Second // Cache responses for 5 seconds
+)
+
 // InterfaceInfo represents a network interface
 type InterfaceInfo struct {
 	Index       int      `json:"index"`
@@ -1124,7 +1138,8 @@ func downloadVPNClient(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
-func getSystemStatus(w http.ResponseWriter, r *http.Request) {
+// fetchSystemStatusData performs the actual expensive system call
+func fetchSystemStatusData() SystemStatus {
 	hostname, _ := os.Hostname()
 	uptime := "unknown"
 	out, err := runPrivilegedOutput("uptime", "-p")
@@ -1159,7 +1174,7 @@ func getSystemStatus(w http.ResponseWriter, r *http.Request) {
 		memUsed = memTotal - memFree
 	}
 
-	status := SystemStatus{
+	return SystemStatus{
 		Hostname:    hostname,
 		OS:          runtime.GOOS,
 		Uptime:      uptime,
@@ -1168,8 +1183,39 @@ func getSystemStatus(w http.ResponseWriter, r *http.Request) {
 		MemoryTotal: memTotal,
 		Timestamp:   time.Now(),
 	}
+}
+
+// getSystemStatus returns cached system status if available, otherwise fetches fresh data
+func getSystemStatus(w http.ResponseWriter, r *http.Request) {
+	// Check cache first (read lock)
+	statusCacheMu.RLock()
+	if statusCache != nil && time.Since(statusCache.Timestamp) < cacheDuration {
+		// Cache hit - return cached data
+		cachedData := statusCache.Data.(SystemStatus)
+		statusCacheMu.RUnlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "private, max-age=5")
+		w.Header().Set("X-Cache", "HIT")
+		json.NewEncoder(w).Encode(cachedData)
+		return
+	}
+	statusCacheMu.RUnlock()
+
+	// Cache miss - fetch fresh data
+	status := fetchSystemStatusData()
+
+	// Update cache (write lock)
+	statusCacheMu.Lock()
+	statusCache = &CachedResponse{
+		Data:      status,
+		Timestamp: time.Now(),
+	}
+	statusCacheMu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "private, max-age=5")
+	w.Header().Set("X-Cache", "MISS")
 	json.NewEncoder(w).Encode(status)
 }
 
