@@ -524,7 +524,14 @@ const Interfaces = () => {
                                                 <Network size={20} className="icon" />
                                                 <div>
                                                     <h3>{bridge.name}</h3>
-                                                    <span className="interface-label" style={{ backgroundColor: '#10b981' }}>BRIDGE</span>
+                                                    {metadata[bridge.name]?.label && (
+                                                        <span
+                                                            className="interface-label"
+                                                            style={{ backgroundColor: metadata[bridge.name].color || '#3b82f6' }}
+                                                        >
+                                                            {metadata[bridge.name].label}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </div>
                                             <div className={`status-badge ${bridge.isUp ? 'up' : 'down'}`}>
@@ -533,6 +540,12 @@ const Interfaces = () => {
                                         </div>
 
                                         <div className="iface-details">
+                                            {metadata[bridge.name]?.description && (
+                                                <div className="detail-row">
+                                                    <span className="label">Description</span>
+                                                    <span className="value">{metadata[bridge.name].description}</span>
+                                                </div>
+                                            )}
                                             <div className="detail-row">
                                                 <span className="label">Members</span>
                                                 <div className="ip-list">
