@@ -25,7 +25,8 @@ const Interfaces = () => {
 
     const [bridgeForm, setBridgeForm] = useState({
         name: '',
-        members: []
+        members: [],
+        stp: false
     });
 
     const [ipForm, setIpForm] = useState({
@@ -202,7 +203,8 @@ const Interfaces = () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     name: bridgeForm.name,
-                    members: bridgeForm.members
+                    members: bridgeForm.members,
+                    stp: bridgeForm.stp
                 })
             });
 
@@ -210,7 +212,7 @@ const Interfaces = () => {
                 const result = await res.json();
                 alert(result.message || `Bridge ${bridgeForm.name} created successfully`);
                 setShowBridgeModal(false);
-                setBridgeForm({ name: '', members: [] });
+                setBridgeForm({ name: '', members: [], stp: false });
                 fetchInterfaces();
                 fetchBridges();
             } else {
@@ -571,6 +573,12 @@ const Interfaces = () => {
                                                 <span className="label">MTU</span>
                                                 <span className="value">{bridge.mtu}</span>
                                             </div>
+                                            <div className="detail-row">
+                                                <span className="label">STP</span>
+                                                <span className="value" style={{ color: bridge.stp ? '#10b981' : '#6b7280' }}>
+                                                    {bridge.stp ? '✓ Enabled' : 'Disabled'}
+                                                </span>
+                                            </div>
                                             <div className="detail-row ip-row">
                                                 <span className="label">IP Addresses</span>
                                                 <div className="ip-list">
@@ -718,6 +726,19 @@ const Interfaces = () => {
                                             </label>
                                         ))}
                                 </div>
+                            </div>
+                            <div className="form-group checkbox-group">
+                                <label className="checkbox-label">
+                                    <input
+                                        type="checkbox"
+                                        checked={bridgeForm.stp}
+                                        onChange={e => setBridgeForm({ ...bridgeForm, stp: e.target.checked })}
+                                    />
+                                    Enable STP (Spanning Tree Protocol)
+                                </label>
+                                <small style={{ color: '#888', marginTop: '0.25rem', display: 'block' }}>
+                                    Prevents network loops - recommended for redundant connections
+                                </small>
                             </div>
                             <div className="info-box">
                                 <AlertCircle size={16} />

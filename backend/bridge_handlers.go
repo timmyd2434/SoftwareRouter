@@ -15,6 +15,7 @@ import (
 type BridgeCreateRequest struct {
 	Name    string   `json:"name"`    // e.g., "br0"
 	Members []string `json:"members"` // e.g., ["eth1", "eth2"]
+	STP     bool     `json:"stp"`     // Enable Spanning Tree Protocol
 }
 
 type BridgeMemberRequest struct {
@@ -28,6 +29,7 @@ type BridgeInfo struct {
 	IPAddresses []string `json:"ipAddresses"`
 	MTU         int      `json:"mtu"`
 	IsUp        bool     `json:"isUp"`
+	STP         bool     `json:"stp"` // STP enabled status
 }
 
 // --- Helper Functions ---
@@ -92,6 +94,30 @@ func isValidBridgeName(name string) bool {
 	return match
 }
 
+// getSTPState returns the STP state of a bridge (0 = disabled, 1 = enabled)
+func getSTPState(bridgeName string) (bool, error) {
+	stpPath := filepath.Join("/sys/class/net", bridgeName, "bridge", "stp_state")
+	data, err := os.ReadFile(stpPath)
+	if err != nil {
+		return false, err
+	}
+	// stp_state is "0" or "1" followed by newline
+	stpState := string(data)
+	return stpState[0] == '1', nil
+}
+
+// setSTPState enables or disables STP on a bridge
+func setSTPState(bridgeName string, enabled bool) error {
+	stpValue := "0"
+	if enabled {
+		stpValue = "1"
+	}
+
+	// Use ip command to set STP state
+	_, err := runPrivilegedCombinedOutput("ip", "link", "set", bridgeName, "type", "bridge", "stp_state", stpValue)
+	return err
+}
+
 // --- HTTP Handlers ---
 
 func getBridges(w http.ResponseWriter, r *http.Request) {
@@ -127,12 +153,20 @@ func getBridges(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		// Get STP state
+		stpEnabled, err := getSTPState(ifaceName)
+		if err != nil {
+			// If we can't read STP state, default to false
+			stpEnabled = false
+		}
+
 		bridgeInfo := BridgeInfo{
 			Name:        ifaceName,
 			Members:     members,
 			IPAddresses: iface.IPAddresses,
 			MTU:         iface.MTU,
 			IsUp:        iface.IsUp,
+			STP:         stpEnabled,
 		}
 
 		bridges = append(bridges, bridgeInfo)
@@ -197,6 +231,16 @@ func createBridge(w http.ResponseWriter, r *http.Request) {
 	if _, err := runPrivilegedCombinedOutput("ip", "link", "set", "dev", req.Name, "up"); err != nil {
 		fmt.Printf("Warning: Failed to bring up bridge %s: %v\n", req.Name, err)
 		// Don't fail the operation, bridge is created
+	}
+
+	// Configure STP if requested
+	if req.STP {
+		if err := setSTPState(req.Name, true); err != nil {
+			fmt.Printf("Warning: Failed to enable STP on bridge %s: %v\n", req.Name, err)
+			// Don't fail the operation, STP is optional
+		} else {
+			fmt.Printf("STP enabled on bridge %s\n", req.Name)
+		}
 	}
 
 	fmt.Printf("Bridge %s created successfully with %d members\n", req.Name, len(req.Members))
