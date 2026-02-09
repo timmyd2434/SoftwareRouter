@@ -1689,6 +1689,13 @@ func main() {
 	mux.HandleFunc("GET /api/interfaces/metadata", authMiddleware(getInterfaceMetadata))
 	mux.HandleFunc("POST /api/interfaces/label", authMiddleware(setInterfaceLabel))
 
+	// Bridge management
+	mux.HandleFunc("GET /api/bridges", authMiddleware(getBridges))
+	mux.HandleFunc("POST /api/bridges", authMiddleware(csrfMiddleware(createBridge)))
+	mux.HandleFunc("DELETE /api/bridges", authMiddleware(csrfMiddleware(deleteBridge)))
+	mux.HandleFunc("POST /api/bridges/member", authMiddleware(csrfMiddleware(addBridgeMember)))
+	mux.HandleFunc("DELETE /api/bridges/member", authMiddleware(csrfMiddleware(removeBridgeMember)))
+
 	// Traffic Control / QoS
 	mux.HandleFunc("GET /api/qos", authMiddleware(getQoSConfig))
 	mux.HandleFunc("POST /api/qos", authMiddleware(updateQoSConfig))

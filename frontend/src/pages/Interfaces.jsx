@@ -9,16 +9,23 @@ const Interfaces = () => {
     const [dhcpConfigs, setDhcpConfigs] = useState({});
     const [loading, setLoading] = useState(true);
     const [showVLANModal, setShowVLANModal] = useState(false);
+    const [showBridgeModal, setShowBridgeModal] = useState(false);
     const [showIPModal, setShowIPModal] = useState(false);
     const [showLabelModal, setShowLabelModal] = useState(false);
     const [showDHCPModal, setShowDHCPModal] = useState(false);
     const [showLeasesModal, setShowLeasesModal] = useState(false);
     const [leases, setLeases] = useState([]);
+    const [bridges, setBridges] = useState([]);
     const [selectedInterface, setSelectedInterface] = useState(null);
 
     const [vlanForm, setVlanForm] = useState({
         parentInterface: '',
         vlanId: ''
+    });
+
+    const [bridgeForm, setBridgeForm] = useState({
+        name: '',
+        members: []
     });
 
     const [ipForm, setIpForm] = useState({
@@ -100,6 +107,17 @@ const Interfaces = () => {
             });
     };
 
+    const fetchBridges = () => {
+        authFetch(API_ENDPOINTS.BRIDGES)
+            .then(res => res.json())
+            .then(data => {
+                setBridges(data || []);
+            })
+            .catch(err => {
+                console.error('Failed to load bridges:', err);
+            });
+    };
+
     const openLeasesModal = () => {
         fetchLeases();
         setShowLeasesModal(true);
@@ -165,6 +183,95 @@ const Interfaces = () => {
         } catch (err) {
             alert(`Error: ${err.message}`);
         }
+    };
+
+    const handleCreateBridge = async () => {
+        if (!bridgeForm.name || bridgeForm.members.length === 0) {
+            alert('Please enter a bridge name and select at least one member interface');
+            return;
+        }
+
+        if (!/^br[0-9]+$/.test(bridgeForm.name)) {
+            alert('Bridge name must match pattern: br[0-9]+ (e.g., br0, br1)');
+            return;
+        }
+
+        try {
+            const res = await authFetch(API_ENDPOINTS.BRIDGES, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: bridgeForm.name,
+                    members: bridgeForm.members
+                })
+            });
+
+            if (res.ok) {
+                const result = await res.json();
+                alert(result.message || `Bridge ${bridgeForm.name} created successfully`);
+                setShowBridgeModal(false);
+                setBridgeForm({ name: '', members: [] });
+                fetchInterfaces();
+                fetchBridges();
+            } else {
+                const text = await res.text();
+                alert(`Failed to create bridge:\n${text}`);
+            }
+        } catch (err) {
+            alert(`Error: ${err.message}`);
+        }
+    };
+
+    const handleDeleteBridge = async (bridgeName) => {
+        if (!confirm(`Delete bridge ${bridgeName}? All member interfaces will be released.`)) return;
+
+        try {
+            const res = await authFetch(`${API_ENDPOINTS.BRIDGES}?name=${bridgeName}`, {
+                method: 'DELETE'
+            });
+
+            if (res.ok) {
+                alert(`Bridge ${bridgeName} deleted successfully`);
+                fetchInterfaces();
+                fetchBridges();
+            } else {
+                const text = await res.text();
+                alert(`Failed to delete bridge:\n${text}`);
+            }
+        } catch (err) {
+            alert(`Error: ${err.message}`);
+        }
+    };
+
+    const handleRemoveBridgeMember = async (bridgeName, member) => {
+        if (!confirm(`Remove ${member} from bridge ${bridgeName}?`)) return;
+
+        try {
+            const res = await authFetch(API_ENDPOINTS.BRIDGE_MEMBER, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bridgeName, member })
+            });
+
+            if (res.ok) {
+                fetchInterfaces();
+                fetchBridges();
+            } else {
+                const text = await res.text();
+                alert(`Failed to remove member:\n${text}`);
+            }
+        } catch (err) {
+            alert(`Error: ${err.message}`);
+        }
+    };
+
+    const toggleBridgeMember = (ifaceName) => {
+        setBridgeForm(prev => ({
+            ...prev,
+            members: prev.members.includes(ifaceName)
+                ? prev.members.filter(m => m !== ifaceName)
+                : [...prev.members, ifaceName]
+        }));
     };
 
     const handleConfigureIP = async () => {
@@ -319,11 +426,13 @@ const Interfaces = () => {
         fetchInterfaces();
         fetchMetadata();
         fetchDhcpConfig();
+        fetchBridges();
         // Auto-refresh every 15 seconds
         const interval = setInterval(() => {
             fetchInterfaces();
             fetchMetadata();
             fetchDhcpConfig();
+            fetchBridges();
         }, 15000);
         return () => clearInterval(interval);
     }, []);
@@ -346,9 +455,13 @@ const Interfaces = () => {
                         <Network size={18} />
                         Active Leases
                     </button>
-                    <button className="primary-btn" onClick={() => setShowVLANModal(true)}>
+                    <button className="primary-btn" onClick={() => setShowVLANModal(true)} style={{ marginRight: '1rem' }}>
                         <Plus size={18} />
                         Create VLAN
+                    </button>
+                    <button className="primary-btn" onClick={() => setShowBridgeModal(true)}>
+                        <Plus size={18} />
+                        Create Bridge
                     </button>
                 </div>
             </div>
@@ -394,6 +507,99 @@ const Interfaces = () => {
                                         onSetLabel={openLabelModal}
                                         onDelete={handleDeleteVLAN}
                                     />
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Bridge Interfaces */}
+                    {bridges.length > 0 && (
+                        <div className="interface-section">
+                            <h3 className="section-title">🔗 Bridge Interfaces</h3>
+                            <div className="interface-grid">
+                                {bridges.map((bridge) => (
+                                    <div key={bridge.name} className={`interface-card glass-panel ${bridge.isUp ? 'active' : 'inactive'}`}>
+                                        <div className="iface-header">
+                                            <div className="iface-title">
+                                                <Network size={20} className="icon" />
+                                                <div>
+                                                    <h3>{bridge.name}</h3>
+                                                    <span className="interface-label" style={{ backgroundColor: '#10b981' }}>BRIDGE</span>
+                                                </div>
+                                            </div>
+                                            <div className={`status-badge ${bridge.isUp ? 'up' : 'down'}`}>
+                                                {bridge.isUp ? 'UP' : 'DOWN'}
+                                            </div>
+                                        </div>
+
+                                        <div className="iface-details">
+                                            <div className="detail-row">
+                                                <span className="label">Members</span>
+                                                <div className="ip-list">
+                                                    {bridge.members && bridge.members.length > 0 ? (
+                                                        bridge.members.map((member, idx) => (
+                                                            <span key={idx} className="ip-tag">
+                                                                {member}
+                                                                <button
+                                                                    onClick={() => handleRemoveBridgeMember(bridge.name, member)}
+                                                                    className="remove-tag-btn"
+                                                                    title="Remove member"
+                                                                >
+                                                                    ×
+                                                                </button>
+                                                            </span>
+                                                        ))
+                                                    ) : (
+                                                        <span className="no-ip">No members</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="detail-row">
+                                                <span className="label">MTU</span>
+                                                <span className="value">{bridge.mtu}</span>
+                                            </div>
+                                            <div className="detail-row ip-row">
+                                                <span className="label">IP Addresses</span>
+                                                <div className="ip-list">
+                                                    {bridge.ipAddresses && bridge.ipAddresses.length > 0 ? (
+                                                        bridge.ipAddresses.map((ip, idx) => (
+                                                            <span key={idx} className="ip-tag">{ip}</span>
+                                                        ))
+                                                    ) : (
+                                                        <span className="no-ip">No IP Assigned</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="iface-actions">
+                                            <button
+                                                className="action-btn"
+                                                onClick={() => openIPModal(bridge.name)}
+                                                title="Configure IP"
+                                            >
+                                                <Settings size={16} />
+                                                IP
+                                            </button>
+                                            <button
+                                                className={`action-btn ${dhcpConfigs[bridge.name]?.enabled ? 'active-dhcp' : ''}`}
+                                                onClick={() => openDHCPModal(bridge.name)}
+                                                title="Configure DHCP"
+                                            >
+                                                <Network size={16} />
+                                                DHCP
+                                                {dhcpConfigs[bridge.name]?.enabled && <span className="status-dot"></span>}
+                                            </button>
+                                            <button
+                                                className="action-btn danger"
+                                                onClick={() => handleDeleteBridge(bridge.name)}
+                                                title="Delete Bridge"
+                                            >
+                                                <Trash2 size={16} />
+                                                Delete
+                                            </button>
+                                        </div>
+                                    </div>
                                 ))}
                             </div>
                         </div>
@@ -445,6 +651,64 @@ const Interfaces = () => {
                         <div className="modal-footer">
                             <button className="cancel-btn" onClick={() => setShowVLANModal(false)}>Cancel</button>
                             <button className="primary-btn" onClick={handleCreateVLAN}>Create VLAN</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Create Bridge Modal */}
+            {showBridgeModal && (
+                <div className="modal-overlay">
+                    <div className="modal-content">
+                        <div className="modal-header">
+                            <h3>Create Bridge Interface</h3>
+                            <button className="close-btn" onClick={() => setShowBridgeModal(false)}>
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="form-group">
+                                <label>Bridge Name</label>
+                                <input
+                                    type="text"
+                                    className="form-input"
+                                    value={bridgeForm.name}
+                                    onChange={e => setBridgeForm({ ...bridgeForm, name: e.target.value })}
+                                    placeholder="e.g., br0, br1"
+                                />
+                                <small style={{ color: '#888', marginTop: '0.5rem', display: 'block' }}>
+                                    Must match format: br[0-9]+
+                                </small>
+                            </div>
+                            <div className="form-group">
+                                <label>Member Interfaces (select at least one)</label>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
+                                    {physicalInterfaces
+                                        .filter(iface => !iface.name.includes('.')) // Exclude VLANs
+                                        .map(iface => (
+                                            <label key={iface.name} className="checkbox-label" style={{ display: 'flex', alignItems: 'center' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={bridgeForm.members.includes(iface.name)}
+                                                    onChange={() => toggleBridgeMember(iface.name)}
+                                                    style={{ marginRight: '0.5rem' }}
+                                                />
+                                                {iface.name} {metadata[iface.name]?.label && `(${metadata[iface.name].label})`}
+                                            </label>
+                                        ))}
+                                </div>
+                            </div>
+                            <div className="info-box">
+                                <AlertCircle size={16} />
+                                <span>
+                                    Bridge combines multiple interfaces into a single L2 network segment.
+                                    All member ports will share the same IP subnet and DHCP pool.
+                                </span>
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="cancel-btn" onClick={() => setShowBridgeModal(false)}>Cancel</button>
+                            <button className="primary-btn" onClick={handleCreateBridge}>Create Bridge</button>
                         </div>
                     </div>
                 </div>

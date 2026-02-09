@@ -118,6 +118,8 @@ export const API_ENDPOINTS = {
     SETTINGS: `${API_BASE_URL}/api/settings`,
     NETWORK_CLIENTS: `${API_BASE_URL}/api/network/clients`,
     DHCP_STATIC: `${API_BASE_URL}/api/dhcp/static`,
+    BRIDGES: `${API_BASE_URL}/api/bridges`,
+    BRIDGE_MEMBER: `${API_BASE_URL}/api/bridges/member`,
 };
 
 
