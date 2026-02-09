@@ -437,7 +437,7 @@ const Interfaces = () => {
         return () => clearInterval(interval);
     }, []);
 
-    const physicalInterfaces = interfaces.filter(i => !i.name.includes('.'));
+    const physicalInterfaces = interfaces.filter(i => !i.name.includes('.') && !i.name.match(/^br\d+$/));
     const vlanInterfaces = interfaces.filter(i => i.name.includes('.'));
 
     return (
@@ -573,6 +573,14 @@ const Interfaces = () => {
                                         </div>
 
                                         <div className="iface-actions">
+                                            <button
+                                                className="action-btn"
+                                                onClick={() => openLabelModal(bridge.name)}
+                                                title="Set Label"
+                                            >
+                                                <Settings size={16} />
+                                                Label
+                                            </button>
                                             <button
                                                 className="action-btn"
                                                 onClick={() => openIPModal(bridge.name)}
