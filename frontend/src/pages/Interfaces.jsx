@@ -49,7 +49,13 @@ const Interfaces = () => {
         endIP: '',
         leaseTime: '12h',
         gateway: '',
-        dnsServers: []
+        dnsServers: [],
+        // DHCPv6 fields
+        enabledIPv6: false,
+        startIPv6: '',
+        endIPv6: '',
+        leaseTimeIPv6: '12h',
+        dnsServersIPv6: []
     });
 
     const [raForm, setRaForm] = useState({
@@ -469,7 +475,12 @@ const Interfaces = () => {
             endIP: '',
             leaseTime: '12h',
             gateway: '',
-            dnsServers: []
+            dnsServers: [],
+            enabledIPv6: false,
+            startIPv6: '',
+            endIPv6: '',
+            leaseTimeIPv6: '12h',
+            dnsServersIPv6: []
         };
 
         setDhcpForm({
@@ -479,7 +490,12 @@ const Interfaces = () => {
             endIP: existingConfig.endIP || '',
             leaseTime: existingConfig.leaseTime || '12h',
             gateway: existingConfig.gateway || '',
-            dnsServers: existingConfig.dnsServers || []
+            dnsServers: existingConfig.dnsServers || [],
+            enabledIPv6: existingConfig.enabledIPv6 || false,
+            startIPv6: existingConfig.startIPv6 || '',
+            endIPv6: existingConfig.endIPv6 || '',
+            leaseTimeIPv6: existingConfig.leaseTimeIPv6 || '12h',
+            dnsServersIPv6: existingConfig.dnsServersIPv6 || []
         });
         setShowDHCPModal(true);
     };
@@ -1110,6 +1126,71 @@ const Interfaces = () => {
                                     </div>
                                 </>
                             )}
+
+                            {/* DHCPv6 Section */}
+                            <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid #374151' }}>
+                                <div className="form-group checkbox-group">
+                                    <label className="checkbox-label">
+                                        <input
+                                            type="checkbox"
+                                            checked={dhcpForm.enabledIPv6}
+                                            onChange={e => setDhcpForm({ ...dhcpForm, enabledIPv6: e.target.checked })}
+                                        />
+                                        Enable DHCPv6 Server
+                                    </label>
+                                    <small style={{ color: '#888', marginTop: '0.25rem', display: 'block' }}>
+                                        Provide stateful IPv6 addresses to devices
+                                    </small>
+                                </div>
+
+                                {dhcpForm.enabledIPv6 && (
+                                    <>
+                                        <div className="form-group">
+                                            <label>Start IPv6 Address</label>
+                                            <input
+                                                type="text"
+                                                className="form-input"
+                                                value={dhcpForm.startIPv6}
+                                                onChange={e => setDhcpForm({ ...dhcpForm, startIPv6: e.target.value })}
+                                                placeholder="e.g., ::100"
+                                            />
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label>End IPv6 Address</label>
+                                            <input
+                                                type="text"
+                                                className="form-input"
+                                                value={dhcpForm.endIPv6}
+                                                onChange={e => setDhcpForm({ ...dhcpForm, endIPv6: e.target.value })}
+                                                placeholder="e.g., ::200"
+                                            />
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label>Lease Time (IPv6)</label>
+                                            <input
+                                                type="text"
+                                                className="form-input"
+                                                value={dhcpForm.leaseTimeIPv6}
+                                                onChange={e => setDhcpForm({ ...dhcpForm, leaseTimeIPv6: e.target.value })}
+                                                placeholder="e.g., 12h, 7d"
+                                            />
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label>DNS Servers IPv6 (Optional, Comma Separated)</label>
+                                            <input
+                                                type="text"
+                                                className="form-input"
+                                                value={dhcpForm.dnsServersIPv6.join(', ')}
+                                                onChange={e => setDhcpForm({ ...dhcpForm, dnsServersIPv6: e.target.value.split(',').map(s => s.trim()).filter(s => s) })}
+                                                placeholder="e.g., 2001:4860:4860::8888"
+                                            />
+                                        </div>
+                                    </>
+                                )}
+                            </div>
 
                             <div className="info-box">
                                 <AlertCircle size={16} />
