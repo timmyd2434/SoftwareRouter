@@ -222,8 +222,8 @@ func ensureBondingModuleLoaded() error {
 
 	// Try to load the module
 	fmt.Println("Loading bonding kernel module...")
-	if _, err := runPrivilegedCombinedOutput("modprobe", "bonding"); err != nil {
-		return fmt.Errorf("failed to load bonding module: %w (ensure kernel supports bonding)", err)
+	if output, err := runPrivilegedCombinedOutput("modprobe", "bonding"); err != nil {
+		return fmt.Errorf("failed to load bonding module: %w, output: %s (ensure kernel supports bonding)", err, string(output))
 	}
 
 	return nil
