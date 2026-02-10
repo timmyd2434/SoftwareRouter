@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
 import { authFetch, API_ENDPOINTS } from '../apiConfig';
-
+import {
+    Plus, Trash2, Link as LinkIcon, Activity, Settings,
+    AlertCircle, CheckCircle, MinusCircle
+} from 'lucide-react';
 import './Bonding.css';
 
 const Bonding = () => {
@@ -157,7 +159,7 @@ const Bonding = () => {
         <div className="bonding-container">
             <div className="bond-header">
                 <h2>
-                    <Link className="text-primary" />
+                    <LinkIcon className="text-primary" />
                     Link Bonding & Aggregation
                 </h2>
                 <button
@@ -179,7 +181,7 @@ const Bonding = () => {
 
             {bonds.length === 0 ? (
                 <div className="empty-state">
-                    <Link className="empty-state-icon" />
+                    <LinkIcon className="empty-state-icon" />
                     <h3>No Bond Interfaces</h3>
                     <p>Combine multiple network interfaces for redundancy and increased bandwidth.</p>
                 </div>
