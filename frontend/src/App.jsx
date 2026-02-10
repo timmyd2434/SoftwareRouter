@@ -21,6 +21,7 @@ import DynamicRouting from './pages/DynamicRouting';
 import AuditLogs from './pages/AuditLogs';
 import Clients from './pages/Clients';
 import WakeOnLAN from './pages/WakeOnLAN';
+import GeoBlocking from './pages/GeoBlocking';
 import SetupWizard from './components/SetupWizard';
 import './App.css';
 
@@ -139,6 +140,7 @@ function App() {
           <Route path="/dynamic-routing" element={<DynamicRouting />} />
           <Route path="/audit-logs" element={<AuditLogs />} />
           <Route path="/wake-on-lan" element={<WakeOnLAN />} />
+          <Route path="/geoblocking" element={<GeoBlocking />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

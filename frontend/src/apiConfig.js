@@ -98,6 +98,8 @@ export const API_ENDPOINTS = {
     SERVICES_CONTROL: `${API_BASE_URL}/api/services/control`,
     WOL_WAKE: `${API_BASE_URL}/api/wol/wake`,
     WOL_DEVICES: `${API_BASE_URL}/api/wol/devices`,
+    GEOBLOCKING_CONFIG: `${API_BASE_URL}/api/geoblocking/config`,
+    GEOBLOCKING_DOWNLOAD: `${API_BASE_URL}/api/geoblocking/download`,
     TRAFFIC_STATS: `${API_BASE_URL}/api/traffic/stats`,
     TRAFFIC_HISTORY: `${API_BASE_URL}/api/traffic/history`,
     TRAFFIC_CONNECTIONS: `${API_BASE_URL}/api/traffic/connections`,
