@@ -128,6 +128,8 @@ export const API_ENDPOINTS = {
     CONFIGURE_IPV6: `${API_BASE_URL}/api/interfaces/ipv6`, // IPv6 address configuration
     RA_CONFIG: `${API_BASE_URL}/api/ra/config`, // Router Advertisement configuration
     RA_STATUS: `${API_BASE_URL}/api/ra/status`, // Router Advertisement status
+    BONDS: `${API_BASE_URL}/api/bonds`,
+    BOND_MEMBER: `${API_BASE_URL}/api/bonds/member`,
 };
 
 

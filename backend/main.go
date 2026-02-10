@@ -1705,6 +1705,13 @@ func main() {
 	mux.HandleFunc("POST /api/bridges/member", authMiddleware(csrfMiddleware(addBridgeMember)))
 	mux.HandleFunc("DELETE /api/bridges/member", authMiddleware(csrfMiddleware(removeBridgeMember)))
 
+	// Bond management (Link Bonding / LACP)
+	mux.HandleFunc("GET /api/bonds", authMiddleware(getBonds))
+	mux.HandleFunc("POST /api/bonds", authMiddleware(csrfMiddleware(createBond)))
+	mux.HandleFunc("DELETE /api/bonds", authMiddleware(csrfMiddleware(deleteBond)))
+	mux.HandleFunc("POST /api/bonds/member", authMiddleware(csrfMiddleware(addBondMember)))
+	mux.HandleFunc("DELETE /api/bonds/member", authMiddleware(csrfMiddleware(removeBondMember)))
+
 	// Traffic Control / QoS
 	mux.HandleFunc("GET /api/qos", authMiddleware(getQoSConfig))
 	mux.HandleFunc("POST /api/qos", authMiddleware(updateQoSConfig))
