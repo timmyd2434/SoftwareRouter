@@ -160,7 +160,7 @@ const Bonding = () => {
         <div className="bonding-container">
             <div className="bond-header">
                 <h2>
-                    <FiLink className="text-primary" />
+                    <Link className="text-primary" />
                     Link Bonding & Aggregation
                 </h2>
                 <button
@@ -170,19 +170,19 @@ const Bonding = () => {
                         setShowCreateModal(true);
                     }}
                 >
-                    <FiPlus /> Create Bond
+                    <Plus /> Create Bond
                 </button>
             </div>
 
             {error && (
                 <div className="error-banner">
-                    <FiAlertCircle /> {error}
+                    <AlertCircle /> {error}
                 </div>
             )}
 
             {bonds.length === 0 ? (
                 <div className="empty-state">
-                    <FiLink className="empty-state-icon" />
+                    <Link className="empty-state-icon" />
                     <h3>No Bond Interfaces</h3>
                     <p>Combine multiple network interfaces for redundancy and increased bandwidth.</p>
                 </div>
@@ -192,7 +192,7 @@ const Bonding = () => {
                         <div key={bond.name} className="bond-card">
                             <div className="bond-card-header">
                                 <div className="bond-name">
-                                    <FiActivity className={bond.isUp ? "text-success" : "text-danger"} />
+                                    <Activity className={bond.isUp ? "text-success" : "text-danger"} />
                                     {bond.name}
                                 </div>
                                 <div className="bond-actions">
@@ -207,7 +207,7 @@ const Bonding = () => {
                                         onClick={() => handleDeleteBond(bond.name)}
                                         title="Delete Bond"
                                     >
-                                        <FiTrash2 />
+                                        <Trash2 />
                                     </button>
                                 </div>
                             </div>
@@ -255,7 +255,7 @@ const Bonding = () => {
                                                         onClick={() => handleRemoveMember(bond.name, member.name)}
                                                         title="Remove member"
                                                     >
-                                                        <FiMinusCircle />
+                                                        <MinusCircle />
                                                     </button>
                                                 </div>
                                             </div>
