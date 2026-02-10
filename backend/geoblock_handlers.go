@@ -1,0 +1,97 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+)
+
+// handleGetGeoBlockingConfig returns the current geoblocking configuration
+func handleGetGeoBlockingConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	cfg, err := loadGeoBlockingConfig()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(cfg)
+}
+
+// handleUpdateGeoBlockingConfig updates the geoblocking configuration
+func handleUpdateGeoBlockingConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var cfg GeoBlockingConfig
+	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Validate configuration
+	if err := validateGeoBlockingConfig(&cfg); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid configuration: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Ensure IP lists exist for all blocked countries
+	for _, country := range cfg.BlockedCountries {
+		if err := ensureCountryIPList(country); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to get IP list for %s: %v", country, err), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Save configuration
+	if err := saveGeoBlockingConfig(&cfg); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Apply firewall rules if enabled
+	if cfg.Enabled {
+		if err := firewallManager.ApplyFirewallRules(); err != nil {
+			fmt.Printf("Warning: Failed to apply firewall rules after geoblocking update: %v\n", err)
+			// Don't fail the request - config is saved
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "success",
+		"message": "Geoblocking configuration updated",
+	})
+}
+
+// handleDownloadCountryIPList manually downloads IP list for a country
+func handleDownloadCountryIPList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	countryCode := r.URL.Query().Get("country")
+	if countryCode == "" {
+		http.Error(w, "Country code is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := downloadCountryIPList(countryCode); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to download IP list: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "success",
+		"message": fmt.Sprintf("IP list for %s downloaded", countryCode),
+	})
+}

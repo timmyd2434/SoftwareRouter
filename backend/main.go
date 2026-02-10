@@ -1721,6 +1721,11 @@ func main() {
 	mux.HandleFunc("POST /api/wol/devices", authMiddleware(handleSaveWoLDevice))
 	mux.HandleFunc("DELETE /api/wol/devices", authMiddleware(handleDeleteWoLDevice))
 
+	// GeoBlocking
+	mux.HandleFunc("GET /api/geoblocking/config", authMiddleware(handleGetGeoBlockingConfig))
+	mux.HandleFunc("POST /api/geoblocking/config", authMiddleware(handleUpdateGeoBlockingConfig))
+	mux.HandleFunc("POST /api/geoblocking/download", authMiddleware(handleDownloadCountryIPList))
+
 	// Traffic History
 	mux.HandleFunc("GET /api/traffic/history", authMiddleware(getTrafficHistory))
 	mux.HandleFunc("GET /api/firewall", authMiddleware(getFirewallRules))

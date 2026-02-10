@@ -205,6 +205,19 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 		b.WriteString(generateAliasDefines(aliasStore.Aliases))
 	}
 
+	// Load and generate geoblocking defines
+	geoConfig, err := loadGeoBlockingConfig()
+	if err != nil {
+		fmt.Printf("Warning: Failed to load geoblocking config: %v\n", err)
+	} else if geoConfig.Enabled && len(geoConfig.BlockedCountries) > 0 {
+		geoDefines, err := generateGeoBlockingDefines(geoConfig)
+		if err != nil {
+			fmt.Printf("Warning: Failed to generate geoblocking defines: %v\n", err)
+		} else {
+			b.WriteString(geoDefines)
+		}
+	}
+
 	// Flush all existing rules
 	b.WriteString("flush ruleset\n\n")
 
@@ -217,6 +230,12 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 
 	// Accept loopback
 	b.WriteString("    iif lo accept\n")
+
+	// GeoBlocking rules (before established/related to block early)
+	geoConfig, err = loadGeoBlockingConfig()
+	if err == nil && geoConfig.Enabled {
+		b.WriteString(generateGeoBlockingRules(geoConfig))
+	}
 
 	// Accept established/related
 	b.WriteString("    ct state established,related accept\n")
