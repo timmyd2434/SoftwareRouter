@@ -197,7 +197,13 @@ func (fm *FirewallManager) ApplyFirewallRules() error {
 func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []string, cfg Config, pfRules []PortForwardingRule) (string, error) {
 	var b strings.Builder
 
-	// Control plane protection will be injected later
+	// Load and generate alias defines
+	aliasStore, err := loadFirewallAliases()
+	if err != nil {
+		fmt.Printf("Warning: Failed to load firewall aliases: %v\n", err)
+	} else if len(aliasStore.Aliases) > 0 {
+		b.WriteString(generateAliasDefines(aliasStore.Aliases))
+	}
 
 	// Flush all existing rules
 	b.WriteString("flush ruleset\n\n")
