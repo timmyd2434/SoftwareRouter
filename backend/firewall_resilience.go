@@ -107,6 +107,34 @@ func saveKnownGoodSnapshot(ruleset string) error {
 	return nil
 }
 
+// syncToNftablesConf writes the current ruleset to /etc/nftables.conf
+// This ensures the nftables.service will restore the correct rules at boot time,
+// preventing duplication while maintaining boot-time firewall protection.
+func syncToNftablesConf(ruleset string) error {
+	log.Println("[RESILIENCE] Syncing ruleset to /etc/nftables.conf for boot persistence")
+
+	const nftablesConfPath = "/etc/nftables.conf"
+
+	// Create backup of existing nftables.conf if it exists
+	if _, err := os.Stat(nftablesConfPath); err == nil {
+		backupPath := nftablesConfPath + ".backup"
+		if err := os.Rename(nftablesConfPath, backupPath); err != nil {
+			log.Printf("[RESILIENCE] Warning: Could not backup existing nftables.conf: %v", err)
+		} else {
+			log.Printf("[RESILIENCE] Backed up existing nftables.conf to %s", backupPath)
+		}
+	}
+
+	// Write the new ruleset
+	if err := os.WriteFile(nftablesConfPath, []byte(ruleset), 0644); err != nil {
+		return fmt.Errorf("failed to write /etc/nftables.conf: %w", err)
+	}
+
+	log.Printf("[RESILIENCE] ✓ Ruleset synced to %s", nftablesConfPath)
+	log.Println("[RESILIENCE] nftables.service will restore these rules at next boot")
+	return nil
+}
+
 // loadKnownGoodSnapshot loads the last verified working configuration
 func loadKnownGoodSnapshot() (string, error) {
 	log.Println("[RESILIENCE] Loading known-good firewall snapshot")

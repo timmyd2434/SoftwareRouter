@@ -275,20 +275,41 @@ sudo touch /etc/softrouter/test.txt
 
 ---
 
-### Firewall Rules Disappear
+### Firewall Rules Disappear or Duplicate
 
-**Symptoms**: nftables rules lost after reboot.
+**Symptoms**: nftables rules lost after reboot, or duplicate rules appearing.
 
 **Solution**:
-```bash
-# Save current ruleset
-sudo nft list ruleset > /etc/nftables.conf
 
-# Restore on boot
-sudo systemctl enable nftables
+SoftRouter automatically syncs firewall rules to `/etc/nftables.conf` after successful application. This ensures:
+- Rules persist across reboots via the `nftables.service`
+- No duplication occurs (SoftRouter uses `flush ruleset` before applying)
+- Boot-time firewall protection even if SoftwareRouter fails to start
+
+**Manual verification**:
+```bash
+# View saved ruleset (will be loaded at boot)
+sudo cat /etc/nftables.conf
+
+# Verify nftables.service is enabled
+sudo systemctl status nftables
 ```
 
-**Note**: SoftRouter manages rules dynamically. Use the UI to add rules, not direct nft commands.
+**Important Notes**:
+- **Do NOT manually edit `/etc/nftables.conf`** - it will be overwritten on the next firewall apply
+- Use the SoftRouter WebUI to manage firewall rules
+- Manual `nft` commands will be lost on the next rule application
+- A backup of the previous ruleset is saved to `/etc/nftables.conf.backup`
+
+**If experiencing duplication issues**:
+```bash
+# Check for duplicate rules
+sudo nft list ruleset | grep -A3 "chain input"
+
+# Purge and reapply (via WebUI or manual restart)
+sudo systemctl restart softrouter
+```
+
 
 ---
 

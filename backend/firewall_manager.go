@@ -188,6 +188,14 @@ func (fm *FirewallManager) ApplyFirewallRules() error {
 		fmt.Printf("Warning: Could not save known-good snapshot: %v\n", err)
 	}
 
+	// 13. Sync to /etc/nftables.conf for boot-time persistence
+	// This ensures nftables.service restores the correct rules at boot,
+	// preventing the duplication issue while maintaining boot resilience
+	if err := syncToNftablesConf(ruleset); err != nil {
+		fmt.Printf("Warning: Could not sync to /etc/nftables.conf: %v\n", err)
+		fmt.Println("    Rules were applied successfully but may not persist across reboots")
+	}
+
 	fmt.Println("✓ Firewall rules applied successfully (atomic)")
 	fmt.Println("⚠️  You have 60 seconds to confirm changes via WebUI or rules will rollback")
 	return nil
