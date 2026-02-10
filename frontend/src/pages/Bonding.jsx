@@ -1,9 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { authFetch, API_ENDPOINTS } from '../apiConfig';
-import {
-    FiPlus, FiTrash2, FiLink, FiActivity, FiSettings,
-    FiAlertCircle, FiCheckCircle, FiMinusCircle
-} from 'react-icons/fi';
+
 import './Bonding.css';
 
 const Bonding = () => {
