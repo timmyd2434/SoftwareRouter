@@ -1133,7 +1133,7 @@ const InterfaceCard = ({ iface, metadata, dhcpConfig, onToggle, onConfigureIP, o
                         <span className="label">IPv6 Addresses</span>
                         <div className="ip-list">
                             {iface.ipv6_addresses.map((ip, idx) => (
-                                <span key={idx} className="ip-tag" style={{ backgroundColor: '#818cf8' }}>{ip}</span>
+                                <span key={idx} className="ip-tag" style={{ backgroundColor: '#7c3aed', color: '#ffffff' }}>{ip}</span>
                             ))}
                         </div>
                     </div>
