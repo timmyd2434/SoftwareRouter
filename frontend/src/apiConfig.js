@@ -93,6 +93,7 @@ export const API_ENDPOINTS = {
     INTERFACE_METADATA: `${API_BASE_URL}/api/interfaces/metadata`,
     INTERFACE_LABEL: `${API_BASE_URL}/api/interfaces/label`,
     FIREWALL: `${API_BASE_URL}/api/firewall`,
+    FIREWALL_ALIASES: `${API_BASE_URL}/api/firewall/aliases`,
     SERVICES: `${API_BASE_URL}/api/services`,
     SERVICES_CONTROL: `${API_BASE_URL}/api/services/control`,
     TRAFFIC_STATS: `${API_BASE_URL}/api/traffic/stats`,

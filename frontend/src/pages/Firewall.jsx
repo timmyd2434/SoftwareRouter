@@ -42,6 +42,17 @@ const Firewall = () => {
     // Debug Log State
     const [debugLog, setDebugLog] = useState([]);
 
+    // Aliases State
+    const [aliases, setAliases] = useState([]);
+    const [showAliasModal, setShowAliasModal] = useState(false);
+    const [editingAlias, setEditingAlias] = useState(null);
+    const [aliasForm, setAliasForm] = useState({
+        name: '',
+        type: 'ip',
+        values: '',
+        description: ''
+    });
+
     const addLog = (msg) => {
         setDebugLog(prev => [...prev, `${new Date().toLocaleTimeString()} - ${msg}`]);
     };
@@ -351,8 +362,107 @@ const Firewall = () => {
         setDeleteTarget(null);
     };
 
+    // Alias Functions
+    const fetchAliases = async () => {
+        try {
+            const res = await authFetch(API_ENDPOINTS.FIREWALL_ALIASES);
+            const data = await res.json();
+            setAliases(Array.isArray(data) ? data : []);
+        } catch (err) {
+            console.error("Failed to fetch aliases:", err);
+            setAliases([]);
+        }
+    };
+
+    const openAddAliasModal = () => {
+        setEditingAlias(null);
+        setAliasForm({ name: '', type: 'ip', values: '', description: '' });
+        setShowAliasModal(true);
+    };
+
+    const openEditAliasModal = (alias) => {
+        setEditingAlias(alias);
+        setAliasForm({
+            name: alias.name,
+            type: alias.type,
+            values: alias.values.join('\n'),
+            description: alias.description || ''
+        });
+        setShowAliasModal(true);
+    };
+
+    const handleSaveAlias = async () => {
+        // Validate name
+        if (!aliasForm.name || !aliasForm.name.match(/^[A-Z][A-Z0-9_]*$/)) {
+            alert("Alias name must start with uppercase letter and contain only uppercase letters, numbers, and underscores");
+            return;
+        }
+
+        // Parse values
+        const values = aliasForm.values.split('\n')
+            .map(v => v.trim())
+            .filter(v => v !== '');
+
+        if (values.length === 0) {
+            alert("Please provide at least one value");
+            return;
+        }
+
+        const payload = {
+            name: aliasForm.name,
+            type: aliasForm.type,
+            values: values,
+            description: aliasForm.description
+        };
+
+        try {
+            const method = editingAlias ? 'PUT' : 'POST';
+            const res = await authFetch(API_ENDPOINTS.FIREWALL_ALIASES, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                setShowAliasModal(false);
+                fetchAliases();
+                fetchRules(); // Refresh rules as firewall was regenerated
+            } else {
+                const text = await res.text();
+                alert(`Failed to save alias: ${text}`);
+            }
+        } catch (err) {
+            console.error("Error saving alias:", err);
+            alert(`Error: ${err.message}`);
+        }
+    };
+
+    const handleDeleteAlias = async (name) => {
+        if (!confirm(`Delete alias "${name}"? This will regenerate the firewall.`)) {
+            return;
+        }
+
+        try {
+            const res = await authFetch(`${API_ENDPOINTS.FIREWALL_ALIASES}?name=${encodeURIComponent(name)}`, {
+                method: 'DELETE'
+            });
+
+            if (res.ok) {
+                fetchAliases();
+                fetchRules();
+            } else {
+                const text = await res.text();
+                alert(`Failed to delete alias: ${text}`);
+            }
+        } catch (err) {
+            console.error("Error deleting alias:", err);
+            alert(`Error: ${err.message}`);
+        }
+    };
+
     useEffect(() => {
         fetchRules();
+        fetchAliases();
     }, []);
 
     return (
@@ -409,6 +519,81 @@ const Firewall = () => {
                     <strong>Note:</strong> {errorHeader}
                 </div>
             )}
+
+            {/* Aliases Section */}
+            <div className="glass-panel" style={{ marginBottom: 'var(--space-6)' }}>
+                <div style={{ padding: 'var(--space-6)', borderBottom: '1px solid var(--glass-border)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                            <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Firewall Aliases</h3>
+                            <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                Named groups of IPs, networks, or ports (use $ALIAS_NAME in rules)
+                            </p>
+                        </div>
+                        <button className="primary-btn" onClick={openAddAliasModal}>
+                            <Plus size={18} />
+                            Add Alias
+                        </button>
+                    </div>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                    <table className="fw-table">
+                        <thead>
+                            <tr>
+                                <th style={{ width: '200px' }}>Name</th>
+                                <th style={{ width: '100px' }}>Type</th>
+                                <th>Values</th>
+                                <th style={{ width: '250px' }}>Description</th>
+                                <th style={{ width: '100px' }}></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {aliases.length === 0 ? (
+                                <tr>
+                                    <td colSpan="5" className="empty-state-cell">
+                                        No aliases defined. Create an alias to group IPs, networks, or ports.
+                                    </td>
+                                </tr>
+                            ) : (
+                                aliases.map((alias) => (
+                                    <tr key={alias.name}>
+                                        <td className="monospace" style={{ color: '#a78bfa', fontWeight: '600' }}>
+                                            ${alias.name}
+                                        </td>
+                                        <td>
+                                            <span className="chain-badge">
+                                                {alias.type.toUpperCase()}
+                                            </span>
+                                        </td>
+                                        <td className="monospace code-block" style={{ fontSize: '0.85rem' }}>
+                                            {alias.values.length} {alias.type === 'port' ? 'port(s)' : alias.type === 'network' ? 'network(s)' : 'address(es)'}
+                                        </td>
+                                        <td className="text-muted">{alias.description || '-'}</td>
+                                        <td>
+                                            <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                                                <button
+                                                    className="icon-btn-sm"
+                                                    title="Edit Alias"
+                                                    onClick={() => openEditAliasModal(alias)}
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+                                                </button>
+                                                <button
+                                                    className="icon-btn-sm"
+                                                    title="Delete Alias"
+                                                    onClick={() => handleDeleteAlias(alias.name)}
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
 
             <div className="firewall-table-container glass-panel">
                 <table className="fw-table">
@@ -577,6 +762,75 @@ const Firewall = () => {
                             <button className="cancel-btn" onClick={() => setShowModal(false)}>Cancel</button>
                             <button className="primary-btn" onClick={handleSubmitRule}>
                                 {isEditing ? 'CONFIRM EDIT' : 'CONFIRM ADD'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Alias Add/Edit Modal */}
+            {showAliasModal && (
+                <div className="modal-overlay">
+                    <div className="modal-content">
+                        <div className="modal-header">
+                            <h3>{editingAlias ? 'Edit Alias' : 'Add New Alias'}</h3>
+                            <button className="close-btn" onClick={() => setShowAliasModal(false)}>
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="form-group">
+                                <label>Alias Name</label>
+                                <input
+                                    type="text"
+                                    className="form-input"
+                                    placeholder="TRUSTED_SERVERS"
+                                    value={aliasForm.name}
+                                    onChange={e => setAliasForm({ ...aliasForm, name: e.target.value.toUpperCase() })}
+                                    disabled={editingAlias !== null}
+                                />
+                                <small style={{ color: '#888', fontSize: '12px' }}>Uppercase letters, numbers, and underscores only</small>
+                            </div>
+
+                            <div className="form-group">
+                                <label>Type</label>
+                                <select
+                                    className="form-select"
+                                    value={aliasForm.type}
+                                    onChange={e => setAliasForm({ ...aliasForm, type: e.target.value })}
+                                >
+                                    <option value="ip">IP Address</option>
+                                    <option value="network">Network (CIDR)</option>
+                                    <option value="port">Port</option>
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label>Values (one per line)</label>
+                                <textarea
+                                    className="form-input"
+                                    rows="6"
+                                    placeholder={aliasForm.type === 'ip' ? '192.168.1.10\n192.168.1.20' : aliasForm.type === 'network' ? '192.168.0.0/24\n10.0.0.0/8' : '80\n443\n8080-8090'}
+                                    value={aliasForm.values}
+                                    onChange={e => setAliasForm({ ...aliasForm, values: e.target.value })}
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label>Description (Optional)</label>
+                                <input
+                                    type="text"
+                                    className="form-input"
+                                    placeholder="Servers allowed admin access"
+                                    value={aliasForm.description}
+                                    onChange={e => setAliasForm({ ...aliasForm, description: e.target.value })}
+                                />
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="cancel-btn" onClick={() => setShowAliasModal(false)}>Cancel</button>
+                            <button className="primary-btn" onClick={handleSaveAlias}>
+                                {editingAlias ? 'SAVE CHANGES' : 'CREATE ALIAS'}
                             </button>
                         </div>
                     </div>

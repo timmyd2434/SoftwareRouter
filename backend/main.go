@@ -1721,6 +1721,10 @@ func main() {
 	mux.HandleFunc("POST /api/firewall", authMiddleware(addFirewallRule))
 	mux.HandleFunc("DELETE /api/firewall", authMiddleware(deleteFirewallRule))
 	mux.HandleFunc("POST /api/firewall/confirm", authMiddleware(csrfMiddleware(confirmFirewallChanges))) // Watchdog confirmation
+	mux.HandleFunc("GET /api/firewall/aliases", authMiddleware(handleFirewallAliases))
+	mux.HandleFunc("POST /api/firewall/aliases", authMiddleware(handleFirewallAliases))
+	mux.HandleFunc("PUT /api/firewall/aliases", authMiddleware(handleFirewallAliases))
+	mux.HandleFunc("DELETE /api/firewall/aliases", authMiddleware(handleFirewallAliases))
 	mux.HandleFunc("GET /api/services", authMiddleware(getServices))
 	mux.HandleFunc("POST /api/services/control", authMiddleware(controlService))
 	mux.HandleFunc("GET /api/traffic/stats", authMiddleware(getTrafficStats))
