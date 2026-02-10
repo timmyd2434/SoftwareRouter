@@ -523,7 +523,13 @@ const Interfaces = () => {
                         endIP: dhcpForm.endIP,
                         leaseTime: dhcpForm.leaseTime,
                         gateway: dhcpForm.gateway,
-                        dnsServers: dhcpForm.dnsServers
+                        dnsServers: dhcpForm.dnsServers,
+                        // DHCPv6 fields
+                        enabledIPv6: dhcpForm.enabledIPv6,
+                        startIPv6: dhcpForm.startIPv6,
+                        endIPv6: dhcpForm.endIPv6,
+                        leaseTimeIPv6: dhcpForm.leaseTimeIPv6,
+                        dnsServersIPv6: dhcpForm.dnsServersIPv6
                     }
                 })
             });
