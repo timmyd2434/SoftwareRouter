@@ -320,7 +320,7 @@ func configureIP(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("Configuring IP: %s %s on %s\n", req.Action, req.IPAddress, req.InterfaceName)
 
 	// Use ip addr add/del
-	output, err := runPrivilegedCombinedOutput("/usr/sbin/ip", "addr", req.Action, req.IPAddress, "dev", req.InterfaceName)
+	output, err := runPrivilegedCombinedOutput("ip", "addr", req.Action, req.IPAddress, "dev", req.InterfaceName)
 	if err != nil {
 		errMsg := fmt.Sprintf("Failed to configure IP address: %v, output: %s", err, string(output))
 		log.Printf("ERROR: %s", errMsg)
