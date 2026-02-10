@@ -25,6 +25,7 @@ var allowedCommands = map[string]bool{
 	"tc":          true, // Traffic control (QoS)
 	"systemctl":   true, // Service management
 	"wg":          true, // WireGuard VPN
+	"modprobe":    true, // Kernel modules (bonding)
 	"cloudflared": true, // Cloudflare tunnel
 	"ping":        true, // Diagnostics
 	"traceroute":  true, // Diagnostics
