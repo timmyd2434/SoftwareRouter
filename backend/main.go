@@ -155,15 +155,16 @@ var (
 
 // InterfaceInfo represents a network interface
 type InterfaceInfo struct {
-	Index       int      `json:"index"`
-	Name        string   `json:"name"`
-	MAC         string   `json:"mac"`
-	IPAddresses []string `json:"ip_addresses"`
-	MTU         int      `json:"mtu"`
-	Flags       string   `json:"flags"`
-	IsUp        bool     `json:"is_up"`
-	BytesSent   uint64   `json:"bytes_sent,omitempty"` // Placeholder
-	BytesRecv   uint64   `json:"bytes_recv,omitempty"` // Placeholder
+	Index         int      `json:"index"`
+	Name          string   `json:"name"`
+	MAC           string   `json:"mac"`
+	IPAddresses   []string `json:"ip_addresses"`   // IPv4 addresses
+	IPv6Addresses []string `json:"ipv6_addresses"` // IPv6 addresses
+	MTU           int      `json:"mtu"`
+	Flags         string   `json:"flags"`
+	IsUp          bool     `json:"is_up"`
+	BytesSent     uint64   `json:"bytes_sent,omitempty"` // Placeholder
+	BytesRecv     uint64   `json:"bytes_recv,omitempty"` // Placeholder
 }
 
 // --- NFTables Structs ---
@@ -1685,6 +1686,7 @@ func main() {
 	mux.HandleFunc("POST /api/interfaces/vlan", authMiddleware(createVLAN))
 	mux.HandleFunc("DELETE /api/interfaces/vlan", authMiddleware(deleteVLAN))
 	mux.HandleFunc("POST /api/interfaces/ip", authMiddleware(configureIP))
+	mux.HandleFunc("POST /api/interfaces/ipv6", authMiddleware(configureIPv6)) // IPv6 address configuration
 	mux.HandleFunc("POST /api/interfaces/state", authMiddleware(setInterfaceState))
 	mux.HandleFunc("GET /api/interfaces/metadata", authMiddleware(getInterfaceMetadata))
 	mux.HandleFunc("POST /api/interfaces/label", authMiddleware(setInterfaceLabel))

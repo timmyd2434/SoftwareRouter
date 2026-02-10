@@ -77,21 +77,40 @@ func getInterfaces(w http.ResponseWriter, r *http.Request) {
 	var result []InterfaceInfo
 	for _, i := range ifaces {
 		addrs, _ := i.Addrs()
-		var ipList []string
+		var ipv4List []string
+		var ipv6List []string
+
 		for _, addr := range addrs {
-			ipList = append(ipList, addr.String())
+			ipStr := addr.String()
+			// Parse to determine if IPv4 or IPv6
+			ip, _, err := net.ParseCIDR(ipStr)
+			if err != nil {
+				// If not CIDR, try plain IP
+				ip = net.ParseIP(ipStr)
+			}
+
+			if ip != nil {
+				if ip.To4() != nil {
+					// IPv4 address
+					ipv4List = append(ipv4List, ipStr)
+				} else {
+					// IPv6 address
+					ipv6List = append(ipv6List, ipStr)
+				}
+			}
 		}
 
 		isUp := (i.Flags & net.FlagUp) != 0
 
 		result = append(result, InterfaceInfo{
-			Index:       i.Index,
-			Name:        i.Name,
-			MAC:         i.HardwareAddr.String(),
-			IPAddresses: ipList,
-			MTU:         i.MTU,
-			Flags:       i.Flags.String(),
-			IsUp:        isUp,
+			Index:         i.Index,
+			Name:          i.Name,
+			MAC:           i.HardwareAddr.String(),
+			IPAddresses:   ipv4List,
+			IPv6Addresses: ipv6List,
+			MTU:           i.MTU,
+			Flags:         i.Flags.String(),
+			IsUp:          isUp,
 		})
 	}
 
@@ -141,13 +160,13 @@ func getInterfaceMetadata(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(store.Metadata)
 }
 
-
 type SetInterfaceLabelRequest struct {
 	InterfaceName string `json:"interfaceName"`
 	Label         string `json:"label"`
 	Description   string `json:"description"`
 	Color         string `json:"color"`
 }
+
 func setInterfaceLabel(w http.ResponseWriter, r *http.Request) {
 	var req SetInterfaceLabelRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -305,11 +324,68 @@ func configureIP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("IP %s %sed on %s successfully\n", req.IPAddress, req.Action, req.InterfaceName)
+	fmt.Printf("IP address %s %sed successfully on %s\n", req.IPAddress, req.Action, req.InterfaceName)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"status":  "success",
-		"message": fmt.Sprintf("IP %s %sed on %s", req.IPAddress, req.Action, req.InterfaceName),
+		"message": fmt.Sprintf("IP %s %sed successfully on %s", req.IPAddress, req.Action, req.InterfaceName),
+	})
+}
+
+// --- IPv6 Configuration ---
+
+func configureIPv6(w http.ResponseWriter, r *http.Request) {
+	var req IPConfigRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate action
+	if req.Action != "add" && req.Action != "del" {
+		http.Error(w, "Action must be 'add' or 'del'", http.StatusBadRequest)
+		return
+	}
+
+	if !isValidInterfaceName(req.InterfaceName) || !isValidIP(req.IPAddress) {
+		http.Error(w, "Invalid interface name or IP address format", http.StatusBadRequest)
+		return
+	}
+
+	// Validate that this is an IPv6 address
+	ip, _, err := net.ParseCIDR(req.IPAddress)
+	if err != nil {
+		http.Error(w, "Invalid IPv6 CIDR format (e.g., 2001:db8::1/64)", http.StatusBadRequest)
+		return
+	}
+	if ip.To4() != nil {
+		http.Error(w, "This endpoint is for IPv6 addresses only. Use /api/configure-ip for IPv4", http.StatusBadRequest)
+		return
+	}
+
+	fmt.Printf("%sing IPv6 address %s on %s\n", req.Action, req.IPAddress, req.InterfaceName)
+
+	// Use ip -6 addr add/del
+	var cmd string
+	if req.Action == "add" {
+		cmd = "add"
+	} else {
+		cmd = "del"
+	}
+
+	if output, err := runPrivilegedCombinedOutput("ip", "-6", "addr", cmd, req.IPAddress, "dev", req.InterfaceName); err != nil {
+		errMsg := fmt.Sprintf("Failed to %s IPv6 address: %s\nOutput: %s", req.Action, err.Error(), string(output))
+		fmt.Printf("ERROR: %s\n", errMsg)
+		http.Error(w, errMsg, http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Printf("IPv6 address %s %sed successfully on %s\n", req.IPAddress, req.Action, req.InterfaceName)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "success",
+		"message": fmt.Sprintf("IPv6 %s %sed successfully on %s", req.IPAddress, req.Action, req.InterfaceName),
 	})
 }
