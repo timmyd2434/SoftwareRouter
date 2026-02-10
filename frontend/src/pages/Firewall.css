@@ -251,8 +251,10 @@
     backdrop-filter: blur(20px);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: var(--radius-lg);
-    width: 500px;
+    width: 650px;
     max-width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
     animation: modalSlide 0.3s ease-out;
 }
