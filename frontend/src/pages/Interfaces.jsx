@@ -52,6 +52,13 @@ const Interfaces = () => {
         dnsServers: []
     });
 
+    const [raForm, setRaForm] = useState({
+        interfaceName: '',
+        enabled: false,
+        prefix: '',
+        dnsServers: []
+    });
+
     const labelOptions = [
         { value: 'WAN', color: '#ef4444' },
         { value: 'LAN', color: '#22c55e' },
@@ -338,6 +345,38 @@ const Interfaces = () => {
         }
     };
 
+    const handleApplyRA = async () => {
+        // Validate prefix if RA is enabled
+        if (raForm.enabled && !raForm.prefix) {
+            alert('IPv6 prefix is required when enabling Router Advertisement (e.g., 2001:db8::/64)');
+            return;
+        }
+
+        try {
+            const res = await authFetch(API_ENDPOINTS.RA_CONFIG, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    interface: raForm.interfaceName,
+                    enabled: raForm.enabled,
+                    prefix: raForm.prefix,
+                    dnsServers: raForm.dnsServers
+                })
+            });
+
+            if (res.ok) {
+                const result = await res.json();
+                alert(result.message);
+                // Don't close modal, user might want to configure both IPv4/IPv6/RA
+            } else {
+                const text = await res.text();
+                alert(`Failed to configure Router Advertisement:\n${text}`);
+            }
+        } catch (err) {
+            alert(`Error: ${err.message}`);
+        }
+    };
+
     const handleToggleInterface = async (interfaceName, currentState) => {
         const newState = currentState ? 'down' : 'up';
 
@@ -395,8 +434,31 @@ const Interfaces = () => {
         }
     };
 
-    const openIPModal = (interfaceName) => {
-        setIpForm({ ...ipForm, interfaceName });
+    const openIPModal = async (interfaceName) => {
+        setIpForm({ interfaceName, ipAddress: '', action: 'add' });
+
+        // Load RA configuration for this interface
+        try {
+            const res = await authFetch(API_ENDPOINTS.RA_CONFIG);
+            if (res.ok) {
+                const raConfigs = await res.json();
+                const raConfig = raConfigs[interfaceName];
+                if (raConfig) {
+                    setRaForm({
+                        interfaceName,
+                        enabled: raConfig.enabled || false,
+                        prefix: raConfig.prefix || '',
+                        dnsServers: raConfig.dnsServers || []
+                    });
+                } else {
+                    setRaForm({ interfaceName, enabled: false, prefix: '', dnsServers: [] });
+                }
+            }
+        } catch (err) {
+            console.error('Failed to load RA config:', err);
+            setRaForm({ interfaceName, enabled: false, prefix: '', dnsServers: [] });
+        }
+
         setShowIPModal(true);
     };
 
@@ -860,6 +922,42 @@ const Interfaces = () => {
                                 </div>
                                 <button className="primary-btn" onClick={handleConfigureIPv6} style={{ width: '100%' }}>
                                     Apply IPv6 Configuration
+                                </button>
+                            </div>
+
+                            {/* Router Advertisement Section */}
+                            <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid #374151' }}>
+                                <h4 style={{ marginBottom: '1rem', color: '#06b6d4' }}>Router Advertisement (SLAAC)</h4>
+                                <div className="form-group checkbox-group">
+                                    <label className="checkbox-label">
+                                        <input
+                                            type="checkbox"
+                                            checked={raForm.enabled}
+                                            onChange={e => setRaForm({ ...raForm, enabled: e.target.checked })}
+                                        />
+                                        Enable Router Advertisement
+                                    </label>
+                                    <small style={{ color: '#888', marginTop: '0.25rem', display: 'block' }}>
+                                        Allow clients to auto-configure IPv6 addresses (SLAAC)
+                                    </small>
+                                </div>
+                                {raForm.enabled && (
+                                    <div className="form-group">
+                                        <label>IPv6 Prefix to Advertise</label>
+                                        <input
+                                            type="text"
+                                            className="form-input"
+                                            value={raForm.prefix}
+                                            onChange={e => setRaForm({ ...raForm, prefix: e.target.value })}
+                                            placeholder="e.g., 2001:db8::/64"
+                                        />
+                                        <small style={{ color: '#888', marginTop: '0.25rem', display: 'block' }}>
+                                            Clients will auto-configure addresses from this prefix
+                                        </small>
+                                    </div>
+                                )}
+                                <button className="primary-btn" onClick={handleApplyRA} style={{ width: '100%' }}>
+                                    Apply Router Advertisement
                                 </button>
                             </div>
 

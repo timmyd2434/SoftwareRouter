@@ -121,6 +121,8 @@ export const API_ENDPOINTS = {
     BRIDGES: `${API_BASE_URL}/api/bridges`,
     BRIDGE_MEMBER: `${API_BASE_URL}/api/bridges/member`,
     CONFIGURE_IPV6: `${API_BASE_URL}/api/interfaces/ipv6`, // IPv6 address configuration
+    RA_CONFIG: `${API_BASE_URL}/api/ra/config`, // Router Advertisement configuration
+    RA_STATUS: `${API_BASE_URL}/api/ra/status`, // Router Advertisement status
 };
 
 
