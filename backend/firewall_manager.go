@@ -253,6 +253,9 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 	// Accept established/related
 	b.WriteString("    ct state established,related accept\n")
 
+	// Accept ICMPv6 (required for IPv6 routing and neighbor discovery)
+	b.WriteString("    ip6 nexthdr icmpv6 accept\n")
+
 	// Allow LAN -> WAN
 	for _, lan := range lanInterfaces {
 		for _, wan := range wanInterfaces {
