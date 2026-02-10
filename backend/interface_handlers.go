@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -319,8 +320,11 @@ func configureIP(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("Configuring IP: %s %s on %s\n", req.Action, req.IPAddress, req.InterfaceName)
 
 	// Use ip addr add/del
-	if _, err := runPrivilegedCombinedOutput("/usr/sbin/ip", "addr", req.Action, req.IPAddress, "dev", req.InterfaceName); err != nil {
-		http.Error(w, "Failed to configure IP address on interface", http.StatusInternalServerError)
+	output, err := runPrivilegedCombinedOutput("/usr/sbin/ip", "addr", req.Action, req.IPAddress, "dev", req.InterfaceName)
+	if err != nil {
+		errMsg := fmt.Sprintf("Failed to configure IP address: %v, output: %s", err, string(output))
+		log.Printf("ERROR: %s", errMsg)
+		http.Error(w, errMsg, http.StatusInternalServerError)
 		return
 	}
 
