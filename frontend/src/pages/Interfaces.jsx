@@ -1347,13 +1347,13 @@ const InterfaceCard = ({ iface, metadata, dhcpConfig, onToggle, onConfigureIP, o
                     IP
                 </button>
                 <button
-                    className={`action-btn ${dhcpConfig?.enabled ? 'active-dhcp' : ''}`}
+                    className={`action-btn ${dhcpConfig?.enabled || dhcpConfig?.enabledIPv6 ? 'active-dhcp' : ''}`}
                     onClick={() => onConfigureDHCP(iface.name)}
                     title="Configure DHCP"
                 >
                     <Network size={16} />
                     DHCP
-                    {dhcpConfig?.enabled && <span className="status-dot"></span>}
+                    {(dhcpConfig?.enabled || dhcpConfig?.enabledIPv6) && <span className="status-dot"></span>}
                 </button>
                 <button
                     className={`action-btn ${iface.is_up ? 'danger' : 'success'}`}
