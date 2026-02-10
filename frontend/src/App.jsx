@@ -22,6 +22,7 @@ import AuditLogs from './pages/AuditLogs';
 import Clients from './pages/Clients';
 import WakeOnLAN from './pages/WakeOnLAN';
 import GeoBlocking from './pages/GeoBlocking';
+import Bonding from './pages/Bonding';
 import SetupWizard from './components/SetupWizard';
 import './App.css';
 
@@ -141,6 +142,7 @@ function App() {
           <Route path="/audit-logs" element={<AuditLogs />} />
           <Route path="/wake-on-lan" element={<WakeOnLAN />} />
           <Route path="/geoblocking" element={<GeoBlocking />} />
+          <Route path="/bonding" element={<Bonding />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
