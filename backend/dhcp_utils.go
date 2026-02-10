@@ -147,26 +147,45 @@ func regenerateDnsmasqDHCPConfig(store *DHCPConfigStore) error {
 	config.WriteString("# Edit via Web UI: Interfaces > Configure DHCP\n\n")
 
 	for ifaceName, dhcpConf := range store.Configs {
-		if !dhcpConf.Enabled {
-			continue
+		// IPv4 DHCP configuration
+		if dhcpConf.Enabled {
+			config.WriteString(fmt.Sprintf("# DHCPv4 for %s\n", ifaceName))
+			config.WriteString(fmt.Sprintf("interface=%s\n", ifaceName))
+			config.WriteString(fmt.Sprintf("dhcp-range=%s,%s,%s,%s\n",
+				ifaceName, dhcpConf.StartIP, dhcpConf.EndIP, dhcpConf.LeaseTime))
+
+			// Gateway (option 3)
+			if dhcpConf.Gateway != "" {
+				config.WriteString(fmt.Sprintf("dhcp-option=%s,3,%s\n", ifaceName, dhcpConf.Gateway))
+			}
+
+			// DNS servers (option 6)
+			if len(dhcpConf.DNSServers) > 0 {
+				config.WriteString(fmt.Sprintf("dhcp-option=%s,6,%s\n", ifaceName, strings.Join(dhcpConf.DNSServers, ",")))
+			}
+
+			config.WriteString("\n")
 		}
 
-		config.WriteString(fmt.Sprintf("# DHCP for %s\n", ifaceName))
-		config.WriteString(fmt.Sprintf("interface=%s\n", ifaceName))
-		config.WriteString(fmt.Sprintf("dhcp-range=%s,%s,%s,%s\n",
-			ifaceName, dhcpConf.StartIP, dhcpConf.EndIP, dhcpConf.LeaseTime))
+		// IPv6 DHCPv6 configuration
+		if dhcpConf.EnabledIPv6 {
+			config.WriteString(fmt.Sprintf("# DHCPv6 for %s\n", ifaceName))
+			// Enable RA for DHCPv6 (required for DHCPv6 to work)
+			config.WriteString("enable-ra\n")
 
-		// Gateway (option 3)
-		if dhcpConf.Gateway != "" {
-			config.WriteString(fmt.Sprintf("dhcp-option=%s,3,%s\n", ifaceName, dhcpConf.Gateway))
+			// DHCPv6 range - constructor tells dnsmasq to use the interface's prefix
+			// Format: dhcp-range=::start,::end,constructor:interface,lease-time
+			config.WriteString(fmt.Sprintf("dhcp-range=%s,%s,constructor:%s,%s\n",
+				dhcpConf.StartIPv6, dhcpConf.EndIPv6, ifaceName, dhcpConf.LeaseTimeIPv6))
+
+			// DNS servers for DHCPv6 (option 23)
+			if len(dhcpConf.DNSServersIPv6) > 0 {
+				config.WriteString(fmt.Sprintf("dhcp-option=option6:dns-server,%s\n",
+					strings.Join(dhcpConf.DNSServersIPv6, ",")))
+			}
+
+			config.WriteString("\n")
 		}
-
-		// DNS servers (option 6)
-		if len(dhcpConf.DNSServers) > 0 {
-			config.WriteString(fmt.Sprintf("dhcp-option=%s,6,%s\n", ifaceName, strings.Join(dhcpConf.DNSServers, ",")))
-		}
-
-		config.WriteString("\n")
 	}
 
 	// Static Leases

@@ -245,6 +245,13 @@ type DHCPConfig struct {
 	LeaseTime  string   `json:"leaseTime"` // e.g., "12h"
 	Gateway    string   `json:"gateway"`
 	DNSServers []string `json:"dnsServers"`
+
+	// DHCPv6 fields
+	EnabledIPv6    bool     `json:"enabledIPv6"`
+	StartIPv6      string   `json:"startIPv6"`      // e.g., "2001:db8::100"
+	EndIPv6        string   `json:"endIPv6"`        // e.g., "2001:db8::200"
+	LeaseTimeIPv6  string   `json:"leaseTimeIPv6"`  // e.g., "12h"
+	DNSServersIPv6 []string `json:"dnsServersIPv6"` // IPv6 DNS servers
 }
 
 // DHCPConfigStore manages all DHCP configurations
