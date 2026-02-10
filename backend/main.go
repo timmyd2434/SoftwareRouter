@@ -1731,6 +1731,11 @@ func main() {
 	mux.HandleFunc("GET /api/dhcp/leases", authMiddleware(getDHCPLeases))
 	mux.HandleFunc("POST /api/dhcp/static", authMiddleware(addStaticLease))
 	mux.HandleFunc("DELETE /api/dhcp/static", authMiddleware(removeStaticLease))
+
+	// Router Advertisement (IPv6 SLAAC)
+	mux.HandleFunc("GET /api/ra/config", authMiddleware(getRAConfig))
+	mux.HandleFunc("POST /api/ra/config", authMiddleware(csrfMiddleware(setRAConfig)))
+	mux.HandleFunc("GET /api/ra/status", authMiddleware(getRAStatus))
 	mux.HandleFunc("GET /api/network/clients", authMiddleware(getNetworkClients))
 
 	// VPN Endpoints
