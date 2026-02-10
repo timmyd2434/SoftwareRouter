@@ -502,8 +502,11 @@ const Firewall = () => {
                                         value={newRule.family}
                                         onChange={e => setNewRule({ ...newRule, family: e.target.value })}
                                     >
-                                        {families.map(f => <option key={f} value={f}>{f}</option>)}
+                                        <option value="inet">inet (IPv4 + IPv6 - Recommended)</option>
+                                        <option value="ip">ip (IPv4 only)</option>
+                                        <option value="ip6">ip6 (IPv6 only)</option>
                                     </select>
+                                    <small style={{ color: '#888', fontSize: '12px' }}>Use 'inet' for rules that apply to both IP versions</small>
                                 </div>
                                 <div className="form-group">
                                     <label>Table</label>
@@ -545,6 +548,25 @@ const Firewall = () => {
                                     value={newRule.comment}
                                     onChange={e => setNewRule({ ...newRule, comment: e.target.value })}
                                 />
+                            </div>
+
+                            {/* IPv6 Examples Section */}
+                            <div style={{ marginTop: '16px', padding: '12px', background: '#1a1a2e', borderRadius: '6px', border: '1px solid #333' }}>
+                                <strong style={{ color: '#a78bfa', fontSize: '13px' }}>IPv6 Rule Examples:</strong>
+                                <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                    <code style={{ fontSize: '11px', padding: '4px 6px', background: '#0d0d1a', borderRadius: '3px', color: '#4ade80' }}>
+                                        ip6 saddr 2001:db8::/32 accept
+                                    </code>
+                                    <code style={{ fontSize: '11px', padding: '4px 6px', background: '#0d0d1a', borderRadius: '3px', color: '#4ade80' }}>
+                                        tcp dport 80 accept comment "works with inet family"
+                                    </code>
+                                    <code style={{ fontSize: '11px', padding: '4px 6px', background: '#0d0d1a', borderRadius: '3px', color: '#4ade80' }}>
+                                        ip6 nexthdr icmpv6 accept comment "ICMPv6"
+                                    </code>
+                                </div>
+                                <small style={{ color: '#888', fontSize: '11px', marginTop: '6px', display: 'block' }}>
+                                    Note: ICMPv6 is already allowed by default (required for IPv6)
+                                </small>
                             </div>
                         </div>
                         <div className="modal-footer">
