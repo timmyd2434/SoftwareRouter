@@ -307,7 +307,7 @@ const Interfaces = () => {
                 const result = await res.json();
                 alert(result.message);
                 setShowIPModal(false);
-                setIpForm({ interfaceName: '', ipAddress: '', action: 'add' });
+                setIpForm({ interfaceName: '', ipAddress: '', ipAddressIPv6: '', action: 'add' });
                 fetchInterfaces();
             } else {
                 const text = await res.text();
@@ -445,7 +445,7 @@ const Interfaces = () => {
     };
 
     const openIPModal = async (interfaceName) => {
-        setIpForm({ interfaceName, ipAddress: '', action: 'add' });
+        setIpForm({ interfaceName, ipAddress: '', ipAddressIPv6: '', action: 'add' });
 
         // Load RA configuration for this interface
         try {
