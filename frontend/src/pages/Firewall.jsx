@@ -482,12 +482,16 @@ const Firewall = () => {
                             {/* Debug Box */}
                             <div style={{
                                 background: '#111', color: '#4ade80',
-                                padding: '8px', fontSize: '12px',
+                                padding: '12px', fontSize: '13px',
                                 fontFamily: 'monospace', borderRadius: '4px',
-                                marginBottom: '10px', height: '80px',
-                                overflowY: 'auto', border: '1px solid #333'
+                                marginBottom: '12px', minHeight: '100px',
+                                maxHeight: '150px',
+                                overflowY: 'auto', border: '1px solid #333',
+                                lineHeight: '1.5',
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word'
                             }}>
-                                <div>Status Log:</div>
+                                <div style={{ fontWeight: 'bold', marginBottom: '6px' }}>Status Log:</div>
                                 {debugLog.length === 0 ? <div style={{ opacity: 0.5 }}>- Waiting -</div> : debugLog.map((l, i) => <div key={i}>{l}</div>)}
                             </div>
 

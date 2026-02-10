@@ -251,7 +251,7 @@
     backdrop-filter: blur(20px);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: var(--radius-lg);
-    width: 650px;
+    width: 750px;
     max-width: 90%;
     max-height: 90vh;
     overflow-y: auto;
