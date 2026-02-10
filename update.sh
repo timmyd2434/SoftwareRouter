@@ -234,6 +234,18 @@ else
 fi
 echo ""
 
+# Install/Update systemd service
+echo "⚙️  Configuring systemd service..."
+if [ -f "softrouter.service" ]; then
+    cp softrouter.service /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable softrouter
+    echo "  ✓ Installed softrouter.service"
+else
+    echo "  ⚠️  softrouter.service file not found in repo"
+fi
+echo ""
+
 # Restart the backend service
 echo "🚀 Starting SoftRouter backend service..."
 if systemctl list-unit-files | grep -q "^softrouter.service"; then
