@@ -79,10 +79,9 @@ func validateIPRange(interfaceName, startIP, endIP, gateway string) error {
 	// Parse and validate IPs
 	startIPParsed := net.ParseIP(startIP)
 	endIPParsed := net.ParseIP(endIP)
-	gatewayParsed := net.ParseIP(gateway)
 
-	if startIPParsed == nil || endIPParsed == nil || gatewayParsed == nil {
-		return fmt.Errorf("invalid IP address format")
+	if startIPParsed == nil || endIPParsed == nil {
+		return fmt.Errorf("invalid IP address format for start or end IP")
 	}
 
 	// Check if IPs are in the subnet
@@ -92,8 +91,16 @@ func validateIPRange(interfaceName, startIP, endIP, gateway string) error {
 	if !interfaceNet.Contains(endIPParsed) {
 		return fmt.Errorf("end IP %s is not in interface subnet %s", endIP, interfaceNet.String())
 	}
-	if !interfaceNet.Contains(gatewayParsed) {
-		return fmt.Errorf("gateway %s is not in interface subnet %s", gateway, interfaceNet.String())
+
+	// Validate gateway only if provided (it's optional)
+	if gateway != "" {
+		gatewayParsed := net.ParseIP(gateway)
+		if gatewayParsed == nil {
+			return fmt.Errorf("invalid gateway IP format")
+		}
+		if !interfaceNet.Contains(gatewayParsed) {
+			return fmt.Errorf("gateway %s is not in interface subnet %s", gateway, interfaceNet.String())
+		}
 	}
 
 	return nil
