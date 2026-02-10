@@ -304,6 +304,40 @@ const Interfaces = () => {
         }
     };
 
+    const handleConfigureIPv6 = async () => {
+        if (!ipForm.ipAddress.includes('/')) {
+            alert('IPv6 address must include CIDR notation (e.g., 2001:db8::1/64)');
+            return;
+        }
+
+        // Basic IPv6 format validation
+        if (!ipForm.ipAddress.includes(':')) {
+            alert('Invalid IPv6 address format. IPv6 addresses must contain colons.');
+            return;
+        }
+
+        try {
+            const res = await authFetch(API_ENDPOINTS.CONFIGURE_IPV6, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(ipForm)
+            });
+
+            if (res.ok) {
+                const result = await res.json();
+                alert(result.message);
+                setShowIPModal(false);
+                setIpForm({ interfaceName: '', ipAddress: '', action: 'add' });
+                fetchInterfaces();
+            } else {
+                const text = await res.text();
+                alert(`Failed to configure IPv6:\n${text}`);
+            }
+        } catch (err) {
+            alert(`Error: ${err.message}`);
+        }
+    };
+
     const handleToggleInterface = async (interfaceName, currentState) => {
         const newState = currentState ? 'down' : 'up';
 
@@ -770,35 +804,72 @@ const Interfaces = () => {
                             <div className="form-group">
                                 <label>Interface: <strong>{ipForm.interfaceName}</strong></label>
                             </div>
-                            <div className="form-group">
-                                <label>Action</label>
-                                <select
-                                    className="form-select"
-                                    value={ipForm.action}
-                                    onChange={e => setIpForm({ ...ipForm, action: e.target.value })}
-                                >
-                                    <option value="add">Add IP Address</option>
-                                    <option value="del">Remove IP Address</option>
-                                </select>
+
+                            {/* IPv4 Section */}
+                            <div style={{ marginBottom: '1.5rem', paddingBottom: '1.5rem', borderBottom: '1px solid #374151' }}>
+                                <h4 style={{ marginBottom: '1rem', color: '#10b981' }}>IPv4 Configuration</h4>
+                                <div className="form-group">
+                                    <label>Action</label>
+                                    <select
+                                        className="form-select"
+                                        value={ipForm.action}
+                                        onChange={e => setIpForm({ ...ipForm, action: e.target.value })}
+                                    >
+                                        <option value="add">Add IP Address</option>
+                                        <option value="del">Remove IP Address</option>
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label>IPv4 Address/Subnet (CIDR)</label>
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        value={ipForm.ipAddress}
+                                        onChange={e => setIpForm({ ...ipForm, ipAddress: e.target.value })}
+                                        placeholder="e.g., 192.168.10.1/24"
+                                    />
+                                </div>
+                                <button className="primary-btn" onClick={handleConfigureIP} style={{ width: '100%' }}>
+                                    Apply IPv4 Configuration
+                                </button>
                             </div>
-                            <div className="form-group">
-                                <label>IP Address/Subnet (CIDR)</label>
-                                <input
-                                    type="text"
-                                    className="form-input"
-                                    value={ipForm.ipAddress}
-                                    onChange={e => setIpForm({ ...ipForm, ipAddress: e.target.value })}
-                                    placeholder="e.g., 192.168.10.1/24"
-                                />
+
+                            {/* IPv6 Section */}
+                            <div>
+                                <h4 style={{ marginBottom: '1rem', color: '#818cf8' }}>IPv6 Configuration</h4>
+                                <div className="form-group">
+                                    <label>Action</label>
+                                    <select
+                                        className="form-select"
+                                        value={ipForm.action}
+                                        onChange={e => setIpForm({ ...ipForm, action: e.target.value })}
+                                    >
+                                        <option value="add">Add IPv6 Address</option>
+                                        <option value="del">Remove IPv6 Address</option>
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label>IPv6 Address/Subnet (CIDR)</label>
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        value={ipForm.ipAddress}
+                                        onChange={e => setIpForm({ ...ipForm, ipAddress: e.target.value })}
+                                        placeholder="e.g., 2001:db8::1/64"
+                                    />
+                                </div>
+                                <button className="primary-btn" onClick={handleConfigureIPv6} style={{ width: '100%' }}>
+                                    Apply IPv6 Configuration
+                                </button>
                             </div>
-                            <div className="info-box">
+
+                            <div className="info-box" style={{ marginTop: '1rem' }}>
                                 <AlertCircle size={16} />
-                                <span>Use CIDR notation for subnet specification. Example: 192.168.1.1/24 for a /24 subnet</span>
+                                <span>Use CIDR notation for subnet specification. IPv4 example: 192.168.1.1/24 | IPv6 example: 2001:db8::1/64</span>
                             </div>
                         </div>
                         <div className="modal-footer">
-                            <button className="cancel-btn" onClick={() => setShowIPModal(false)}>Cancel</button>
-                            <button className="primary-btn" onClick={handleConfigureIP}>Apply</button>
+                            <button className="cancel-btn" onClick={() => setShowIPModal(false)}>Close</button>
                         </div>
                     </div>
                 </div>
@@ -1057,6 +1128,16 @@ const InterfaceCard = ({ iface, metadata, dhcpConfig, onToggle, onConfigureIP, o
                         )}
                     </div>
                 </div>
+                {iface.ipv6_addresses && iface.ipv6_addresses.length > 0 && (
+                    <div className="detail-row ip-row">
+                        <span className="label">IPv6 Addresses</span>
+                        <div className="ip-list">
+                            {iface.ipv6_addresses.map((ip, idx) => (
+                                <span key={idx} className="ip-tag" style={{ backgroundColor: '#818cf8' }}>{ip}</span>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
 
             <div className="iface-actions">

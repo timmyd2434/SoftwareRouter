@@ -120,6 +120,7 @@ export const API_ENDPOINTS = {
     DHCP_STATIC: `${API_BASE_URL}/api/dhcp/static`,
     BRIDGES: `${API_BASE_URL}/api/bridges`,
     BRIDGE_MEMBER: `${API_BASE_URL}/api/bridges/member`,
+    CONFIGURE_IPV6: `${API_BASE_URL}/api/interfaces/ipv6`, // IPv6 address configuration
 };
 
 
