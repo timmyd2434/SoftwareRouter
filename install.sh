@@ -330,7 +330,13 @@ if [[ "$INSTALL_UNIFI" =~ ^[Yy]$ ]]; then
         # Use Debian repository (not Ubuntu)
         echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/debian bookworm/mongodb-org/8.0 main" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list
         
-        apt update
+        # Debian Trixie rejects SHA1 signatures - allow insecure repos for UniFi
+        if [[ "$(cat /etc/debian_version 2>/dev/null)" =~ ^13 ]] || grep -q "trixie" /etc/os-release 2>/dev/null; then
+            echo -e "${YELLOW}Debian Trixie detected: Using --allow-insecure-repositories for UniFi (SHA1 key)${NC}"
+            apt update --allow-insecure-repositories
+        else
+            apt update
+        fi
         apt install -y mongodb-org
         
         # Configure MongoDB for UniFi
@@ -411,7 +417,12 @@ UNIFI_PROPS
 
         # Install UniFi
         echo -e "Installing UniFi Controller..."
-        apt install -y unifi
+        # On Trixie, allow insecure repository for UniFi (Ubiquiti uses deprecated SHA1 signatures)
+        if [[ "$(cat /etc/debian_version 2>/dev/null)" =~ ^13 ]] || grep -q "trixie" /etc/os-release 2>/dev/null; then
+            apt install -y --allow-unauthenticated unifi
+        else
+            apt install -y unifi
+        fi
         
         # Pre-generate SSL keystore as unifi user (prevents HTTPS startup failure)
         echo -e "Generating SSL keystore for HTTPS..."
