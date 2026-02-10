@@ -456,11 +456,14 @@ func setDHCPConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate IP range if enabled
+	// Validate IPv4 range if IPv4 DHCP is enabled
 	if req.Config.Enabled {
-		if err := validateIPRange(req.InterfaceName, req.Config.StartIP, req.Config.EndIP, req.Config.Gateway); err != nil {
-			http.Error(w, fmt.Sprintf("Validation error: %v", err), http.StatusBadRequest)
-			return
+		// Only validate if the fields are actually populated
+		if req.Config.StartIP != "" && req.Config.EndIP != "" {
+			if err := validateIPRange(req.InterfaceName, req.Config.StartIP, req.Config.EndIP, req.Config.Gateway); err != nil {
+				http.Error(w, fmt.Sprintf("IPv4 DHCP validation error: %v", err), http.StatusBadRequest)
+				return
+			}
 		}
 	}
 
