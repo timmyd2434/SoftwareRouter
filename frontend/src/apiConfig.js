@@ -96,6 +96,8 @@ export const API_ENDPOINTS = {
     FIREWALL_ALIASES: `${API_BASE_URL}/api/firewall/aliases`,
     SERVICES: `${API_BASE_URL}/api/services`,
     SERVICES_CONTROL: `${API_BASE_URL}/api/services/control`,
+    WOL_WAKE: `${API_BASE_URL}/api/wol/wake`,
+    WOL_DEVICES: `${API_BASE_URL}/api/wol/devices`,
     TRAFFIC_STATS: `${API_BASE_URL}/api/traffic/stats`,
     TRAFFIC_HISTORY: `${API_BASE_URL}/api/traffic/history`,
     TRAFFIC_CONNECTIONS: `${API_BASE_URL}/api/traffic/connections`,

@@ -1,0 +1,128 @@
+.wol-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: var(--space-6);
+}
+
+.devices-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: var(--space-4);
+    padding: var(--space-6);
+}
+
+.device-card {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
+    transition: all 0.2s ease;
+}
+
+.device-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--primary-color);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15);
+}
+
+.device-info h4 {
+    margin: 0 0 8px 0;
+    font-size: 1rem;
+    color: var(--text-primary);
+}
+
+.device-mac {
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+    color: var(--primary-color);
+    margin-bottom: 4px;
+}
+
+.device-ip {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.device-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: var(--space-3);
+    align-items: center;
+}
+
+.device-actions .primary-btn {
+    flex: 1;
+    justify-content: center;
+}
+
+.empty-state {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: var(--space-8);
+    color: var(--text-muted);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.loading-state {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: var(--space-8);
+    color: var(--text-muted);
+}
+
+.quick-wake-form {
+    display: flex;
+    gap: var(--space-4);
+    align-items: flex-end;
+}
+
+.info-box {
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.alert-box {
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-4);
+    font-size: 0.9rem;
+}
+
+.alert-box.success {
+    background: rgba(74, 222, 128, 0.1);
+    border: 1px solid rgba(74, 222, 128, 0.3);
+    color: #4ade80;
+}
+
+.alert-box.error {
+    background: rgba(248, 113, 113, 0.1);
+    border: 1px solid rgba(248, 113, 113, 0.3);
+    color: #f87171;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .wol-container {
+        padding: var(--space-4);
+    }
+
+    .devices-grid {
+        grid-template-columns: 1fr;
+        padding: var(--space-4);
+    }
+
+    .quick-wake-form {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .quick-wake-form .primary-btn {
+        margin-top: 0 !important;
+    }
+}
