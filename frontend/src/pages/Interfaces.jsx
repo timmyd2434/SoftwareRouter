@@ -31,7 +31,8 @@ const Interfaces = () => {
 
     const [ipForm, setIpForm] = useState({
         interfaceName: '',
-        ipAddress: '',
+        ipAddress: '',      // IPv4 address
+        ipAddressIPv6: '',  // IPv6 address (separate field!)
         action: 'add'
     });
 
@@ -318,13 +319,13 @@ const Interfaces = () => {
     };
 
     const handleConfigureIPv6 = async () => {
-        if (!ipForm.ipAddress.includes('/')) {
+        if (!ipForm.ipAddressIPv6.includes('/')) {
             alert('IPv6 address must include CIDR notation (e.g., 2001:db8::1/64)');
             return;
         }
 
         // Basic IPv6 format validation
-        if (!ipForm.ipAddress.includes(':')) {
+        if (!ipForm.ipAddressIPv6.includes(':')) {
             alert('Invalid IPv6 address format. IPv6 addresses must contain colons.');
             return;
         }
@@ -333,14 +334,17 @@ const Interfaces = () => {
             const res = await authFetch(API_ENDPOINTS.CONFIGURE_IPV6, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(ipForm)
+                body: JSON.stringify({
+                    interfaceName: ipForm.interfaceName,
+                    ipAddress: ipForm.ipAddressIPv6,
+                    action: ipForm.action
+                })
             });
 
             if (res.ok) {
                 const result = await res.json();
                 alert(result.message);
-                setShowIPModal(false);
-                setIpForm({ interfaceName: '', ipAddress: '', action: 'add' });
+                setIpForm({ interfaceName: '', ipAddress: '', ipAddressIPv6: '', action: 'add' });
                 fetchInterfaces();
             } else {
                 const text = await res.text();
@@ -931,8 +935,8 @@ const Interfaces = () => {
                                     <input
                                         type="text"
                                         className="form-input"
-                                        value={ipForm.ipAddress}
-                                        onChange={e => setIpForm({ ...ipForm, ipAddress: e.target.value })}
+                                        value={ipForm.ipAddressIPv6}
+                                        onChange={e => setIpForm({ ...ipForm, ipAddressIPv6: e.target.value })}
                                         placeholder="e.g., 2001:db8::1/64"
                                     />
                                 </div>
