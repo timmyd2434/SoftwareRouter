@@ -158,117 +158,131 @@ const Bonding = () => {
 
     return (
         <div className="bonding-container">
-            <div className="bond-header">
-                <h2>
-                    <LinkIcon className="text-primary" />
-                    Link Bonding & Aggregation
-                </h2>
-                <button
-                    className="btn btn-primary btn-icon" // Reusing standard button classes if available, otherwise CSS defines them
-                    onClick={() => {
-                        resetForm();
-                        setShowCreateModal(true);
-                    }}
-                >
-                    <Plus /> Create Bond
-                </button>
+            <div className="section-header">
+                <div>
+                    <h2>
+                        <LinkIcon size={24} className="icon" />
+                        Link Bonding & Aggregation
+                    </h2>
+                    <span className="subtitle">Combine interfaces for redundancy and bandwidth</span>
+                </div>
+                <div className="header-actions">
+                    <button
+                        className="primary-btn"
+                        onClick={() => {
+                            resetForm();
+                            setShowCreateModal(true);
+                        }}
+                    >
+                        <Plus size={18} />
+                        Create Bond
+                    </button>
+                </div>
             </div>
 
             {error && (
                 <div className="error-banner">
-                    <AlertCircle /> {error}
+                    <AlertCircle size={20} />
+                    <span>{error}</span>
                 </div>
             )}
 
-            {bonds.length === 0 ? (
-                <div className="empty-state">
-                    <LinkIcon className="empty-state-icon" />
-                    <h3>No Bond Interfaces</h3>
-                    <p>Combine multiple network interfaces for redundancy and increased bandwidth.</p>
-                </div>
+            {loading ? (
+                <div className="loading-state">Loading bonding configuration...</div>
             ) : (
-                <div className="bond-grid">
-                    {bonds.map(bond => (
-                        <div key={bond.name} className="bond-card">
-                            <div className="bond-card-header">
-                                <div className="bond-name">
-                                    <Activity className={bond.isUp ? "text-success" : "text-danger"} />
-                                    {bond.name}
-                                </div>
-                                <div className="bond-actions">
-                                    <span className="status-badge" style={{
-                                        backgroundColor: bond.isUp ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                                        color: bond.isUp ? '#10b981' : '#ef4444'
-                                    }}>
-                                        {bond.isUp ? 'active' : 'down'}
-                                    </span>
-                                    <button
-                                        className="remove-btn"
-                                        onClick={() => handleDeleteBond(bond.name)}
-                                        title="Delete Bond"
-                                    >
-                                        <Trash2 />
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div className="bond-card-body">
-                                <div className="bond-detail-row">
-                                    <span className="detail-label">Mode</span>
-                                    <span className="detail-value bond-mode">{bond.mode}</span>
-                                </div>
-                                <div className="bond-detail-row">
-                                    <span className="detail-label">MII Monitor</span>
-                                    <span className="detail-value">{bond.miimon} ms</span>
-                                </div>
-                                <div className="bond-detail-row">
-                                    <span className="detail-label">MTU</span>
-                                    <span className="detail-value">{bond.mtu}</span>
-                                </div>
-                                <div className="bond-detail-row">
-                                    <span className="detail-label">IP Address</span>
-                                    <span className="detail-value">
-                                        {bond.ipAddresses && bond.ipAddresses.length > 0
-                                            ? bond.ipAddresses.join(', ')
-                                            : 'No IP Configured'}
-                                    </span>
-                                </div>
-
-                                <div className="members-section">
-                                    <div className="members-title">
-                                        Member Interfaces ({bond.members.length})
-                                    </div>
-                                    <div className="member-list">
-                                        {bond.memberState && bond.memberState.map(member => (
-                                            <div key={member.name} className="member-item">
-                                                <div className="member-info">
-                                                    <div
-                                                        className={`member-status-dot ${member.status === 'up' ? 'status-up' : 'status-down'}`}
-                                                        title={`Status: ${member.status}`}
-                                                    />
-                                                    <span className="member-name font-mono">{member.name}</span>
-                                                </div>
-                                                <div className="member-meta">
-                                                    <span className="member-speed">{member.speed}</span>
-                                                    <button
-                                                        className="remove-btn ml-2"
-                                                        onClick={() => handleRemoveMember(bond.name, member.name)}
-                                                        title="Remove member"
-                                                    >
-                                                        <MinusCircle />
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        ))}
-                                        {(!bond.memberState || bond.memberState.length === 0) && (
-                                            <div className="text-secondary text-sm italic">No members</div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
+                <>
+                    {bonds.length === 0 ? (
+                        <div className="empty-state">
+                            <LinkIcon className="empty-state-icon" />
+                            <h3>No Bond Interfaces</h3>
+                            <p>Combine multiple network interfaces for redundancy and increased bandwidth.</p>
                         </div>
-                    ))}
-                </div>
+                    ) : (
+                        <div className="bond-grid">
+                            {bonds.map(bond => (
+                                <div key={bond.name} className={`bond-card ${bond.isUp ? 'active' : 'inactive'}`}>
+                                    <div className="bond-card-header">
+                                        <div className="bond-title">
+                                            <Activity size={20} className="icon" />
+                                            <h3>{bond.name}</h3>
+                                        </div>
+                                        <span className={`status-badge ${bond.isUp ? 'up' : 'down'}`}>
+                                            {bond.isUp ? 'active' : 'down'}
+                                        </span>
+                                    </div>
+
+                                    <div className="bond-details">
+                                        <div className="detail-row">
+                                            <span className="label">Mode</span>
+                                            <span className="value">{bond.mode}</span>
+                                        </div>
+                                        <div className="detail-row">
+                                            <span className="label">MII Monitor</span>
+                                            <span className="value">{bond.miimon} ms</span>
+                                        </div>
+                                        <div className="detail-row">
+                                            <span className="label">MTU</span>
+                                            <span className="value">{bond.mtu}</span>
+                                        </div>
+                                        <div className="detail-row">
+                                            <span className="label">IP Address</span>
+                                            <span className="value">
+                                                {bond.ipAddresses && bond.ipAddresses.length > 0
+                                                    ? bond.ipAddresses.join(', ')
+                                                    : 'No IP Configured'}
+                                            </span>
+                                        </div>
+
+                                        <div className="detail-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.5rem' }}>
+                                            <span className="label">Member Interfaces ({bond.members.length})</span>
+                                            <div className="member-list">
+                                                {bond.memberState && bond.memberState.map(member => (
+                                                    <div key={member.name} className="member-tag">
+                                                        <div
+                                                            className={`member-status-dot ${member.status === 'up' ? 'status-up-dot' : 'status-down-dot'}`}
+                                                            title={`Status: ${member.status}`}
+                                                        />
+                                                        <span>{member.name}</span>
+                                                        <span className="member-speed">{member.speed}</span>
+                                                        <button
+                                                            className="remove-member-btn"
+                                                            onClick={() => handleRemoveMember(bond.name, member.name)}
+                                                            title="Remove member"
+                                                        >
+                                                            <MinusCircle size={14} />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                                {(!bond.memberState || bond.memberState.length === 0) && (
+                                                    <span className="no-members">No members</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bond-actions">
+                                        <button
+                                            className="action-btn"
+                                            onClick={() => {/* Placeholder for future settings */ }}
+                                            title="Settings"
+                                        >
+                                            <Settings size={16} />
+                                            Configure
+                                        </button>
+                                        <button
+                                            className="action-btn danger"
+                                            onClick={() => handleDeleteBond(bond.name)}
+                                            title="Delete Bond"
+                                        >
+                                            <Trash2 size={16} />
+                                            Delete
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </>
             )}
 
             {/* Create Bond Modal */}
@@ -277,7 +291,9 @@ const Bonding = () => {
                     <div className="modal-content">
                         <div className="modal-header">
                             <h3>Create Link Bond</h3>
-                            <button className="close-btn" onClick={() => setShowCreateModal(false)}>×</button>
+                            <button className="close-btn" onClick={() => setShowCreateModal(false)}>
+                                <MinusCircle size={20} style={{ transform: 'rotate(45deg)' }} />
+                            </button>
                         </div>
                         <form onSubmit={handleCreateBond}>
                             <div className="modal-body">
@@ -292,7 +308,7 @@ const Bonding = () => {
                                         pattern="bond[0-9]+"
                                         required
                                     />
-                                    <p className="help-text">Must strictly follow pattern bond0, bond1, etc.</p>
+                                    <span className="help-text">Must strictly follow pattern bond0, bond1, etc.</span>
                                 </div>
 
                                 <div className="form-group">
@@ -308,9 +324,9 @@ const Bonding = () => {
                                             </option>
                                         ))}
                                     </select>
-                                    <p className="help-text">
+                                    <span className="help-text">
                                         {availableModes.find(m => m.value === newBondMode)?.description}
-                                    </p>
+                                    </span>
                                 </div>
 
                                 <div className="form-group">
@@ -323,7 +339,7 @@ const Bonding = () => {
                                         min="0"
                                         max="10000"
                                     />
-                                    <p className="help-text">Link monitoring frequency in milliseconds (default: 100)</p>
+                                    <span className="help-text">Link monitoring frequency in milliseconds (default: 100)</span>
                                 </div>
 
                                 <div className="form-group">
@@ -341,26 +357,22 @@ const Bonding = () => {
                                                     onChange={() => { }} // Handled by onClick parent
                                                 />
                                                 <span className="font-mono">{iface.name}</span>
-                                                <span className="text-secondary ml-auto text-sm">
+                                                <span className="text-secondary ml-auto text-sm" style={{ marginLeft: 'auto', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                                                     {iface.mac}
                                                 </span>
                                             </div>
                                         ))}
                                     </div>
-                                    <p className="help-text text-warning mt-2">
-                                        ⚠️ Connection may be interrupted briefly when interfaces are added to bond.
-                                    </p>
+                                    <span className="help-text" style={{ color: '#f59e0b' }}>
+                                        Warning: Selected interfaces will be disconnected momentarily.
+                                    </span>
                                 </div>
                             </div>
                             <div className="modal-footer">
-                                <button
-                                    type="button"
-                                    className="btn btn-secondary"
-                                    onClick={() => setShowCreateModal(false)}
-                                >
+                                <button type="button" className="action-btn" onClick={() => setShowCreateModal(false)}>
                                     Cancel
                                 </button>
-                                <button type="submit" className="btn btn-primary">
+                                <button type="submit" className="primary-btn">
                                     Create Bond
                                 </button>
                             </div>
@@ -371,5 +383,6 @@ const Bonding = () => {
         </div>
     );
 };
+
 
 export default Bonding;
