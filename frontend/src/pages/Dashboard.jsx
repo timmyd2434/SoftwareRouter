@@ -175,56 +175,62 @@ const Dashboard = () => {
                     </div>
                 </div>
                 <div className="chart-wrapper">
-                    <ResponsiveContainer width="100%" height={300}>
-                        <AreaChart data={trafficHistory}>
-                            <defs>
-                                <linearGradient id="colorRx" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3} />
-                                    <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
-                                </linearGradient>
-                                <linearGradient id="colorTx" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="var(--secondary)" stopOpacity={0.3} />
-                                    <stop offset="95%" stopColor="var(--secondary)" stopOpacity={0} />
-                                </linearGradient>
-                            </defs>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                            <XAxis
-                                dataKey="timestamp"
-                                hide={true}
-                            />
-                            <YAxis
-                                tickFormatter={(val) => formatBandwidth(val).split(' ')[0]}
-                                stroke="var(--text-muted)"
-                                fontSize={12}
-                                axisLine={false}
-                                tickLine={false}
-                            />
-                            <Tooltip
-                                contentStyle={{ backgroundColor: 'var(--bg-panel)', border: '1px solid var(--glass-border)', borderRadius: '8px' }}
-                                itemStyle={{ fontSize: '12px' }}
-                                formatter={(val) => formatBandwidth(val)}
-                                labelStyle={{ display: 'none' }}
-                            />
-                            <Area
-                                type="monotone"
-                                dataKey="rx_bps"
-                                stroke="var(--primary)"
-                                fillOpacity={1}
-                                fill="url(#colorRx)"
-                                strokeWidth={2}
-                                isAnimationActive={false}
-                            />
-                            <Area
-                                type="monotone"
-                                dataKey="tx_bps"
-                                stroke="var(--secondary)"
-                                fillOpacity={1}
-                                fill="url(#colorTx)"
-                                strokeWidth={2}
-                                isAnimationActive={false}
-                            />
-                        </AreaChart>
-                    </ResponsiveContainer>
+                    {trafficHistory.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={300}>
+                            <AreaChart data={trafficHistory}>
+                                <defs>
+                                    <linearGradient id="colorRx" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3} />
+                                        <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
+                                    </linearGradient>
+                                    <linearGradient id="colorTx" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="var(--secondary)" stopOpacity={0.3} />
+                                        <stop offset="95%" stopColor="var(--secondary)" stopOpacity={0} />
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                                <XAxis
+                                    dataKey="timestamp"
+                                    hide={true}
+                                />
+                                <YAxis
+                                    tickFormatter={(val) => formatBandwidth(val).split(' ')[0]}
+                                    stroke="var(--text-muted)"
+                                    fontSize={12}
+                                    axisLine={false}
+                                    tickLine={false}
+                                />
+                                <Tooltip
+                                    contentStyle={{ backgroundColor: 'var(--bg-panel)', border: '1px solid var(--glass-border)', borderRadius: '8px' }}
+                                    itemStyle={{ fontSize: '12px' }}
+                                    formatter={(val) => formatBandwidth(val)}
+                                    labelStyle={{ display: 'none' }}
+                                />
+                                <Area
+                                    type="monotone"
+                                    dataKey="rx_bps"
+                                    stroke="var(--primary)"
+                                    fillOpacity={1}
+                                    fill="url(#colorRx)"
+                                    strokeWidth={2}
+                                    isAnimationActive={false}
+                                />
+                                <Area
+                                    type="monotone"
+                                    dataKey="tx_bps"
+                                    stroke="var(--secondary)"
+                                    fillOpacity={1}
+                                    fill="url(#colorTx)"
+                                    strokeWidth={2}
+                                    isAnimationActive={false}
+                                />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-muted)' }}>
+                            Waiting for traffic data...
+                        </div>
+                    )}
                 </div>
             </div>
 
