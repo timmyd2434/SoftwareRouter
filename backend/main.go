@@ -65,6 +65,17 @@ type Config struct {
 	CORS            CORSConfig      `json:"cors"`
 	ProtectedSubnet string          `json:"protected_subnet"`
 	WebAccess       WebAccessConfig `json:"web_access"`
+
+	// Merged AppConfig fields
+	CloudflareToken string `json:"cf_token"`
+	AdBlocker       string `json:"ad_blocker"` // "none", "adguard", "pihole"
+	OpenVPNPort     int    `json:"openvpn_port"`
+	VPNServer       struct {
+		Endpoint     string `json:"endpoint"`      // Empty = auto-detect, or IP/hostname
+		EndpointType string `json:"endpoint_type"` // "auto", "ip", "hostname"
+		Port         int    `json:"port"`
+		Protocol     string `json:"protocol"`
+	} `json:"vpn_server"`
 }
 
 type WebAccessConfig struct {

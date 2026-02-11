@@ -14,29 +14,31 @@ import (
 
 // --- Config Storage ---
 
-func loadConfig() AppConfig {
-	defaultCfg := AppConfig{
-		CloudflareToken: "",
+// --- Config Storage ---
+
+func loadConfig() Config {
+	defaultCfg := Config{
 		ProtectedSubnet: "10.0.0.0/24",
 		AdBlocker:       "none",
 		OpenVPNPort:     1194,
+		WebAccess: WebAccessConfig{
+			AllowWAN:     false,
+			WANPortHTTP:  980,
+			WANPortHTTPS: 9443,
+		},
 	}
+
 	// Set VPN server defaults
 	defaultCfg.VPNServer.EndpointType = "auto"
 	defaultCfg.VPNServer.Port = 1194
 	defaultCfg.VPNServer.Protocol = "udp"
-
-	// Set WebAccess defaults
-	defaultCfg.WebAccess.AllowWAN = false
-	defaultCfg.WebAccess.WANPortHTTP = 980
-	defaultCfg.WebAccess.WANPortHTTPS = 9443
 
 	data, err := os.ReadFile(configFilePath)
 	if err != nil {
 		return defaultCfg
 	}
 
-	var cfg AppConfig
+	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return defaultCfg
 	}
@@ -63,7 +65,7 @@ func loadConfig() AppConfig {
 	return cfg
 }
 
-func saveConfig(cfg AppConfig) error {
+func saveConfig(cfg Config) error {
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
@@ -80,7 +82,7 @@ func getConfig(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(cfg)
 }
 
-func applyCloudflareConfig(cfg AppConfig) error {
+func applyCloudflareConfig(cfg Config) error {
 	if cfg.CloudflareToken == "" {
 		return nil
 	}
@@ -117,11 +119,21 @@ func applyCloudflareConfig(cfg AppConfig) error {
 	return nil
 }
 
-func applyAdBlockerConfig(cfg AppConfig) error {
+func applyAdBlockerConfig(cfg Config) error {
 	if cfg.AdBlocker == "none" {
 		// Ensure standard DNS services are running if we're not using an adblocker
 		runPrivileged("systemctl", "start", "dnsmasq")
 		runPrivileged("systemctl", "start", "unbound")
+		return nil
+	}
+
+	// If adguard only (since we only support adguard or pihole)
+	if cfg.AdBlocker == "adguard" {
+		// Just ensure it's started
+		runPrivileged("systemctl", "start", "AdGuardHome")
+		// Stop conflicting
+		runPrivileged("systemctl", "stop", "dnsmasq")
+		runPrivileged("systemctl", "stop", "unbound")
 		return nil
 	}
 
@@ -163,7 +175,7 @@ func applyAdBlockerConfig(cfg AppConfig) error {
 }
 
 func updateConfig(w http.ResponseWriter, r *http.Request) {
-	var cfg AppConfig
+	var cfg Config
 	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
