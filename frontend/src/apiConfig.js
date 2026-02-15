@@ -9,10 +9,10 @@ const getApiBaseUrl = () => {
         const hostname = window.location.hostname;
         const port = window.location.port;
 
-        // If we are running on port 5173 (Vite dev), use the backend port 80/8080
-        // Otherwise, use the same port as the UI (for production)
+        // If we are running on port 5173 (Vite dev), use the backend port 443 (HTTPS)
+        // Vite proxy handles the self-signed cert (secure: false in vite.config.js)
         if (port === '5173') {
-            return `http://${hostname}:80`;
+            return `https://${hostname}:443`;
         }
 
         // Return blank for relative paths or current origin

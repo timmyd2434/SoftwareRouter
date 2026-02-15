@@ -172,6 +172,31 @@ if [ ! -f "/etc/softrouter/token_secret.key" ]; then
     chmod 600 /etc/softrouter/token_secret.key
 fi
 
+# Generate TLS certificate if missing (HTTPS-only enforcement)
+TLS_DIR="/etc/softrouter/tls"
+if [ ! -f "$TLS_DIR/cert.pem" ]; then
+    echo -e "${CYAN}Generating self-signed TLS certificate...${NC}"
+    mkdir -p "$TLS_DIR"
+    chmod 700 "$TLS_DIR"
+    
+    # Get host's primary IP for SAN
+    HOST_IP=$(hostname -I | awk '{print $1}')
+    HOST_IP=${HOST_IP:-127.0.0.1}
+    
+    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+      -keyout "$TLS_DIR/key.pem" \
+      -out "$TLS_DIR/cert.pem" \
+      -days 3650 \
+      -subj "/C=US/ST=Internal/L=Home/O=SoftRouter/CN=SoftRouter Web UI" \
+      -addext "subjectAltName=DNS:localhost,DNS:router.local,DNS:softrouter.local,IP:127.0.0.1,IP:$HOST_IP"
+    
+    chmod 600 "$TLS_DIR/key.pem"
+    chmod 644 "$TLS_DIR/cert.pem"
+    echo -e "${GREEN}TLS certificate generated (valid 10 years, SAN: $HOST_IP, router.local)${NC}"
+else
+    echo -e "${CYAN}Existing TLS certificate found. Keeping it.${NC}"
+fi
+
 # 4. IDS/IPS Stack (Conditional)
 echo -e "${CYAN}[3/10] Integrated Security Stack...${NC}"
 if [[ "$INSTALL_SEC" =~ ^[Yy]$ ]]; then
@@ -486,7 +511,7 @@ table inet filter {
         type filter hook input priority 0; policy accept;
         iifname "lo" accept
         ct state established,related accept
-        tcp dport 80 accept
+        tcp dport 443 accept
         tcp dport 22 accept
     }
 }
@@ -529,10 +554,12 @@ echo ""
 echo -e "${BLUE}=========================================${NC}"
 echo -e "${GREEN}✅ SoftRouter is now FULLY INSTALLED!${NC}"
 echo -e "${BLUE}=========================================${NC}"
-echo -e "Access the Dashboard at: ${CYAN}http://${CORE_IP}${NC}"
-echo -e "Administrative Port: 80"
+echo -e "Access the Dashboard at: ${CYAN}https://${CORE_IP}${NC}"
+echo -e "Administrative Port: 443 (HTTPS)"
 echo -e "Service Status: $(systemctl is-active softrouter)"
 echo -e "-----------------------------------------"
+echo -e "${YELLOW}NOTE: Your browser will warn about the self-signed certificate.${NC}"
+echo -e "${YELLOW}Accept the warning to access the dashboard securely.${NC}"
 echo -e "Tips:"
 echo -e "- Configure VLANs and Firewalls via the UI."
 if [[ "$INSTALL_SEC" =~ ^[Yy]$ ]]; then

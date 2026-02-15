@@ -1020,6 +1020,12 @@ func loadSystemConfig() {
 				WANPortHTTP:  980,
 				WANPortHTTPS: 9443,
 			},
+			TLS: TLSConfig{
+				Enabled:  true,
+				CertFile: tlsCertPath,
+				KeyFile:  tlsKeyPath,
+				Port:     ":443",
+			},
 			AdGuard: AdGuardConfig{
 				URL:      getEnvOrDefault("AGH_URL", "http://localhost:3000"),
 				Username: os.Getenv("AGH_USERNAME"),
@@ -1041,6 +1047,16 @@ func loadSystemConfig() {
 		config.WebAccess.AllowWAN = true
 		config.WebAccess.WANPortHTTP = 980
 		config.WebAccess.WANPortHTTPS = 9443
+	}
+
+	// Upgrade Logic: If TLS is uninitialized, enable it with defaults
+	if !config.TLS.Enabled && config.TLS.CertFile == "" {
+		config.TLS.Enabled = true
+		config.TLS.CertFile = tlsCertPath
+		config.TLS.KeyFile = tlsKeyPath
+		config.TLS.Port = ":443"
+		saveConfigLocked()
+		log.Println("Config upgrade: TLS enabled with default self-signed certificate paths")
 	}
 
 	// Environment variables override config file
@@ -1902,7 +1918,6 @@ func main() {
 
 	// Load TLS configuration
 	configLock.RLock()
-	tlsEnabled := config.TLS.Enabled
 	tlsPort := config.TLS.Port
 	certFile := config.TLS.CertFile
 	keyFile := config.TLS.KeyFile
@@ -1913,55 +1928,50 @@ func main() {
 		tlsPort = ":443"
 	}
 
-	if tlsEnabled && certFile != "" && keyFile != "" {
-		// Verify certificate files exist
-		if _, err := os.Stat(certFile); os.IsNotExist(err) {
-			log.Fatalf("CRITICAL: TLS cert file not found: %s", certFile)
-		}
-		if _, err := os.Stat(keyFile); os.IsNotExist(err) {
-			log.Fatalf("CRITICAL: TLS key file not found: %s", keyFile)
-		}
-
-		log.Printf("Starting HTTPS server on %s", tlsPort)
-
-		// Start HTTP redirect server in background
-		go func() {
-			redirectMux := http.NewServeMux()
-			redirectMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-				// Extract host without port
-				host := r.Host
-				if idx := strings.Index(host, ":"); idx != -1 {
-					host = host[:idx]
-				}
-
-				// Build HTTPS URL
-				target := "https://" + host
-				if tlsPort != ":443" {
-					target += tlsPort
-				}
-				target += r.URL.Path
-				if r.URL.RawQuery != "" {
-					target += "?" + r.URL.RawQuery
-				}
-
-				http.Redirect(w, r, target, http.StatusMovedPermanently)
-			})
-			log.Println("Starting HTTP->HTTPS redirect server on :80")
-			if err := http.ListenAndServe(":80", redirectMux); err != nil {
-				log.Printf("HTTP redirect server failed: %v", err)
-			}
-		}()
-
-		// Start HTTPS server
-		log.Fatal(http.ListenAndServeTLS(tlsPort, certFile, keyFile, handler))
-	} else {
-		// Start HTTP Server
-		// Changed to 0.0.0.0 to allow access from management tools (NPM) on WAN network
-		// Protected by NFTables rate limiting (100 conn/min)
-		addr := "0.0.0.0:8090"
-		fmt.Printf("Starting HTTP server on %s\n", addr)
-		if err := http.ListenAndServe(addr, handler); err != nil {
-			log.Fatal(err)
-		}
+	// Ensure TLS certificates exist (auto-generate if missing)
+	certFile, keyFile, err := ensureTLSCertificates(certFile, keyFile)
+	if err != nil {
+		log.Fatalf("CRITICAL: Failed to ensure TLS certificates: %v", err)
 	}
+
+	// Add HSTS and security headers
+	secureHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		handler.ServeHTTP(w, r)
+	})
+
+	log.Printf("Starting HTTPS server on %s", tlsPort)
+
+	// Start HTTP redirect server on :8080 (redirect only — no API traffic)
+	go func() {
+		redirectMux := http.NewServeMux()
+		redirectMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			// Extract host without port
+			host := r.Host
+			if idx := strings.Index(host, ":"); idx != -1 {
+				host = host[:idx]
+			}
+
+			// Build HTTPS URL
+			target := "https://" + host
+			if tlsPort != ":443" {
+				target += tlsPort
+			}
+			target += r.URL.Path
+			if r.URL.RawQuery != "" {
+				target += "?" + r.URL.RawQuery
+			}
+
+			http.Redirect(w, r, target, http.StatusMovedPermanently)
+		})
+		log.Println("Starting HTTP->HTTPS redirect server on :8080")
+		if err := http.ListenAndServe(":8080", redirectMux); err != nil {
+			log.Printf("HTTP redirect server failed: %v", err)
+		}
+	}()
+
+	// Start HTTPS server (always — no HTTP fallback)
+	log.Fatal(http.ListenAndServeTLS(tlsPort, certFile, keyFile, secureHandler))
 }
