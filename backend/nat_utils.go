@@ -73,7 +73,7 @@ func savePortForwardingRules() error {
 		return err
 	}
 
-	return os.WriteFile(pfConfigPath, data, 0644)
+	return os.WriteFile(pfConfigPath, data, 0600)
 }
 
 func GetPortForwardingRules() []PortForwardingRule {

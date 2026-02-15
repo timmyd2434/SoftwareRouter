@@ -55,7 +55,7 @@ func logAuditEvent(user, action, resource, details, ipAddress string, success bo
 	defer auditLogMu.Unlock()
 
 	logPath := filepath.Join(auditLogDir, auditLogFile)
-	file, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		// Fallback to stderr if audit log fails
 		fmt.Fprintf(os.Stderr, "AUDIT LOG ERROR: Failed to open log file: %v\n", err)

@@ -70,7 +70,7 @@ func saveWANConfig() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(wanConfigPath, data, 0644)
+	return os.WriteFile(wanConfigPath, data, 0600)
 }
 
 // startWANMonitor runs the periodic health check

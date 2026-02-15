@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"sync"
@@ -61,7 +62,7 @@ func saveRoutes() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(routesConfigPath, data, 0644)
+	return os.WriteFile(routesConfigPath, data, 0600)
 }
 
 // applyRoutes applies all routes to the system
@@ -118,6 +119,18 @@ func createRoute(w http.ResponseWriter, r *http.Request) {
 
 	if req.Destination == "" || req.Gateway == "" {
 		http.Error(w, "Destination and Gateway are required", http.StatusBadRequest)
+		return
+	}
+
+	// Validate destination as a valid CIDR
+	if _, _, err := net.ParseCIDR(req.Destination); err != nil {
+		http.Error(w, "Destination must be a valid CIDR (e.g., 10.0.0.0/24)", http.StatusBadRequest)
+		return
+	}
+
+	// Validate gateway as a valid IP
+	if net.ParseIP(req.Gateway) == nil {
+		http.Error(w, "Gateway must be a valid IP address", http.StatusBadRequest)
 		return
 	}
 

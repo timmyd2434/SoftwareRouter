@@ -82,7 +82,7 @@ func saveDRConfig() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(drConfigPath, data, 0644)
+	return os.WriteFile(drConfigPath, data, 0600)
 }
 
 // buildFRRConfigString generates the config content without side effects
@@ -145,7 +145,7 @@ func generateFRRConfig() error {
 	// Write to file
 	// Note: In a real system, we must ensure permissions are correct (frr:frr usually)
 	// For simplicity, we write as root and try to chown if needed, or rely on service restart to pick it up.
-	err := os.WriteFile(frrConfigPath, []byte(configStr), 0640)
+	err := os.WriteFile(frrConfigPath, []byte(configStr), 0600)
 	if err != nil {
 		return err
 	}

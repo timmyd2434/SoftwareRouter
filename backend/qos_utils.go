@@ -66,7 +66,7 @@ func saveQoSConfigs() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(qosConfigPath, data, 0644)
+	return os.WriteFile(qosConfigPath, data, 0600)
 }
 
 // ApplyQoS applies the traffic control settings

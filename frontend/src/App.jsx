@@ -44,11 +44,24 @@ function App() {
       // Call logout endpoint (Tier 4: Session management)
       const token = localStorage.getItem('sr_token');
       if (token) {
+        // Fetch CSRF token for the logout POST
+        let csrfToken = null;
+        try {
+          const csrfRes = await fetch('/api/csrf-token', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (csrfRes.ok) {
+            const csrfData = await csrfRes.json();
+            csrfToken = csrfData.token;
+          }
+        } catch {}
+
         await fetch('/api/logout', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
+            ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
           },
         }).catch(() => {
           // Ignore errors - logout locally regardless

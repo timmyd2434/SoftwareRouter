@@ -47,7 +47,7 @@ func saveDHCPConfig(store *DHCPConfigStore) error {
 		return err
 	}
 
-	return os.WriteFile(dhcpConfigPath, data, 0644)
+	return os.WriteFile(dhcpConfigPath, data, 0600)
 }
 
 // validateIPRange checks if the IP range is valid and within the interface subnet

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 )
 
@@ -54,7 +53,7 @@ func saveRADVDConfig(store *RADVDStore) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(radvdStorePath, data, 0644)
+	return os.WriteFile(radvdStorePath, data, 0600)
 }
 
 // generateRADVDConfig generates /etc/radvd.conf from the stored configuration
@@ -106,7 +105,7 @@ func generateRADVDConfig() error {
 
 	// Write config file
 	configContent := strings.Join(configLines, "\n")
-	if err := os.WriteFile(radvdConfigPath, []byte(configContent), 0644); err != nil {
+	if err := os.WriteFile(radvdConfigPath, []byte(configContent), 0600); err != nil {
 		return fmt.Errorf("failed to write radvd config: %w", err)
 	}
 
@@ -116,14 +115,8 @@ func generateRADVDConfig() error {
 
 // reloadRADVD reloads the radvd service
 func reloadRADVD() error {
-	// Check if radvd is installed
-	if _, err := exec.LookPath("radvd"); err != nil {
-		return fmt.Errorf("radvd is not installed")
-	}
-
 	// Reload radvd service
-	cmd := exec.Command("systemctl", "reload-or-restart", radvdServiceName)
-	output, err := cmd.CombinedOutput()
+	output, err := runPrivilegedCombinedOutput("systemctl", "reload-or-restart", radvdServiceName)
 	if err != nil {
 		return fmt.Errorf("failed to reload radvd: %v, output: %s", err, string(output))
 	}
@@ -133,8 +126,7 @@ func reloadRADVD() error {
 
 // startRADVD starts the radvd service
 func startRADVD() error {
-	cmd := exec.Command("systemctl", "start", radvdServiceName)
-	output, err := cmd.CombinedOutput()
+	output, err := runPrivilegedCombinedOutput("systemctl", "start", radvdServiceName)
 	if err != nil {
 		return fmt.Errorf("failed to start radvd: %v, output: %s", err, string(output))
 	}
@@ -143,8 +135,7 @@ func startRADVD() error {
 
 // stopRADVD stops the radvd service
 func stopRADVD() error {
-	cmd := exec.Command("systemctl", "stop", radvdServiceName)
-	output, err := cmd.CombinedOutput()
+	output, err := runPrivilegedCombinedOutput("systemctl", "stop", radvdServiceName)
 	if err != nil {
 		return fmt.Errorf("failed to stop radvd: %v, output: %s", err, string(output))
 	}
@@ -153,8 +144,7 @@ func stopRADVD() error {
 
 // enableRADVDService enables radvd to start on boot
 func enableRADVDService() error {
-	cmd := exec.Command("systemctl", "enable", radvdServiceName)
-	output, err := cmd.CombinedOutput()
+	output, err := runPrivilegedCombinedOutput("systemctl", "enable", radvdServiceName)
 	if err != nil {
 		return fmt.Errorf("failed to enable radvd: %v, output: %s", err, string(output))
 	}
@@ -163,8 +153,7 @@ func enableRADVDService() error {
 
 // getRADVDStatus returns the status of the radvd service
 func getRADVDStatus() (bool, error) {
-	cmd := exec.Command("systemctl", "is-active", radvdServiceName)
-	output, err := cmd.CombinedOutput()
+	output, err := runPrivilegedCombinedOutput("systemctl", "is-active", radvdServiceName)
 
 	status := strings.TrimSpace(string(output))
 	isRunning := (err == nil && status == "active")

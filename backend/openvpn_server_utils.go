@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -114,23 +113,44 @@ func setupOpenVPNServer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. PKI Initialization commands
-	// We use a helper script to chain these env vars and commands easily
-	setupScript := fmt.Sprintf(`
-#!/bin/bash
-set -e
-cd %s
-./easyrsa init-pki
-echo "SoftRouter-CA" | ./easyrsa build-ca nopass
-./easyrsa build-server-full server nopass
-./easyrsa gen-dh
-openvpn --genkey --secret ta.key
-cp pki/ca.crt pki/private/server.key pki/issued/server.crt pki/dh.pem ta.key %s/
-`, ovpnEasyRsaDir, ovpnServerDir)
-
-	if err := runShellScript(setupScript); err != nil {
-		http.Error(w, "PKI Setup failed: "+err.Error(), http.StatusInternalServerError)
+	// 2. PKI Initialization - run each command individually (no shell needed)
+	// init-pki
+	if out, err := runPrivilegedInDirCombinedOutput(ovpnEasyRsaDir, "./easyrsa", "init-pki"); err != nil {
+		http.Error(w, "PKI init failed: "+string(out), http.StatusInternalServerError)
 		return
+	}
+
+	// build-ca (pipe "SoftRouter-CA" as stdin for the CN prompt)
+	if out, err := runPrivilegedWithStdinInDir(ovpnEasyRsaDir, []byte("SoftRouter-CA\n"), "./easyrsa", "build-ca", "nopass"); err != nil {
+		http.Error(w, "CA generation failed: "+string(out), http.StatusInternalServerError)
+		return
+	}
+
+	// build-server-full
+	if out, err := runPrivilegedInDirCombinedOutput(ovpnEasyRsaDir, "./easyrsa", "build-server-full", "server", "nopass"); err != nil {
+		http.Error(w, "Server cert failed: "+string(out), http.StatusInternalServerError)
+		return
+	}
+
+	// gen-dh
+	if out, err := runPrivilegedInDirCombinedOutput(ovpnEasyRsaDir, "./easyrsa", "gen-dh"); err != nil {
+		http.Error(w, "DH generation failed: "+string(out), http.StatusInternalServerError)
+		return
+	}
+
+	// Generate TLS key
+	if err := runPrivilegedInDir(ovpnEasyRsaDir, "openvpn", "--genkey", "--secret", "ta.key"); err != nil {
+		http.Error(w, "TLS key generation failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Copy certs to server dir
+	for _, f := range []string{"pki/ca.crt", "pki/private/server.key", "pki/issued/server.crt", "pki/dh.pem", "ta.key"} {
+		src := filepath.Join(ovpnEasyRsaDir, f)
+		if err := runPrivileged("cp", src, ovpnServerDir+"/"); err != nil {
+			http.Error(w, "Failed to copy "+f+": "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	// 3. Write Server Config
@@ -245,24 +265,22 @@ func createOpenVPNClient(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 
-	if req.Name == "" {
-		http.Error(w, "Name required", http.StatusBadRequest)
+	if req.Name == "" || !validVPNClientName.MatchString(req.Name) {
+		http.Error(w, "Invalid name: must be alphanumeric, hyphens, or underscores only", http.StatusBadRequest)
 		return
 	}
 
-	// Generate Cert
-	// Note: easyrsa is not in the allow-list, but since it's in a custom dir, we use bash to find it
-	cmdStr := fmt.Sprintf("cd %s && ./easyrsa build-client-full %s nopass", ovpnEasyRsaDir, req.Name)
-	if out, err := runPrivilegedCombinedOutput("bash", "-c", cmdStr); err != nil {
+	// Generate Cert using easyrsa in its working directory
+	if out, err := runPrivilegedInDirCombinedOutput(ovpnEasyRsaDir, "./easyrsa", "build-client-full", req.Name, "nopass"); err != nil {
 		http.Error(w, "Failed to generate cert: "+string(out), http.StatusInternalServerError)
 		return
 	}
 
 	// Build .ovpn content
-	ca, _ := ioutil.ReadFile(filepath.Join(ovpnServerDir, "ca.crt"))
-	ta, _ := ioutil.ReadFile(filepath.Join(ovpnServerDir, "ta.key"))
-	cert, _ := ioutil.ReadFile(filepath.Join(ovpnEasyRsaDir, "pki", "issued", req.Name+".crt"))
-	key, _ := ioutil.ReadFile(filepath.Join(ovpnEasyRsaDir, "pki", "private", req.Name+".key"))
+	ca, _ := os.ReadFile(filepath.Join(ovpnServerDir, "ca.crt"))
+	ta, _ := os.ReadFile(filepath.Join(ovpnServerDir, "ta.key"))
+	cert, _ := os.ReadFile(filepath.Join(ovpnEasyRsaDir, "pki", "issued", req.Name+".crt"))
+	key, _ := os.ReadFile(filepath.Join(ovpnEasyRsaDir, "pki", "private", req.Name+".key"))
 
 	// Get VPN endpoint from configuration
 	publicIP, err := getVPNEndpoint()
@@ -314,6 +332,10 @@ verb 3
 // downloadOpenVPNClient returns the file
 func downloadOpenVPNClient(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("name")
+	if name == "" || !validVPNClientName.MatchString(name) {
+		http.Error(w, "Invalid name", http.StatusBadRequest)
+		return
+	}
 	path := filepath.Join("/var/www/softrouter/vpn_configs", name+".ovpn")
 
 	if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -328,14 +350,16 @@ func downloadOpenVPNClient(w http.ResponseWriter, r *http.Request) {
 // deleteOpenVPNClient revokes the cert
 func deleteOpenVPNClient(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("name")
+	if name == "" || !validVPNClientName.MatchString(name) {
+		http.Error(w, "Invalid name", http.StatusBadRequest)
+		return
+	}
 
 	// Revoke
-	revokeCmd := fmt.Sprintf("cd %s && ./easyrsa --batch revoke %s", ovpnEasyRsaDir, name)
-	runPrivilegedCombinedOutput("bash", "-c", revokeCmd)
+	runPrivilegedInDirCombinedOutput(ovpnEasyRsaDir, "./easyrsa", "--batch", "revoke", name)
 
 	// Gen CRL
-	crlCmd := fmt.Sprintf("cd %s && ./easyrsa gen-crl", ovpnEasyRsaDir)
-	runPrivilegedCombinedOutput("bash", "-c", crlCmd)
+	runPrivilegedInDirCombinedOutput(ovpnEasyRsaDir, "./easyrsa", "gen-crl")
 
 	// Copy CRL to server dir
 	runPrivileged("cp", filepath.Join(ovpnEasyRsaDir, "pki", "crl.pem"), ovpnServerDir+"/")
@@ -345,12 +369,4 @@ func deleteOpenVPNClient(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "revoked"})
-}
-
-func runShellScript(script string) error {
-	output, err := runPrivilegedCombinedOutput("bash", "-c", script)
-	if err != nil {
-		return fmt.Errorf("%s: %s", err, string(output))
-	}
-	return nil
 }

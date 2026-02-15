@@ -62,7 +62,7 @@ func saveWoLDevices(store *WoLStore) error {
 		return fmt.Errorf("failed to marshal devices: %w", err)
 	}
 
-	if err := os.WriteFile(wolDevicesPath, data, 0644); err != nil {
+	if err := os.WriteFile(wolDevicesPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write devices file: %w", err)
 	}
 

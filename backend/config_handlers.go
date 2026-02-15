@@ -70,8 +70,8 @@ func saveConfig(cfg Config) error {
 	if err != nil {
 		return err
 	}
-	// Use 0640 permissions (owner read/write, group read)
-	return os.WriteFile(configFilePath, data, 0640)
+	// Use 0600 permissions (owner read/write only)
+	return os.WriteFile(configFilePath, data, 0600)
 }
 
 // --- HTTP Handlers ---

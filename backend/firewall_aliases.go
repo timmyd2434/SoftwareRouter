@@ -66,7 +66,7 @@ func saveFirewallAliases(store *AliasStore) error {
 		return fmt.Errorf("failed to marshal aliases: %w", err)
 	}
 
-	if err := os.WriteFile(aliasConfigPath, data, 0644); err != nil {
+	if err := os.WriteFile(aliasConfigPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write aliases file: %w", err)
 	}
 

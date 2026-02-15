@@ -32,10 +32,13 @@ var allowedCommands = map[string]bool{
 	"journalctl":  true, // Log access
 	// SECURITY FIX (HIGH-1): bash/sh removed - shell access eliminated
 	// Any operations requiring shell must be refactored to use native Go
-	"curl":   true, // HTTP client (for downloads during setup)
-	"pihole": true, // Pi-hole CLI
-	"cscli":  true, // CrowdSec CLI
-	"tail":   true, // Log reading (for Suricata alerts)
+	"curl":      true, // HTTP client (for downloads during setup)
+	"pihole":    true, // Pi-hole CLI
+	"cscli":     true, // CrowdSec CLI
+	"tail":      true, // Log reading (for Suricata alerts)
+	"./easyrsa": true, // OpenVPN PKI management (run via runPrivilegedInDir)
+	"openvpn":   true, // OpenVPN key generation
+	"cp":        true, // File copy (used by OpenVPN setup)
 }
 
 // commandExecutionLog stores recent command executions for debugging
@@ -191,4 +194,95 @@ func runPrivilegedCombinedOutput(cmd string, args ...string) ([]byte, error) {
 // This is useful for debugging and security auditing
 func GetRecentCommandExecutions() []commandExecutionLog {
 	return recentCommands
+}
+
+// runPrivilegedWithStdin executes a privileged command with data piped to stdin
+// This replaces shell piping patterns like "echo X | cmd" without requiring shell access
+func runPrivilegedWithStdin(stdinData []byte, cmd string, args ...string) ([]byte, error) {
+	if err := validateCommand(cmd, args); err != nil {
+		logCommandExecution(cmd, args, false, err)
+		return nil, err
+	}
+
+	execCmd := exec.Command(cmd, args...)
+	execCmd.Stdin = strings.NewReader(string(stdinData))
+	output, err := execCmd.CombinedOutput()
+
+	logCommandExecution(cmd, args, err == nil, err)
+
+	if err != nil {
+		return output, fmt.Errorf("command '%s %s' failed: %w", cmd, strings.Join(args, " "), err)
+	}
+
+	return output, nil
+}
+
+// deriveWireGuardPublicKey derives a public key from a private key
+// without using shell piping (sh/bash removed from allowlist)
+func deriveWireGuardPublicKey(privKey []byte) ([]byte, error) {
+	return runPrivilegedWithStdin([]byte(strings.TrimSpace(string(privKey))+"\n"), "wg", "pubkey")
+}
+
+// runPrivilegedInDir executes a privileged command in a specific working directory.
+// This replaces `bash -c "cd DIR && command"` patterns without needing shell access.
+func runPrivilegedInDir(dir string, cmd string, args ...string) error {
+	if err := validateCommand(cmd, args); err != nil {
+		logCommandExecution(cmd, args, false, err)
+		return err
+	}
+
+	execCmd := exec.Command(cmd, args...)
+	execCmd.Dir = dir
+	err := execCmd.Run()
+
+	logCommandExecution(cmd, args, err == nil, err)
+
+	if err != nil {
+		return fmt.Errorf("command '%s %s' (in %s) failed: %w", cmd, strings.Join(args, " "), dir, err)
+	}
+
+	return nil
+}
+
+// runPrivilegedInDirCombinedOutput executes a privileged command in a specific working
+// directory and returns stdout+stderr.
+func runPrivilegedInDirCombinedOutput(dir string, cmd string, args ...string) ([]byte, error) {
+	if err := validateCommand(cmd, args); err != nil {
+		logCommandExecution(cmd, args, false, err)
+		return nil, err
+	}
+
+	execCmd := exec.Command(cmd, args...)
+	execCmd.Dir = dir
+	output, err := execCmd.CombinedOutput()
+
+	logCommandExecution(cmd, args, err == nil, err)
+
+	if err != nil {
+		return output, fmt.Errorf("command '%s %s' (in %s) failed: %w", cmd, strings.Join(args, " "), dir, err)
+	}
+
+	return output, nil
+}
+
+// runPrivilegedWithStdinInDir executes a privileged command in a directory with stdin data.
+// Combines the functionality of runPrivilegedWithStdin and runPrivilegedInDir.
+func runPrivilegedWithStdinInDir(dir string, stdinData []byte, cmd string, args ...string) ([]byte, error) {
+	if err := validateCommand(cmd, args); err != nil {
+		logCommandExecution(cmd, args, false, err)
+		return nil, err
+	}
+
+	execCmd := exec.Command(cmd, args...)
+	execCmd.Dir = dir
+	execCmd.Stdin = strings.NewReader(string(stdinData))
+	output, err := execCmd.CombinedOutput()
+
+	logCommandExecution(cmd, args, err == nil, err)
+
+	if err != nil {
+		return output, fmt.Errorf("command '%s %s' (in %s) failed: %w", cmd, strings.Join(args, " "), dir, err)
+	}
+
+	return output, nil
 }

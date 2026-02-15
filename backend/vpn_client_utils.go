@@ -51,7 +51,7 @@ func saveVPNPolicies(policies []VPNPolicy) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(vpnPoliciesFile, data, 0644)
+	return os.WriteFile(vpnPoliciesFile, data, 0600)
 }
 
 // getVPNClientStatus checks systemd and interface status

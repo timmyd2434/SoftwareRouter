@@ -119,18 +119,36 @@ func initWireGuard() {
 
 	if _, err := os.Stat(privPath); os.IsNotExist(err) {
 		fmt.Println("Initializing WireGuard Server Keys...")
-		privKey, _ := runPrivilegedOutput("wg", "genkey")
-		os.WriteFile(privPath, privKey, 0600)
+		privKey, err := runPrivilegedOutput("wg", "genkey")
+		if err != nil {
+			log.Fatalf("CRITICAL: WireGuard key generation failed: %v", err)
+		}
+		if len(strings.TrimSpace(string(privKey))) == 0 {
+			log.Fatalf("CRITICAL: WireGuard generated empty private key")
+		}
+		if err := os.WriteFile(privPath, privKey, 0600); err != nil {
+			log.Fatalf("CRITICAL: Failed to write WireGuard private key: %v", err)
+		}
 
-		pubKey, _ := runPrivilegedCombinedOutput("sh", "-c", fmt.Sprintf("echo %s | wg pubkey", strings.TrimSpace(string(privKey))))
-		os.WriteFile(pubPath, pubKey, 0644)
+		pubKey, err := deriveWireGuardPublicKey(privKey)
+		if err != nil {
+			log.Fatalf("CRITICAL: WireGuard public key derivation failed: %v", err)
+		}
+		if err := os.WriteFile(pubPath, pubKey, 0644); err != nil {
+			log.Fatalf("CRITICAL: Failed to write WireGuard public key: %v", err)
+		}
 	}
 
 	if _, err := os.Stat(confPath); os.IsNotExist(err) {
 		fmt.Println("Initializing WireGuard Base Config...")
-		privData, _ := os.ReadFile(privPath)
+		privData, err := os.ReadFile(privPath)
+		if err != nil {
+			log.Fatalf("CRITICAL: Failed to read WireGuard private key for config: %v", err)
+		}
 		baseConf := fmt.Sprintf("[Interface]\nPrivateKey = %s\nAddress = 10.8.0.1/24\nListenPort = 51820\nPostUp = nft add table inet wg-filter; nft add chain inet wg-filter postrouting { type nat hook postrouting priority 100; policy accept; }; nft add rule inet wg-filter postrouting oifname \"*\" masquerade\nPostDown = nft delete table inet wg-filter\n", strings.TrimSpace(string(privData)))
-		os.WriteFile(confPath, []byte(baseConf), 0600)
+		if err := os.WriteFile(confPath, []byte(baseConf), 0600); err != nil {
+			log.Fatalf("CRITICAL: Failed to write WireGuard config: %v", err)
+		}
 	}
 }
 
@@ -1459,8 +1477,19 @@ func main() {
 	authLimiter := NewRateLimiter()  // 10 req/min for login
 	writeLimiter := NewRateLimiter() // 30 req/min for mutations
 	readLimiter := NewRateLimiter()  // 60 req/min for reads
-	_ = writeLimiter                 // TODO: apply to write endpoints
-	_ = readLimiter                  // TODO: apply to read endpoints
+
+	// Rate-limited middleware helpers
+	// authWrite: auth + CSRF + rate limit for state-changing endpoints
+	authWrite := func(handler http.HandlerFunc) http.HandlerFunc {
+		return rateLimitMiddleware(writeLimiter, 30, time.Minute)(authMiddleware(csrfMiddleware(handler)))
+	}
+	// authRead: auth + rate limit for read-only endpoints
+	authRead := func(handler http.HandlerFunc) http.HandlerFunc {
+		return rateLimitMiddleware(readLimiter, 60, time.Minute)(authMiddleware(handler))
+	}
+	// Suppress unused warnings until all routes are migrated
+	_ = authWrite
+	_ = authRead
 
 	cleanupCSRFTokens()   // Start CSRF token cleanup
 	startSessionCleanup() // Start session cleanup
@@ -1469,7 +1498,7 @@ func main() {
 
 	// Public Auth Endpoints (strict 10 req/min to prevent brute force)
 	mux.HandleFunc("POST /api/login", rateLimitMiddleware(authLimiter, 10, time.Minute)(login))
-	mux.HandleFunc("POST /api/logout", authMiddleware(logout)) // Tier 4: Session management
+	mux.HandleFunc("POST /api/logout", authMiddleware(csrfMiddleware(logout)))
 
 	// CSRF Token Endpoint  (authenticated)
 	mux.HandleFunc("GET /api/csrf-token", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
@@ -1546,9 +1575,9 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 	})))
-	mux.HandleFunc("POST /api/auth/update-credentials", authMiddleware(updateCredentials))
+	mux.HandleFunc("POST /api/auth/update-credentials", authMiddleware(csrfMiddleware(updateCredentials)))
 	mux.HandleFunc("GET /api/settings", authMiddleware(getSettings))
-	mux.HandleFunc("POST /api/settings", authMiddleware(updateSettings))
+	mux.HandleFunc("POST /api/settings", authMiddleware(csrfMiddleware(updateSettings)))
 
 	// Audit Logs
 	mux.HandleFunc("GET /api/audit/logs", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
@@ -1701,13 +1730,13 @@ func main() {
 	})))
 
 	mux.HandleFunc("GET /api/interfaces", authMiddleware(getInterfaces))
-	mux.HandleFunc("POST /api/interfaces/vlan", authMiddleware(createVLAN))
-	mux.HandleFunc("DELETE /api/interfaces/vlan", authMiddleware(deleteVLAN))
-	mux.HandleFunc("POST /api/interfaces/ip", authMiddleware(configureIP))
-	mux.HandleFunc("POST /api/interfaces/ipv6", authMiddleware(configureIPv6)) // IPv6 address configuration
-	mux.HandleFunc("POST /api/interfaces/state", authMiddleware(setInterfaceState))
+	mux.HandleFunc("POST /api/interfaces/vlan", authMiddleware(csrfMiddleware(createVLAN)))
+	mux.HandleFunc("DELETE /api/interfaces/vlan", authMiddleware(csrfMiddleware(deleteVLAN)))
+	mux.HandleFunc("POST /api/interfaces/ip", authMiddleware(csrfMiddleware(configureIP)))
+	mux.HandleFunc("POST /api/interfaces/ipv6", authMiddleware(csrfMiddleware(configureIPv6)))
+	mux.HandleFunc("POST /api/interfaces/state", authMiddleware(csrfMiddleware(setInterfaceState)))
 	mux.HandleFunc("GET /api/interfaces/metadata", authMiddleware(getInterfaceMetadata))
-	mux.HandleFunc("POST /api/interfaces/label", authMiddleware(setInterfaceLabel))
+	mux.HandleFunc("POST /api/interfaces/label", authMiddleware(csrfMiddleware(setInterfaceLabel)))
 
 	// Bridge management
 	mux.HandleFunc("GET /api/bridges", authMiddleware(getBridges))
@@ -1725,37 +1754,37 @@ func main() {
 
 	// Traffic Control / QoS
 	mux.HandleFunc("GET /api/qos", authMiddleware(getQoSConfig))
-	mux.HandleFunc("POST /api/qos", authMiddleware(updateQoSConfig))
-	mux.HandleFunc("DELETE /api/qos", authMiddleware(deleteQoSConfig))
+	mux.HandleFunc("POST /api/qos", authMiddleware(csrfMiddleware(updateQoSConfig)))
+	mux.HandleFunc("DELETE /api/qos", authMiddleware(csrfMiddleware(deleteQoSConfig)))
 
 	// Diagnostics
-	mux.HandleFunc("POST /api/tools/ping", authMiddleware(handlePing))
-	mux.HandleFunc("POST /api/tools/traceroute", authMiddleware(handleTraceroute))
+	mux.HandleFunc("POST /api/tools/ping", authMiddleware(csrfMiddleware(handlePing)))
+	mux.HandleFunc("POST /api/tools/traceroute", authMiddleware(csrfMiddleware(handleTraceroute)))
 	mux.HandleFunc("GET /api/system/logs", authMiddleware(handleSystemLogs))
 
 	// Wake-on-LAN
-	mux.HandleFunc("POST /api/wol/wake", authMiddleware(handleWakeOnLAN))
+	mux.HandleFunc("POST /api/wol/wake", authMiddleware(csrfMiddleware(handleWakeOnLAN)))
 	mux.HandleFunc("GET /api/wol/devices", authMiddleware(handleGetWoLDevices))
-	mux.HandleFunc("POST /api/wol/devices", authMiddleware(handleSaveWoLDevice))
-	mux.HandleFunc("DELETE /api/wol/devices", authMiddleware(handleDeleteWoLDevice))
+	mux.HandleFunc("POST /api/wol/devices", authMiddleware(csrfMiddleware(handleSaveWoLDevice)))
+	mux.HandleFunc("DELETE /api/wol/devices", authMiddleware(csrfMiddleware(handleDeleteWoLDevice)))
 
 	// GeoBlocking
 	mux.HandleFunc("GET /api/geoblocking/config", authMiddleware(handleGetGeoBlockingConfig))
-	mux.HandleFunc("POST /api/geoblocking/config", authMiddleware(handleUpdateGeoBlockingConfig))
-	mux.HandleFunc("POST /api/geoblocking/download", authMiddleware(handleDownloadCountryIPList))
+	mux.HandleFunc("POST /api/geoblocking/config", authMiddleware(csrfMiddleware(handleUpdateGeoBlockingConfig)))
+	mux.HandleFunc("POST /api/geoblocking/download", authMiddleware(csrfMiddleware(handleDownloadCountryIPList)))
 
 	// Traffic History
 	mux.HandleFunc("GET /api/traffic/history", authMiddleware(getTrafficHistory))
 	mux.HandleFunc("GET /api/firewall", authMiddleware(getFirewallRules))
-	mux.HandleFunc("POST /api/firewall", authMiddleware(addFirewallRule))
-	mux.HandleFunc("DELETE /api/firewall", authMiddleware(deleteFirewallRule))
+	mux.HandleFunc("POST /api/firewall", authMiddleware(csrfMiddleware(addFirewallRule)))
+	mux.HandleFunc("DELETE /api/firewall", authMiddleware(csrfMiddleware(deleteFirewallRule)))
 	mux.HandleFunc("POST /api/firewall/confirm", authMiddleware(csrfMiddleware(confirmFirewallChanges))) // Watchdog confirmation
 	mux.HandleFunc("GET /api/firewall/aliases", authMiddleware(handleFirewallAliases))
-	mux.HandleFunc("POST /api/firewall/aliases", authMiddleware(handleFirewallAliases))
-	mux.HandleFunc("PUT /api/firewall/aliases", authMiddleware(handleFirewallAliases))
-	mux.HandleFunc("DELETE /api/firewall/aliases", authMiddleware(handleFirewallAliases))
+	mux.HandleFunc("POST /api/firewall/aliases", authMiddleware(csrfMiddleware(handleFirewallAliases)))
+	mux.HandleFunc("PUT /api/firewall/aliases", authMiddleware(csrfMiddleware(handleFirewallAliases)))
+	mux.HandleFunc("DELETE /api/firewall/aliases", authMiddleware(csrfMiddleware(handleFirewallAliases)))
 	mux.HandleFunc("GET /api/services", authMiddleware(getServices))
-	mux.HandleFunc("POST /api/services/control", authMiddleware(controlService))
+	mux.HandleFunc("POST /api/services/control", authMiddleware(csrfMiddleware(controlService)))
 	mux.HandleFunc("GET /api/traffic/stats", authMiddleware(getTrafficStats))
 
 	mux.HandleFunc("GET /api/traffic/connections", authMiddleware(getActiveConnections))
@@ -1766,11 +1795,11 @@ func main() {
 
 	// DHCP Endpoints
 	mux.HandleFunc("GET /api/dhcp/config", authMiddleware(getDHCPConfig))
-	mux.HandleFunc("POST /api/dhcp/config", authMiddleware(setDHCPConfig))
-	mux.HandleFunc("DELETE /api/dhcp/config", authMiddleware(deleteDHCPConfig))
+	mux.HandleFunc("POST /api/dhcp/config", authMiddleware(csrfMiddleware(setDHCPConfig)))
+	mux.HandleFunc("DELETE /api/dhcp/config", authMiddleware(csrfMiddleware(deleteDHCPConfig)))
 	mux.HandleFunc("GET /api/dhcp/leases", authMiddleware(getDHCPLeases))
-	mux.HandleFunc("POST /api/dhcp/static", authMiddleware(addStaticLease))
-	mux.HandleFunc("DELETE /api/dhcp/static", authMiddleware(removeStaticLease))
+	mux.HandleFunc("POST /api/dhcp/static", authMiddleware(csrfMiddleware(addStaticLease)))
+	mux.HandleFunc("DELETE /api/dhcp/static", authMiddleware(csrfMiddleware(removeStaticLease)))
 
 	// Router Advertisement (IPv6 SLAAC)
 	mux.HandleFunc("GET /api/ra/config", authMiddleware(getRAConfig))
@@ -1780,24 +1809,24 @@ func main() {
 
 	// VPN Endpoints
 	mux.HandleFunc("GET /api/vpn/clients", authMiddleware(listVPNClients))
-	mux.HandleFunc("POST /api/vpn/clients", authMiddleware(addVPNClient))
-	mux.HandleFunc("DELETE /api/vpn/clients", authMiddleware(deleteVPNClient))
+	mux.HandleFunc("POST /api/vpn/clients", authMiddleware(csrfMiddleware(addVPNClient)))
+	mux.HandleFunc("DELETE /api/vpn/clients", authMiddleware(csrfMiddleware(deleteVPNClient)))
 	mux.HandleFunc("GET /api/vpn/download", authMiddleware(downloadVPNClient))
 
 	// OpenVPN Client & PBR
 	mux.HandleFunc("GET /api/vpn/client/status", authMiddleware(getVPNClientStatus))
-	mux.HandleFunc("POST /api/vpn/client/config", authMiddleware(uploadVPNClientConfig))
-	mux.HandleFunc("POST /api/vpn/client/control", authMiddleware(controlVPNClient))
+	mux.HandleFunc("POST /api/vpn/client/config", authMiddleware(csrfMiddleware(uploadVPNClientConfig)))
+	mux.HandleFunc("POST /api/vpn/client/control", authMiddleware(csrfMiddleware(controlVPNClient)))
 	mux.HandleFunc("GET /api/vpn/client/policies", authMiddleware(getVPNPolicies))
-	mux.HandleFunc("POST /api/vpn/client/policies", authMiddleware(addVPNPolicy))
-	mux.HandleFunc("DELETE /api/vpn/client/policies", authMiddleware(deleteVPNPolicy))
+	mux.HandleFunc("POST /api/vpn/client/policies", authMiddleware(csrfMiddleware(addVPNPolicy)))
+	mux.HandleFunc("DELETE /api/vpn/client/policies", authMiddleware(csrfMiddleware(deleteVPNPolicy)))
 
 	// OpenVPN Server
 	mux.HandleFunc("GET /api/vpn/server-openvpn/status", authMiddleware(getOpenVPNServerStatus))
-	mux.HandleFunc("POST /api/vpn/server-openvpn/setup", authMiddleware(setupOpenVPNServer))
+	mux.HandleFunc("POST /api/vpn/server-openvpn/setup", authMiddleware(csrfMiddleware(setupOpenVPNServer)))
 	mux.HandleFunc("GET /api/vpn/server-openvpn/clients", authMiddleware(listOpenVPNClients))
-	mux.HandleFunc("POST /api/vpn/server-openvpn/clients", authMiddleware(createOpenVPNClient))
-	mux.HandleFunc("DELETE /api/vpn/server-openvpn/clients", authMiddleware(deleteOpenVPNClient))
+	mux.HandleFunc("POST /api/vpn/server-openvpn/clients", authMiddleware(csrfMiddleware(createOpenVPNClient)))
+	mux.HandleFunc("DELETE /api/vpn/server-openvpn/clients", authMiddleware(csrfMiddleware(deleteOpenVPNClient)))
 	// Download .ovpn without CSRF (it's a GET with auth)
 	mux.HandleFunc("GET /api/vpn/server-openvpn/download", authMiddleware(downloadOpenVPNClient))
 
@@ -1822,22 +1851,22 @@ func main() {
 
 	// Port Forwarding
 	mux.HandleFunc("GET /api/port-forwarding", authMiddleware(listPortForwardingRules))
-	mux.HandleFunc("POST /api/port-forwarding", authMiddleware(createPortForwardingRule))
-	mux.HandleFunc("PUT /api/port-forwarding", authMiddleware(updatePortForwardingRuleHandler))
-	mux.HandleFunc("DELETE /api/port-forwarding", authMiddleware(removePortForwardingRule))
+	mux.HandleFunc("POST /api/port-forwarding", authMiddleware(csrfMiddleware(createPortForwardingRule)))
+	mux.HandleFunc("PUT /api/port-forwarding", authMiddleware(csrfMiddleware(updatePortForwardingRuleHandler)))
+	mux.HandleFunc("DELETE /api/port-forwarding", authMiddleware(csrfMiddleware(removePortForwardingRule)))
 
 	// Routes (Static)
 	mux.HandleFunc("GET /api/routes", authMiddleware(getRoutes))
-	mux.HandleFunc("POST /api/routes", authMiddleware(createRoute))
-	mux.HandleFunc("DELETE /api/routes", authMiddleware(deleteRoute))
+	mux.HandleFunc("POST /api/routes", authMiddleware(csrfMiddleware(createRoute)))
+	mux.HandleFunc("DELETE /api/routes", authMiddleware(csrfMiddleware(deleteRoute)))
 
 	// Multi-WAN
 	mux.HandleFunc("GET /api/wan", authMiddleware(getWANInterfaces))
-	mux.HandleFunc("POST /api/wan", authMiddleware(updateWANInterfaces))
+	mux.HandleFunc("POST /api/wan", authMiddleware(csrfMiddleware(updateWANInterfaces)))
 
 	// Dynamic Routing
 	mux.HandleFunc("GET /api/routing/dynamic", authMiddleware(getDynamicRouting))
-	mux.HandleFunc("POST /api/routing/dynamic", authMiddleware(updateDynamicRouting))
+	mux.HandleFunc("POST /api/routing/dynamic", authMiddleware(csrfMiddleware(updateDynamicRouting)))
 
 	// Start Background Services
 	go func() {

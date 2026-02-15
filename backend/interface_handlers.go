@@ -63,7 +63,7 @@ func saveInterfaceMetadata(store *InterfaceMetadataStore) error {
 		return err
 	}
 
-	return os.WriteFile(metadataFilePath, data, 0644)
+	return os.WriteFile(metadataFilePath, data, 0600)
 }
 
 // --- HTTP Handlers ---

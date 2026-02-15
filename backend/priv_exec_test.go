@@ -40,7 +40,7 @@ func TestValidateCommand(t *testing.T) {
 			name:      "shell with -c flag",
 			cmd:       "bash",
 			args:      []string{"-c", "echo test"},
-			wantError: false,
+			wantError: true, // bash removed from allowlist (security fix)
 		},
 		{
 			name:      "shell without -c flag",

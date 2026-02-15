@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -67,7 +66,7 @@ func saveGeoBlockingConfig(cfg *GeoBlockingConfig) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	if err := os.WriteFile(geoBlockingConfigPath, data, 0644); err != nil {
+	if err := os.WriteFile(geoBlockingConfigPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
@@ -135,9 +134,8 @@ func downloadCountryIPList(countryCode string) error {
 
 	fmt.Printf("Downloading IP list for %s from %s\n", code, url)
 
-	// Download using curl (simple and reliable)
-	cmd := exec.Command("curl", "-f", "-s", "-L", "-o", getCountryIPListPath(code), url)
-	if err := cmd.Run(); err != nil {
+	// Download using curl via privileged executor (allowlist-controlled)
+	if err := runPrivileged("curl", "-f", "-s", "-L", "-o", getCountryIPListPath(code), url); err != nil {
 		return fmt.Errorf("failed to download IP list for %s: %w", code, err)
 	}
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -23,10 +24,10 @@ func generateSecureToken(username string) string {
 	timestamp := time.Now().Unix()
 	payload := fmt.Sprintf("%s:%d", username, timestamp)
 
-	h := sha256.New()
-	h.Write([]byte(payload))
-	h.Write(tokenSecret)
-	signature := hex.EncodeToString(h.Sum(nil))
+	// HMAC-SHA256: standard construction, immune to length extension attacks
+	mac := hmac.New(sha256.New, tokenSecret)
+	mac.Write([]byte(payload))
+	signature := hex.EncodeToString(mac.Sum(nil))
 
 	// Format: Bearer sr-<username>-<timestamp>-<signature>
 	return fmt.Sprintf("sr-%s-%d-%s", username, timestamp, signature)
@@ -46,12 +47,11 @@ func verifySecureToken(token string) bool {
 	timestampStr := parts[1]
 	providedSignature := parts[2]
 
-	// Re-generate signature to verify
+	// Re-generate signature to verify using HMAC-SHA256
 	payload := fmt.Sprintf("%s:%s", username, timestampStr)
-	h := sha256.New()
-	h.Write([]byte(payload))
-	h.Write(tokenSecret)
-	expectedSignature := hex.EncodeToString(h.Sum(nil))
+	mac := hmac.New(sha256.New, tokenSecret)
+	mac.Write([]byte(payload))
+	expectedSignature := hex.EncodeToString(mac.Sum(nil))
 
 	// Parse and validate timestamp for expiration
 	timestamp, err := strconv.ParseInt(timestampStr, 10, 64)
@@ -75,8 +75,8 @@ func verifySecureToken(token string) bool {
 		return false
 	}
 
-	// Constant time comparison (simple for now but better than nothing)
-	return providedSignature == expectedSignature
+	// Constant-time comparison to prevent timing attacks
+	return hmac.Equal([]byte(providedSignature), []byte(expectedSignature))
 }
 
 // getUsernameFromToken extracts username from the Bearer token
@@ -222,22 +222,6 @@ func cleanupCSRFTokens() {
 // csrfMiddleware validates CSRF tokens for state-changing operations
 func csrfMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// SECURITY: Localhost bypass for emergency recovery
-		// If user is locked out remotely, they can still access via direct localhost connection
-		// This is safe because:
-		// 1. Attacker must have physical/SSH access to router (already privileged)
-		// 2. Browser's same-origin policy protects localhost from external sites
-		remoteAddr := r.RemoteAddr
-		host, _, err := net.SplitHostPort(remoteAddr)
-		if err == nil {
-			// Check if connection is from localhost
-			if host == "127.0.0.1" || host == "::1" || host == "localhost" {
-				log.Printf("INFO: CSRF check bypassed for localhost connection from %s", remoteAddr)
-				next.ServeHTTP(w, r)
-				return
-			}
-		}
-
 		// Only check CSRF for state-changing methods
 		if r.Method != "GET" && r.Method != "OPTIONS" && r.Method != "HEAD" {
 			token := r.Header.Get("X-CSRF-Token")

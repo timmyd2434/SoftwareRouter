@@ -42,77 +42,7 @@ func generateControlPlaneRules() string {
 	return b.String()
 }
 
-// injectControlPlaneProtection inserts control plane rules into the INPUT chain
-// This modifies an existing ruleset to add protection before user-defined rules
-func injectControlPlaneProtection(ruleset string) string {
-	// Find the INPUT chain and inject protection rules after the basic accepts
-	// We want to inject after:
-	// - loopback accept
-	// - established,related accept
-	// - invalid drop
-	// But before:
-	// - User-defined rules
-	// - LAN interface accepts
-
-	lines := strings.Split(ruleset, "\n")
-	var result strings.Builder
-	injected := false
-
-	for i, line := range lines {
-		result.WriteString(line)
-		result.WriteString("\n")
-
-		// Look for the INPUT chain and inject after the basic security rules
-		if strings.Contains(line, "chain input") {
-			// Scan forward to find where to inject
-			// We want to inject after "ct state invalid drop" but before interface-specific rules
-			for j := i + 1; j < len(lines); j++ {
-				currentLine := strings.TrimSpace(lines[j])
-
-				// Found the injection point - after invalid drop and ICMP accepts
-				if strings.Contains(currentLine, "ip6 nexthdr icmpv6 accept") {
-					// Inject control plane rules here
-					if !injected {
-						// Write the next few lines until we hit the ICMP line
-						for k := i + 1; k <= j; k++ {
-							result.WriteString(lines[k])
-							result.WriteString("\n")
-						}
-
-						// Now inject control plane protection
-						result.WriteString(generateControlPlaneRules())
-						injected = true
-
-						// Skip the lines we already wrote
-						i = j
-						break
-					}
-				}
-			}
-		}
-
-		// If we've already injected, skip lines we've already written
-		if injected && i < len(lines)-1 {
-			break
-		}
-	}
-
-	// If we didn't inject (ruleset format different than expected), log warning
-	if !injected {
-		fmt.Println("[CONTROL_PLANE] WARNING: Could not inject control plane rules - ruleset format unexpected")
-		return ruleset // Return original
-	}
-
-	// Write remaining lines
-	for i := len(result.String()); i < len(ruleset); i++ {
-		// This is a bit hacky but we need to append the rest
-		// Actually, let's reconstruct properly
-	}
-
-	return result.String()
-}
-
-// A better implementation that's more robust:
+// injectControlPlaneProtectionV2 is used instead of the original V1 implementation.
 func injectControlPlaneProtectionV2(ruleset string) string {
 	// Strategy: Find "ip6 nexthdr icmpv6 accept" and inject our rules right after it
 

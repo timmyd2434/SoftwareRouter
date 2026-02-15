@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
 )
@@ -120,8 +119,7 @@ func (fm *FirewallManager) ApplyFirewallRules() error {
 
 	// Validate with nft -c (check mode)
 	fmt.Println("Validating ruleset syntax...")
-	validateCmd := exec.Command("nft", "-c", "-f", tmpPath)
-	validateOutput, validateErr := validateCmd.CombinedOutput()
+	validateOutput, validateErr := runPrivilegedCombinedOutput("nft", "-c", "-f", tmpPath)
 
 	if validateErr != nil {
 		// KEEP the file for debugging and log detailed error

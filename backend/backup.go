@@ -176,7 +176,7 @@ func restoreBackup(data []byte) error {
 	// Restore DHCP configuration
 	if snapshot.Config.DHCPConfig != nil {
 		dhcpJSON, _ := json.MarshalIndent(snapshot.Config.DHCPConfig, "", "  ")
-		if err := os.WriteFile(dhcpConfigPath, dhcpJSON, 0644); err != nil {
+		if err := os.WriteFile(dhcpConfigPath, dhcpJSON, 0600); err != nil {
 			log.Printf("WARNING: Failed to restore DHCP config: %v", err)
 		}
 	}

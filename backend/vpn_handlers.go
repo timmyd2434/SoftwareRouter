@@ -5,9 +5,14 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
+
+// validVPNClientName ensures the name contains only safe characters (alphanumeric, hyphens, underscores)
+// This prevents path traversal (../../etc/passwd) and command injection via easyrsa args
+var validVPNClientName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // --- VPN Client Management ---
 
@@ -42,14 +47,27 @@ func addVPNClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Name == "" || !validVPNClientName.MatchString(req.Name) {
+		http.Error(w, "Invalid name: must be alphanumeric, hyphens, or underscores only", http.StatusBadRequest)
+		return
+	}
+
 	clientsDir := "/etc/softrouter/vpn_clients"
 	os.MkdirAll(clientsDir, 0755)
 
 	// 1. Generate Client Keys
-	privKey, _ := runPrivilegedOutput("wg", "genkey")
+	privKey, err := runPrivilegedOutput("wg", "genkey")
+	if err != nil {
+		http.Error(w, "Failed to generate client key: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	cleanPriv := strings.TrimSpace(string(privKey))
 
-	pubKey, _ := runPrivilegedCombinedOutput("sh", "-c", fmt.Sprintf("echo %s | wg pubkey", cleanPriv))
+	pubKey, err := deriveWireGuardPublicKey(privKey)
+	if err != nil {
+		http.Error(w, "Failed to derive public key: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	cleanPub := strings.TrimSpace(string(pubKey))
 
 	// 2. Determine an IP (Basic assignment for now)
@@ -91,8 +109,8 @@ func addVPNClient(w http.ResponseWriter, r *http.Request) {
 
 func deleteVPNClient(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("name")
-	if name == "" {
-		http.Error(w, "Name required", http.StatusBadRequest)
+	if name == "" || !validVPNClientName.MatchString(name) {
+		http.Error(w, "Invalid name", http.StatusBadRequest)
 		return
 	}
 
@@ -108,6 +126,10 @@ func deleteVPNClient(w http.ResponseWriter, r *http.Request) {
 
 func downloadVPNClient(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("name")
+	if name == "" || !validVPNClientName.MatchString(name) {
+		http.Error(w, "Invalid name", http.StatusBadRequest)
+		return
+	}
 	clientsDir := "/etc/softrouter/vpn_clients"
 	confPath := fmt.Sprintf("%s/%s.conf", clientsDir, name)
 
