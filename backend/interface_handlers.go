@@ -317,6 +317,15 @@ func configureIP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check for IP address conflicts before applying
+	if req.Action == "add" {
+		if err := checkIPConflicts(req.IPAddress, req.InterfaceName, req.Action); err != nil {
+			log.Printf("IP conflict detected: %v", err)
+			http.Error(w, fmt.Sprintf("IP conflict detected: %v", err), http.StatusConflict)
+			return
+		}
+	}
+
 	fmt.Printf("Configuring IP: %s %s on %s\n", req.Action, req.IPAddress, req.InterfaceName)
 
 	// Use ip addr add/del
@@ -366,6 +375,15 @@ func configureIPv6(w http.ResponseWriter, r *http.Request) {
 	if ip.To4() != nil {
 		http.Error(w, "This endpoint is for IPv6 addresses only. Use /api/configure-ip for IPv4", http.StatusBadRequest)
 		return
+	}
+
+	// Check for IP address conflicts before applying
+	if req.Action == "add" {
+		if err := checkIPConflicts(req.IPAddress, req.InterfaceName, req.Action); err != nil {
+			log.Printf("IPv6 conflict detected: %v", err)
+			http.Error(w, fmt.Sprintf("IP conflict detected: %v", err), http.StatusConflict)
+			return
+		}
 	}
 
 	fmt.Printf("%sing IPv6 address %s on %s\n", req.Action, req.IPAddress, req.InterfaceName)
