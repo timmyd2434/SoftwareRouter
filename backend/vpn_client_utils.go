@@ -3,11 +3,83 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 )
+
+// validateVPNPolicy checks that a VPN split-tunneling policy is safe.
+// It ensures the source IP is a single host address and not a broad subnet
+// that would route entire network segments (including LAN traffic to the router)
+// through the VPN tunnel.
+func validateVPNPolicy(sourceIP string) error {
+	if sourceIP == "" {
+		return fmt.Errorf("source IP is required")
+	}
+
+	// Check if this is a CIDR notation
+	if strings.Contains(sourceIP, "/") {
+		ip, ipNet, err := net.ParseCIDR(sourceIP)
+		if err != nil {
+			return fmt.Errorf("invalid IP/CIDR format: %s", sourceIP)
+		}
+
+		// Only allow /32 (single host) for IPv4 or /128 for IPv6
+		ones, bits := ipNet.Mask.Size()
+		if bits == 32 && ones < 32 {
+			return fmt.Errorf("VPN policy source must be a single host IP address, not a subnet (%s) — "+
+				"routing an entire subnet through the VPN would break local LAN access to the router. "+
+				"Use a /32 host address like %s/32 instead", sourceIP, ip.String())
+		}
+		if bits == 128 && ones < 128 {
+			return fmt.Errorf("VPN policy source must be a single host IPv6 address, not a subnet (%s) — "+
+				"use a /128 host address instead", sourceIP)
+		}
+	} else {
+		// Plain IP address (no CIDR) — validate it's a valid IP
+		if net.ParseIP(sourceIP) == nil {
+			return fmt.Errorf("invalid IP address format: %s", sourceIP)
+		}
+	}
+
+	// Check if this is the router's own IP on any interface — routing the
+	// router's own traffic through VPN would sever management access
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		log.Printf("Warning: could not enumerate interfaces for VPN policy validation: %v", err)
+		return nil
+	}
+
+	policyIP := net.ParseIP(strings.Split(sourceIP, "/")[0])
+	if policyIP == nil {
+		return nil
+	}
+
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ifIP, _, err := net.ParseCIDR(addr.String())
+			if err != nil {
+				continue
+			}
+			if ifIP.Equal(policyIP) {
+				return fmt.Errorf("cannot route the router's own IP (%s on %s) through the VPN — "+
+					"this would sever management access to the router", sourceIP, iface.Name)
+			}
+		}
+	}
+
+	return nil
+}
 
 // VPNClientStatus represents the state of the OpenVPN client connection
 type VPNClientStatus struct {
@@ -205,6 +277,12 @@ func addVPNPolicy(w http.ResponseWriter, r *http.Request) {
 	var req VPNPolicy
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Validate that the policy is safe (single host, not the router's own IP)
+	if err := validateVPNPolicy(req.SourceIP); err != nil {
+		http.Error(w, fmt.Sprintf("VPN policy validation failed: %v", err), http.StatusBadRequest)
 		return
 	}
 

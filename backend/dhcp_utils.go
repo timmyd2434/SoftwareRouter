@@ -50,6 +50,80 @@ func saveDHCPConfig(store *DHCPConfigStore) error {
 	return os.WriteFile(dhcpConfigPath, data, 0600)
 }
 
+// ipToUint32 converts a 4-byte IPv4 address to a uint32 integer
+func ipToUint32(ip net.IP) uint32 {
+	ip = ip.To4()
+	if ip == nil {
+		return 0
+	}
+	return uint32(ip[0])<<24 | uint32(ip[1])<<16 | uint32(ip[2])<<8 | uint32(ip[3])
+}
+
+// isValidDHCPRange is the pure mathematical logic for validating a DHCP pool.
+// It ensures the range is valid, within the subnet, and doesn't overlap
+// with the router's own IP or special subnet addresses.
+func isValidDHCPRange(startIPStr, endIPStr string, routerIP net.IP, subnet *net.IPNet) error {
+	startIP := net.ParseIP(startIPStr)
+	endIP := net.ParseIP(endIPStr)
+
+	if startIP == nil || endIP == nil {
+		return fmt.Errorf("invalid IP address format for start or end IP")
+	}
+
+	start := startIP.To4()
+	end := endIP.To4()
+	router := routerIP.To4()
+
+	if start == nil || end == nil {
+		return fmt.Errorf("only IPv4 addresses are supported for this check")
+	}
+
+	// 1. Must be within the subnet
+	if !subnet.Contains(start) {
+		return fmt.Errorf("start IP %s is not in interface subnet %s", startIPStr, subnet.String())
+	}
+	if !subnet.Contains(end) {
+		return fmt.Errorf("end IP %s is not in interface subnet %s", endIPStr, subnet.String())
+	}
+
+	// 2. Convert to integers for range checking
+	startInt := ipToUint32(start)
+	endInt := ipToUint32(end)
+	routerInt := uint32(0)
+	if router != nil {
+		routerInt = ipToUint32(router)
+	}
+
+	// Calculate network and broadcast addresses
+	maskInt := ipToUint32(net.IP(subnet.Mask))
+	networkInt := startInt & maskInt
+	broadcastInt := networkInt | ^maskInt
+
+	// 3. Start must be <= End
+	if startInt > endInt {
+		return fmt.Errorf("start IP must be less than or equal to end IP")
+	}
+
+	// 4. Must not include Network Address (lowest IP)
+	if startInt <= networkInt {
+		return fmt.Errorf("DHCP range cannot include the subnet's network address (%s)", net.IP{byte(networkInt >> 24), byte(networkInt >> 16), byte(networkInt >> 8), byte(networkInt)}.String())
+	}
+
+	// 5. Must not include Broadcast Address (highest IP)
+	if endInt >= broadcastInt {
+		return fmt.Errorf("DHCP range cannot include the subnet's broadcast address (%s)", net.IP{byte(broadcastInt >> 24), byte(broadcastInt >> 16), byte(broadcastInt >> 8), byte(broadcastInt)}.String())
+	}
+
+	// 6. Must NOT hand out the router's own IP address
+	if routerInt != 0 {
+		if routerInt >= startInt && routerInt <= endInt {
+			return fmt.Errorf("DHCP range includes the router's own IP address (%s) - this will cause critical IP conflicts on your network", routerIP.String())
+		}
+	}
+
+	return nil
+}
+
 // validateIPRange checks if the IP range is valid and within the interface subnet
 func validateIPRange(interfaceName, startIP, endIP, gateway string) error {
 	// Get interface IP to determine subnet
@@ -65,9 +139,12 @@ func validateIPRange(interfaceName, startIP, endIP, gateway string) error {
 
 	// Find the first IPv4 address
 	var interfaceNet *net.IPNet
+	var routerIP net.IP
+
 	for _, addr := range addrs {
 		if ipnet, ok := addr.(*net.IPNet); ok && ipnet.IP.To4() != nil {
 			interfaceNet = ipnet
+			routerIP = ipnet.IP
 			break
 		}
 	}
@@ -76,20 +153,8 @@ func validateIPRange(interfaceName, startIP, endIP, gateway string) error {
 		return fmt.Errorf("interface has no IPv4 address")
 	}
 
-	// Parse and validate IPs
-	startIPParsed := net.ParseIP(startIP)
-	endIPParsed := net.ParseIP(endIP)
-
-	if startIPParsed == nil || endIPParsed == nil {
-		return fmt.Errorf("invalid IP address format for start or end IP")
-	}
-
-	// Check if IPs are in the subnet
-	if !interfaceNet.Contains(startIPParsed) {
-		return fmt.Errorf("start IP %s is not in interface subnet %s", startIP, interfaceNet.String())
-	}
-	if !interfaceNet.Contains(endIPParsed) {
-		return fmt.Errorf("end IP %s is not in interface subnet %s", endIP, interfaceNet.String())
+	if err := isValidDHCPRange(startIP, endIP, routerIP, interfaceNet); err != nil {
+		return err
 	}
 
 	// Validate gateway only if provided (it's optional)

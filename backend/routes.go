@@ -3,11 +3,76 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
 	"sync"
 )
+
+// validateStaticRoute checks if a static route is safe to apply.
+// It verifies the gateway is on a directly-connected subnet and
+// prevents dangerous default route overrides.
+func validateStaticRoute(destination, gateway string) error {
+	gatewayIP := net.ParseIP(gateway)
+	if gatewayIP == nil {
+		return fmt.Errorf("invalid gateway IP: %s", gateway)
+	}
+
+	// Block default route override (0.0.0.0/0) — this would replace the
+	// system's entire default route and blackhole all traffic if the
+	// gateway is unreachable or incorrect.
+	if destination == "0.0.0.0/0" || destination == "::/0" {
+		return fmt.Errorf("cannot add a default route (0.0.0.0/0 or ::/0) via static routes — " +
+			"this would override the system's default gateway and could blackhole all traffic. " +
+			"Use the Multi-WAN configuration to manage default routes instead")
+	}
+
+	// Check if the gateway is on a directly-connected subnet.
+	// A route pointing to a gateway that isn't reachable via any local
+	// interface will silently blackhole all traffic matching that destination.
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		log.Printf("Warning: could not enumerate interfaces for route validation: %v", err)
+		return nil // Don't block on enumeration failure
+	}
+
+	gatewayReachable := false
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+
+		for _, addr := range addrs {
+			ipnet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			if ipnet.Contains(gatewayIP) {
+				gatewayReachable = true
+				break
+			}
+		}
+		if gatewayReachable {
+			break
+		}
+	}
+
+	if !gatewayReachable {
+		return fmt.Errorf("gateway %s is not on any directly-connected subnet — "+
+			"traffic matching this route will be blackholed because the gateway is unreachable", gateway)
+	}
+
+	return nil
+}
 
 // StaticRoute represents a user-defined static route
 type StaticRoute struct {
@@ -131,6 +196,12 @@ func createRoute(w http.ResponseWriter, r *http.Request) {
 	// Validate gateway as a valid IP
 	if net.ParseIP(req.Gateway) == nil {
 		http.Error(w, "Gateway must be a valid IP address", http.StatusBadRequest)
+		return
+	}
+
+	// Validate the route is safe to apply (gateway reachable, no default route override)
+	if err := validateStaticRoute(req.Destination, req.Gateway); err != nil {
+		http.Error(w, fmt.Sprintf("Route validation failed: %v", err), http.StatusBadRequest)
 		return
 	}
 
