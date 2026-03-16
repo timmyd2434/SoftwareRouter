@@ -71,7 +71,7 @@ func saveInterfaceMetadata(store *InterfaceMetadataStore) error {
 func getInterfaces(w http.ResponseWriter, r *http.Request) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to save interface metadata", err)
 		return
 	}
 
@@ -137,7 +137,7 @@ func setInterfaceState(w http.ResponseWriter, r *http.Request) {
 	if output, err := runPrivilegedCombinedOutput("ip", "link", "set", "dev", req.InterfaceName, req.State); err != nil {
 		errMsg := fmt.Sprintf("Failed to set interface state: %s\nOutput: %s", err.Error(), string(output))
 		fmt.Printf("ERROR: %s\n", errMsg)
-		http.Error(w, errMsg, http.StatusInternalServerError)
+		respondSystemError(w, ErrInterfaceConfigFailed, "Failed to update interface", fmt.Errorf("%s", errMsg))
 		return
 	}
 
@@ -153,7 +153,7 @@ func setInterfaceState(w http.ResponseWriter, r *http.Request) {
 func getInterfaceMetadata(w http.ResponseWriter, r *http.Request) {
 	store, err := loadInterfaceMetadata()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load metadata: %s", err.Error()), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to load metadata", err)
 		return
 	}
 
@@ -191,7 +191,7 @@ func setInterfaceLabel(w http.ResponseWriter, r *http.Request) {
 
 	store, err := loadInterfaceMetadata()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load metadata: %s", err.Error()), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to load metadata", err)
 		return
 	}
 
@@ -204,7 +204,7 @@ func setInterfaceLabel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := saveInterfaceMetadata(store); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to save metadata: %s", err.Error()), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to save metadata", err)
 		return
 	}
 
@@ -284,7 +284,7 @@ func deleteVLAN(w http.ResponseWriter, r *http.Request) {
 	if output, err := runPrivilegedCombinedOutput("ip", "link", "delete", interfaceName); err != nil {
 		errMsg := fmt.Sprintf("Failed to delete VLAN: %s\nOutput: %s", err.Error(), string(output))
 		fmt.Printf("ERROR: %s\n", errMsg)
-		http.Error(w, errMsg, http.StatusInternalServerError)
+		respondSystemError(w, ErrInterfaceConfigFailed, "Failed to add IP address", fmt.Errorf("%s", errMsg))
 		return
 	}
 
@@ -321,7 +321,7 @@ func configureIP(w http.ResponseWriter, r *http.Request) {
 	if req.Action == "add" {
 		if err := checkIPConflicts(req.IPAddress, req.InterfaceName, req.Action); err != nil {
 			log.Printf("IP conflict detected: %v", err)
-			http.Error(w, fmt.Sprintf("IP conflict detected: %v", err), http.StatusConflict)
+			respondNetworkError(w, ErrNetworkInvalidIP, "IP conflict detected", err)
 			return
 		}
 	}
@@ -333,7 +333,7 @@ func configureIP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		errMsg := fmt.Sprintf("Failed to configure IP address: %v, output: %s", err, string(output))
 		log.Printf("ERROR: %s", errMsg)
-		http.Error(w, errMsg, http.StatusInternalServerError)
+		respondSystemError(w, ErrInterfaceConfigFailed, "Failed to assign IP", fmt.Errorf("%s", errMsg))
 		return
 	}
 
@@ -381,7 +381,7 @@ func configureIPv6(w http.ResponseWriter, r *http.Request) {
 	if req.Action == "add" {
 		if err := checkIPConflicts(req.IPAddress, req.InterfaceName, req.Action); err != nil {
 			log.Printf("IPv6 conflict detected: %v", err)
-			http.Error(w, fmt.Sprintf("IP conflict detected: %v", err), http.StatusConflict)
+			respondNetworkError(w, ErrNetworkInvalidIP, "IP conflict detected", err)
 			return
 		}
 	}
@@ -399,7 +399,7 @@ func configureIPv6(w http.ResponseWriter, r *http.Request) {
 	if output, err := runPrivilegedCombinedOutput("ip", "-6", "addr", cmd, req.IPAddress, "dev", req.InterfaceName); err != nil {
 		errMsg := fmt.Sprintf("Failed to %s IPv6 address: %s\nOutput: %s", req.Action, err.Error(), string(output))
 		fmt.Printf("ERROR: %s\n", errMsg)
-		http.Error(w, errMsg, http.StatusInternalServerError)
+		respondSystemError(w, ErrInterfaceConfigFailed, "Failed to update IP", fmt.Errorf("%s", errMsg))
 		return
 	}
 

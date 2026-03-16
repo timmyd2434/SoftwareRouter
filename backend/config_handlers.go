@@ -336,7 +336,7 @@ func updateSettings(w http.ResponseWriter, r *http.Request) {
 	if err := saveConfigLocked(); err != nil {
 		logAuditEvent(getUsernameFromToken(r), "settings.update", "config",
 			fmt.Sprintf("{\"error\":\"%s\"}", err.Error()), getClientIP(r), false)
-		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrSystemConfigSave, "Failed to save config", err)
 		return
 	}
 

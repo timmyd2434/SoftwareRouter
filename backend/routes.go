@@ -201,7 +201,7 @@ func createRoute(w http.ResponseWriter, r *http.Request) {
 
 	// Validate the route is safe to apply (gateway reachable, no default route override)
 	if err := validateStaticRoute(req.Destination, req.Gateway); err != nil {
-		http.Error(w, fmt.Sprintf("Route validation failed: %v", err), http.StatusBadRequest)
+		respondInvalidRequest(w, "Route validation failed")
 		return
 	}
 

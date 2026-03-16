@@ -109,38 +109,38 @@ func setupOpenVPNServer(w http.ResponseWriter, r *http.Request) {
 	// 1. Prepare Directory
 	os.RemoveAll(ovpnEasyRsaDir)
 	if err := runPrivileged("cp", "-r", "/usr/share/easy-rsa", ovpnEasyRsaDir); err != nil {
-		http.Error(w, "Failed to copy easy-rsa: "+err.Error(), http.StatusInternalServerError)
+		respondSystemError(w, ErrVPNCreateFailed, "Failed to copy easy-rsa", err)
 		return
 	}
 
 	// 2. PKI Initialization - run each command individually (no shell needed)
 	// init-pki
 	if out, err := runPrivilegedInDirCombinedOutput(ovpnEasyRsaDir, "./easyrsa", "init-pki"); err != nil {
-		http.Error(w, "PKI init failed: "+string(out), http.StatusInternalServerError)
+		respondSystemError(w, ErrVPNCreateFailed, "PKI init failed", fmt.Errorf("%s", string(out)))
 		return
 	}
 
 	// build-ca (pipe "SoftRouter-CA" as stdin for the CN prompt)
 	if out, err := runPrivilegedWithStdinInDir(ovpnEasyRsaDir, []byte("SoftRouter-CA\n"), "./easyrsa", "build-ca", "nopass"); err != nil {
-		http.Error(w, "CA generation failed: "+string(out), http.StatusInternalServerError)
+		respondSystemError(w, ErrVPNCreateFailed, "CA generation failed", fmt.Errorf("%s", string(out)))
 		return
 	}
 
 	// build-server-full
 	if out, err := runPrivilegedInDirCombinedOutput(ovpnEasyRsaDir, "./easyrsa", "build-server-full", "server", "nopass"); err != nil {
-		http.Error(w, "Server cert failed: "+string(out), http.StatusInternalServerError)
+		respondSystemError(w, ErrVPNCreateFailed, "Server cert failed", fmt.Errorf("%s", string(out)))
 		return
 	}
 
 	// gen-dh
 	if out, err := runPrivilegedInDirCombinedOutput(ovpnEasyRsaDir, "./easyrsa", "gen-dh"); err != nil {
-		http.Error(w, "DH generation failed: "+string(out), http.StatusInternalServerError)
+		respondSystemError(w, ErrVPNCreateFailed, "DH generation failed", fmt.Errorf("%s", string(out)))
 		return
 	}
 
 	// Generate TLS key
 	if err := runPrivilegedInDir(ovpnEasyRsaDir, "openvpn", "--genkey", "--secret", "ta.key"); err != nil {
-		http.Error(w, "TLS key generation failed: "+err.Error(), http.StatusInternalServerError)
+		respondSystemError(w, ErrVPNCreateFailed, "TLS key generation failed", err)
 		return
 	}
 
@@ -148,7 +148,7 @@ func setupOpenVPNServer(w http.ResponseWriter, r *http.Request) {
 	for _, f := range []string{"pki/ca.crt", "pki/private/server.key", "pki/issued/server.crt", "pki/dh.pem", "ta.key"} {
 		src := filepath.Join(ovpnEasyRsaDir, f)
 		if err := runPrivileged("cp", src, ovpnServerDir+"/"); err != nil {
-			http.Error(w, "Failed to copy "+f+": "+err.Error(), http.StatusInternalServerError)
+			respondSystemError(w, ErrVPNCreateFailed, "Failed to copy PKI file", err)
 			return
 		}
 	}
@@ -182,7 +182,7 @@ explicit-exit-notify 1
 `, ovpnPort, ovpnSubnet)
 
 	if err := os.WriteFile(filepath.Join(ovpnServerDir, "server.conf"), []byte(serverConf), 0644); err != nil {
-		http.Error(w, "Failed to write config: "+err.Error(), http.StatusInternalServerError)
+		respondSystemError(w, ErrVPNCreateFailed, "Failed to write config", err)
 		return
 	}
 
@@ -192,7 +192,7 @@ explicit-exit-notify 1
 	// 5. Start Service
 	runPrivileged("systemctl", "enable", ovpnSystemd)
 	if err := runPrivileged("systemctl", "restart", ovpnSystemd); err != nil {
-		http.Error(w, "Failed to start service: "+err.Error(), http.StatusInternalServerError)
+		respondSystemError(w, ErrVPNCreateFailed, "Failed to start service", err)
 		return
 	}
 
@@ -209,7 +209,7 @@ explicit-exit-notify 1
 func listOpenVPNClients(w http.ResponseWriter, r *http.Request) {
 	clients, err := listOpenVPNClientsInternal()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to check OpenVPN status", err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -275,7 +275,7 @@ func createOpenVPNClient(w http.ResponseWriter, r *http.Request) {
 
 	// Generate Cert using easyrsa in its working directory
 	if out, err := runPrivilegedInDirCombinedOutput(ovpnEasyRsaDir, "./easyrsa", "build-client-full", req.Name, "nopass"); err != nil {
-		http.Error(w, "Failed to generate cert: "+string(out), http.StatusInternalServerError)
+		respondSystemError(w, ErrVPNCreateFailed, "Failed to generate cert", fmt.Errorf("%s", string(out)))
 		return
 	}
 
@@ -288,7 +288,7 @@ func createOpenVPNClient(w http.ResponseWriter, r *http.Request) {
 	// Get VPN endpoint from configuration
 	publicIP, err := getVPNEndpoint()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to determine VPN endpoint: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrVPNCreateFailed, "Failed to determine VPN endpoint", err)
 		return
 	}
 

@@ -623,7 +623,7 @@ func deleteFirewallRule(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("%s/%s", table, chain),
 			fmt.Sprintf("{\"handle\":\"%s\",\"error\":\"%s\"}", handle, string(out)),
 			getClientIP(r), false)
-		http.Error(w, fmt.Sprintf("NFT Error: %s", string(out)), http.StatusInternalServerError)
+		respondFirewallError(w, ErrFirewallListFailed, "NFT command failed", fmt.Errorf("%s", string(out)))
 		return
 	}
 
@@ -1427,7 +1427,7 @@ func createPortForwardingRule(w http.ResponseWriter, r *http.Request) {
 	rule.Enabled = true // Default to enabled
 
 	if err := addPortForwardingRule(rule); err != nil {
-		http.Error(w, "Failed to save rule: "+err.Error(), http.StatusInternalServerError)
+		respondSystemError(w, ErrNetworkRuleAddFailed, "Failed to save rule", err)
 		return
 	}
 
@@ -1443,7 +1443,7 @@ func removePortForwardingRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := deletePortForwardingRule(id); err != nil {
-		http.Error(w, "Failed to delete rule: "+err.Error(), http.StatusInternalServerError)
+		respondSystemError(w, ErrNetworkRuleDeleteFailed, "Failed to delete rule", err)
 		return
 	}
 
@@ -1474,7 +1474,7 @@ func updatePortForwardingRuleHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := updatePortForwardingRule(id, rule); err != nil {
-		http.Error(w, "Failed to update rule: "+err.Error(), http.StatusInternalServerError)
+		respondSystemError(w, ErrNetworkRuleAddFailed, "Failed to update rule", err)
 		return
 	}
 

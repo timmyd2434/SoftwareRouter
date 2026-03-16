@@ -27,7 +27,7 @@ func handleFirewallAliases(w http.ResponseWriter, r *http.Request) {
 func getFirewallAliases(w http.ResponseWriter, r *http.Request) {
 	store, err := loadFirewallAliases()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load aliases: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to load aliases", err)
 		return
 	}
 
@@ -39,20 +39,20 @@ func getFirewallAliases(w http.ResponseWriter, r *http.Request) {
 func createFirewallAlias(w http.ResponseWriter, r *http.Request) {
 	var newAlias FirewallAlias
 	if err := json.NewDecoder(r.Body).Decode(&newAlias); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		respondInvalidRequest(w, "Invalid request body")
 		return
 	}
 
 	// Validate alias
 	if err := validateAlias(newAlias); err != nil {
-		http.Error(w, fmt.Sprintf("Validation failed: %v", err), http.StatusBadRequest)
+		respondInvalidRequest(w, "Validation failed")
 		return
 	}
 
 	// Load existing aliases
 	store, err := loadFirewallAliases()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load aliases: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to load aliases", err)
 		return
 	}
 
@@ -69,7 +69,7 @@ func createFirewallAlias(w http.ResponseWriter, r *http.Request) {
 
 	// Save to disk
 	if err := saveFirewallAliases(store); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to save aliases: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to save aliases", err)
 		return
 	}
 
@@ -87,20 +87,20 @@ func createFirewallAlias(w http.ResponseWriter, r *http.Request) {
 func updateFirewallAlias(w http.ResponseWriter, r *http.Request) {
 	var updatedAlias FirewallAlias
 	if err := json.NewDecoder(r.Body).Decode(&updatedAlias); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		respondInvalidRequest(w, "Invalid request body")
 		return
 	}
 
 	// Validate alias
 	if err := validateAlias(updatedAlias); err != nil {
-		http.Error(w, fmt.Sprintf("Validation failed: %v", err), http.StatusBadRequest)
+		respondInvalidRequest(w, "Validation failed")
 		return
 	}
 
 	// Load existing aliases
 	store, err := loadFirewallAliases()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load aliases: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to load aliases", err)
 		return
 	}
 
@@ -121,7 +121,7 @@ func updateFirewallAlias(w http.ResponseWriter, r *http.Request) {
 
 	// Save to disk
 	if err := saveFirewallAliases(store); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to save aliases: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to save aliases", err)
 		return
 	}
 
@@ -146,7 +146,7 @@ func deleteFirewallAlias(w http.ResponseWriter, r *http.Request) {
 	// Load existing aliases
 	store, err := loadFirewallAliases()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load aliases: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to load aliases", err)
 		return
 	}
 
@@ -162,7 +162,7 @@ func deleteFirewallAlias(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !found {
-		http.Error(w, fmt.Sprintf("Alias '%s' not found", name), http.StatusNotFound)
+		respondSystemError(w, ErrGenericInternalError, "Alias not found", nil)
 		return
 	}
 
@@ -170,7 +170,7 @@ func deleteFirewallAlias(w http.ResponseWriter, r *http.Request) {
 
 	// Save to disk
 	if err := saveFirewallAliases(store); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to save aliases: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to save aliases", err)
 		return
 	}
 

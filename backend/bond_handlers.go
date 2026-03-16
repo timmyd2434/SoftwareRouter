@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -236,7 +237,7 @@ func getBonds(w http.ResponseWriter, r *http.Request) {
 	netPath := "/sys/class/net"
 	entries, err := os.ReadDir(netPath)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to read network interfaces: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to read network interfaces", err)
 		return
 	}
 
@@ -321,7 +322,7 @@ func createBond(w http.ResponseWriter, r *http.Request) {
 	// Validate bond mode
 	modeNum, err := bondModeToNumber(req.Mode)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		respondInvalidRequest(w, "Invalid bond mode")
 		return
 	}
 
@@ -344,21 +345,21 @@ func createBond(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := validateBondMember(member); err != nil {
-			http.Error(w, fmt.Sprintf("Cannot add %s to bond: %v", member, err), http.StatusBadRequest)
+			respondNetworkError(w, ErrInterfaceConfigFailed, fmt.Sprintf("Cannot add %s to bond", member), err)
 			return
 		}
 	}
 
 	// Ensure bonding module is loaded
 	if err := ensureBondingModuleLoaded(); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load bonding module: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to load bonding module", err)
 		return
 	}
 
 	// Create the bond interface
 	fmt.Printf("Creating bond: %s (mode: %s)\n", req.Name, req.Mode)
 	if _, err := runPrivilegedCombinedOutput("ip", "link", "add", req.Name, "type", "bond", "mode", modeNum); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to create bond: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrInterfaceCreateFailed, "Failed to create bond", err)
 		return
 	}
 
@@ -401,7 +402,7 @@ func createBond(w http.ResponseWriter, r *http.Request) {
 			// If adding member fails, try to clean up the bond
 			fmt.Printf("ERROR: Failed to add %s to bond, cleaning up: %v\n", member, err)
 			runPrivilegedCombinedOutput("ip", "link", "delete", req.Name)
-			http.Error(w, fmt.Sprintf("Failed to add %s to bond: %v", member, err), http.StatusInternalServerError)
+			respondSystemError(w, ErrInterfaceConfigFailed, fmt.Sprintf("Failed to add %s to bond", member), err)
 			return
 		}
 
@@ -457,9 +458,8 @@ func deleteBond(w http.ResponseWriter, r *http.Request) {
 
 	// Delete the bond interface
 	if output, err := runPrivilegedCombinedOutput("ip", "link", "delete", bondName); err != nil {
-		errMsg := fmt.Sprintf("Failed to delete bond: %v\nOutput: %s", err, string(output))
-		fmt.Printf("ERROR: %s\n", errMsg)
-		http.Error(w, errMsg, http.StatusInternalServerError)
+		log.Printf("ERROR: Failed to delete bond %s: %v, output: %s", bondName, err, string(output))
+		respondSystemError(w, ErrInterfaceDeleteFailed, "Failed to delete bond", err)
 		return
 	}
 
@@ -493,7 +493,7 @@ func addBondMember(w http.ResponseWriter, r *http.Request) {
 
 	// Validate member can be added
 	if err := validateBondMember(req.Member); err != nil {
-		http.Error(w, fmt.Sprintf("Cannot add %s to bond: %v", req.Member, err), http.StatusBadRequest)
+		respondNetworkError(w, ErrInterfaceConfigFailed, fmt.Sprintf("Cannot add %s to bond", req.Member), err)
 		return
 	}
 
@@ -504,7 +504,7 @@ func addBondMember(w http.ResponseWriter, r *http.Request) {
 
 	// Add member to bond
 	if _, err := runPrivilegedCombinedOutput("ip", "link", "set", req.Member, "master", req.BondName); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to add member to bond: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrInterfaceConfigFailed, "Failed to add member to bond", err)
 		return
 	}
 
@@ -544,7 +544,7 @@ func removeBondMember(w http.ResponseWriter, r *http.Request) {
 	// Get current members to verify the interface is actually a member
 	members, err := getBondMembers(req.BondName)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to get bond members: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to get bond members", err)
 		return
 	}
 
@@ -565,7 +565,7 @@ func removeBondMember(w http.ResponseWriter, r *http.Request) {
 
 	// Remove member from bond
 	if _, err := runPrivilegedCombinedOutput("ip", "link", "set", req.Member, "nomaster"); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to remove member from bond: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrInterfaceConfigFailed, "Failed to remove member from bond", err)
 		return
 	}
 

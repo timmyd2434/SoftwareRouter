@@ -189,7 +189,7 @@ func updateDynamicRouting(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := generateFRRConfig(); err != nil {
-		http.Error(w, "Failed to apply FRR config: "+err.Error(), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to apply FRR config", err)
 		return
 	}
 

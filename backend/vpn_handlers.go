@@ -58,14 +58,14 @@ func addVPNClient(w http.ResponseWriter, r *http.Request) {
 	// 1. Generate Client Keys
 	privKey, err := runPrivilegedOutput("wg", "genkey")
 	if err != nil {
-		http.Error(w, "Failed to generate client key: "+err.Error(), http.StatusInternalServerError)
+		respondSystemError(w, ErrVPNCreateFailed, "Failed to generate client key", err)
 		return
 	}
 	cleanPriv := strings.TrimSpace(string(privKey))
 
 	pubKey, err := deriveWireGuardPublicKey(privKey)
 	if err != nil {
-		http.Error(w, "Failed to derive public key: "+err.Error(), http.StatusInternalServerError)
+		respondSystemError(w, ErrVPNCreateFailed, "Failed to derive public key", err)
 		return
 	}
 	cleanPub := strings.TrimSpace(string(pubKey))

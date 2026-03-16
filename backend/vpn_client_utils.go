@@ -185,7 +185,7 @@ func uploadVPNClientConfig(w http.ResponseWriter, r *http.Request) {
 	// 2. Save Auth File
 	authContent := fmt.Sprintf("%s\n%s", username, password)
 	if err := os.WriteFile(vpnAuthFile, []byte(authContent), 0600); err != nil {
-		http.Error(w, "Failed to save credentials: "+err.Error(), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to save credentials", err)
 		return
 	}
 
@@ -219,7 +219,7 @@ func uploadVPNClientConfig(w http.ResponseWriter, r *http.Request) {
 
 	finalConfig := strings.Join(configLines, "\n")
 	if err := os.WriteFile(vpnConfigFile, []byte(finalConfig), 0644); err != nil {
-		http.Error(w, "Failed to write config: "+err.Error(), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to write config", err)
 		return
 	}
 
@@ -236,7 +236,7 @@ func controlVPNClient(w http.ResponseWriter, r *http.Request) {
 		Action string `json:"action"` // "start" or "stop"
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		respondInvalidRequest(w, "Invalid request")
 		return
 	}
 
@@ -246,16 +246,15 @@ func controlVPNClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var output []byte
 	var err error
 	if req.Action == "start" {
-		output, err = runPrivilegedCombinedOutput("systemctl", "restart", vpnSystemdService)
+		_, err = runPrivilegedCombinedOutput("systemctl", "restart", vpnSystemdService)
 	} else {
-		output, err = runPrivilegedCombinedOutput("systemctl", "stop", vpnSystemdService)
+		_, err = runPrivilegedCombinedOutput("systemctl", "stop", vpnSystemdService)
 	}
 
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Action failed: %s\nOutput: %s", err.Error(), string(output)), http.StatusInternalServerError)
+		respondSystemError(w, ErrVPNControlFailed, "VPN action failed", err)
 		return
 	}
 
@@ -282,13 +281,13 @@ func getVPNPolicies(w http.ResponseWriter, r *http.Request) {
 func addVPNPolicy(w http.ResponseWriter, r *http.Request) {
 	var req VPNPolicy
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		respondInvalidRequest(w, "Invalid request")
 		return
 	}
 
 	// Validate that the policy is safe (single host, not the router's own IP)
 	if err := validateVPNPolicy(req.SourceIP); err != nil {
-		http.Error(w, fmt.Sprintf("VPN policy validation failed: %v", err), http.StatusBadRequest)
+		respondInvalidRequest(w, "VPN policy validation failed")
 		return
 	}
 

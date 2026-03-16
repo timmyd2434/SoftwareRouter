@@ -18,7 +18,7 @@ type RAConfigRequest struct {
 func getRAConfig(w http.ResponseWriter, r *http.Request) {
 	store, err := loadRADVDConfig()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load RA config: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to load RA config", err)
 		return
 	}
 
@@ -49,7 +49,7 @@ func setRAConfig(w http.ResponseWriter, r *http.Request) {
 	// Load current config
 	store, err := loadRADVDConfig()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load RA config: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to load RA config", err)
 		return
 	}
 
@@ -63,13 +63,13 @@ func setRAConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Save config
 	if err := saveRADVDConfig(store); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to save RA config: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to save RA config", err)
 		return
 	}
 
 	// Regenerate radvd.conf
 	if err := generateRADVDConfig(); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to generate radvd config: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to generate radvd config", err)
 		return
 	}
 
@@ -91,7 +91,7 @@ func setRAConfig(w http.ResponseWriter, r *http.Request) {
 		if err := reloadRADVD(); err != nil {
 			// Try starting if reload fails
 			if startErr := startRADVD(); startErr != nil {
-				http.Error(w, fmt.Sprintf("Failed to start radvd: %v", startErr), http.StatusInternalServerError)
+				respondSystemError(w, ErrGenericInternalError, "Failed to start radvd service", startErr)
 				return
 			}
 		}

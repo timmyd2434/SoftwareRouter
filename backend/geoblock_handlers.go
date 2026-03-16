@@ -20,7 +20,7 @@ func handleGetGeoBlockingConfig(w http.ResponseWriter, r *http.Request) {
 
 	cfg, err := loadGeoBlockingConfig()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to load geoblocking config", err)
 		return
 	}
 
@@ -37,27 +37,27 @@ func handleUpdateGeoBlockingConfig(w http.ResponseWriter, r *http.Request) {
 
 	var cfg GeoBlockingConfig
 	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		respondInvalidRequest(w, "Invalid request body")
 		return
 	}
 
 	// Validate configuration
 	if err := validateGeoBlockingConfig(&cfg); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid configuration: %v", err), http.StatusBadRequest)
+		respondInvalidRequest(w, "Invalid configuration")
 		return
 	}
 
 	// Ensure IP lists exist for all blocked countries
 	for _, country := range cfg.BlockedCountries {
 		if err := ensureCountryIPList(country); err != nil {
-			http.Error(w, fmt.Sprintf("Failed to get IP list for %s: %v", country, err), http.StatusInternalServerError)
+			respondSystemError(w, ErrGenericInternalError, fmt.Sprintf("Failed to get IP list for %s", country), err)
 			return
 		}
 	}
 
 	// Save configuration
 	if err := saveGeoBlockingConfig(&cfg); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to save config", err)
 		return
 	}
 
@@ -96,7 +96,7 @@ func handleDownloadCountryIPList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := downloadCountryIPList(countryCode); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to download IP list: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to download IP list", err)
 		return
 	}
 

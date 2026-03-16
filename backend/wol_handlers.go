@@ -19,7 +19,7 @@ func handleWakeOnLAN(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		respondInvalidRequest(w, "Invalid request body")
 		return
 	}
 
@@ -30,7 +30,7 @@ func handleWakeOnLAN(w http.ResponseWriter, r *http.Request) {
 
 	// Send Wake-on-LAN packet
 	if err := SendWakeOnLAN(req.MACAddress); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to send Wake-on-LAN packet: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to send Wake-on-LAN packet", err)
 		return
 	}
 
@@ -50,7 +50,7 @@ func handleGetWoLDevices(w http.ResponseWriter, r *http.Request) {
 
 	store, err := loadWoLDevices()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load devices: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to load devices", err)
 		return
 	}
 
@@ -67,20 +67,20 @@ func handleSaveWoLDevice(w http.ResponseWriter, r *http.Request) {
 
 	var newDevice WoLDevice
 	if err := json.NewDecoder(r.Body).Decode(&newDevice); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		respondInvalidRequest(w, "Invalid request body")
 		return
 	}
 
 	// Validate device
 	if err := validateWoLDevice(newDevice); err != nil {
-		http.Error(w, fmt.Sprintf("Validation failed: %v", err), http.StatusBadRequest)
+		respondInvalidRequest(w, "Validation failed")
 		return
 	}
 
 	// Format MAC address
 	formatted, err := FormatMAC(newDevice.MACAddress)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Invalid MAC address: %v", err), http.StatusBadRequest)
+		respondInvalidRequest(w, "Invalid MAC address")
 		return
 	}
 	newDevice.MACAddress = formatted
@@ -88,7 +88,7 @@ func handleSaveWoLDevice(w http.ResponseWriter, r *http.Request) {
 	// Load existing devices
 	store, err := loadWoLDevices()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load devices: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to load devices", err)
 		return
 	}
 
@@ -103,7 +103,7 @@ func handleSaveWoLDevice(w http.ResponseWriter, r *http.Request) {
 
 	// Save to disk
 	if err := saveWoLDevices(store); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to save devices: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to save devices", err)
 		return
 	}
 
@@ -130,7 +130,7 @@ func handleDeleteWoLDevice(w http.ResponseWriter, r *http.Request) {
 	// Load existing devices
 	store, err := loadWoLDevices()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load devices: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to load devices", err)
 		return
 	}
 
@@ -154,7 +154,7 @@ func handleDeleteWoLDevice(w http.ResponseWriter, r *http.Request) {
 
 	// Save to disk
 	if err := saveWoLDevices(store); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to save devices: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to save devices", err)
 		return
 	}
 

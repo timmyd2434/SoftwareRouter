@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -125,7 +126,7 @@ func getBridges(w http.ResponseWriter, r *http.Request) {
 	netPath := "/sys/class/net"
 	entries, err := os.ReadDir(netPath)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to read network interfaces: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to read network interfaces", err)
 		return
 	}
 
@@ -203,7 +204,7 @@ func createBridge(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := validateBridgeMember(member); err != nil {
-			http.Error(w, fmt.Sprintf("Cannot add %s to bridge: %v", member, err), http.StatusBadRequest)
+			respondNetworkError(w, ErrInterfaceConfigFailed, fmt.Sprintf("Cannot add %s to bridge", member), err)
 			return
 		}
 	}
@@ -211,7 +212,7 @@ func createBridge(w http.ResponseWriter, r *http.Request) {
 	// Create the bridge interface
 	fmt.Printf("Creating bridge: %s\n", req.Name)
 	if _, err := runPrivilegedCombinedOutput("ip", "link", "add", "name", req.Name, "type", "bridge"); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to create bridge: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrInterfaceCreateFailed, "Failed to create bridge", err)
 		return
 	}
 
@@ -222,7 +223,7 @@ func createBridge(w http.ResponseWriter, r *http.Request) {
 			// If adding member fails, try to clean up the bridge
 			fmt.Printf("ERROR: Failed to add %s to bridge, cleaning up: %v\n", member, err)
 			runPrivilegedCombinedOutput("ip", "link", "delete", req.Name)
-			http.Error(w, fmt.Sprintf("Failed to add %s to bridge: %v", member, err), http.StatusInternalServerError)
+			respondSystemError(w, ErrInterfaceConfigFailed, fmt.Sprintf("Failed to add %s to bridge", member), err)
 			return
 		}
 	}
@@ -288,9 +289,9 @@ func deleteBridge(w http.ResponseWriter, r *http.Request) {
 
 	// Delete the bridge interface
 	if output, err := runPrivilegedCombinedOutput("ip", "link", "delete", bridgeName); err != nil {
-		errMsg := fmt.Sprintf("Failed to delete bridge: %v\nOutput: %s", err, string(output))
-		fmt.Printf("ERROR: %s\n", errMsg)
-		http.Error(w, errMsg, http.StatusInternalServerError)
+		_ = output
+		log.Printf("ERROR: Failed to delete bridge %s: %v", bridgeName, err)
+		respondSystemError(w, ErrInterfaceDeleteFailed, "Failed to delete bridge", err)
 		return
 	}
 
@@ -324,7 +325,7 @@ func addBridgeMember(w http.ResponseWriter, r *http.Request) {
 
 	// Validate member can be added
 	if err := validateBridgeMember(req.Member); err != nil {
-		http.Error(w, fmt.Sprintf("Cannot add %s to bridge: %v", req.Member, err), http.StatusBadRequest)
+		respondNetworkError(w, ErrInterfaceConfigFailed, fmt.Sprintf("Cannot add %s to bridge", req.Member), err)
 		return
 	}
 
@@ -332,7 +333,7 @@ func addBridgeMember(w http.ResponseWriter, r *http.Request) {
 
 	// Add member to bridge
 	if _, err := runPrivilegedCombinedOutput("ip", "link", "set", req.Member, "master", req.BridgeName); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to add member to bridge: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrInterfaceConfigFailed, "Failed to add member to bridge", err)
 		return
 	}
 
@@ -367,7 +368,7 @@ func removeBridgeMember(w http.ResponseWriter, r *http.Request) {
 	// Get current members to verify the interface is actually a member
 	members, err := getBridgeMembers(req.BridgeName)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to get bridge members: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to get bridge members", err)
 		return
 	}
 
@@ -388,7 +389,7 @@ func removeBridgeMember(w http.ResponseWriter, r *http.Request) {
 
 	// Remove member from bridge
 	if _, err := runPrivilegedCombinedOutput("ip", "link", "set", req.Member, "nomaster"); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to remove member from bridge: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrInterfaceConfigFailed, "Failed to remove member from bridge", err)
 		return
 	}
 

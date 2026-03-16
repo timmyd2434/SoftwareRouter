@@ -211,7 +211,7 @@ func updateQoSConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Apply (System)
 	if err := ApplyQoS(req); err != nil {
-		http.Error(w, "Failed to apply QoS: "+err.Error(), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to apply QoS", err)
 		return
 	}
 

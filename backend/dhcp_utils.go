@@ -503,7 +503,7 @@ func removeStaticLease(w http.ResponseWriter, r *http.Request) {
 func getDHCPConfig(w http.ResponseWriter, r *http.Request) {
 	store, err := loadDHCPConfig()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load DHCP config: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrDHCPConfigFailed, "Failed to load DHCP config", err)
 		return
 	}
 
@@ -533,7 +533,7 @@ func setDHCPConfig(w http.ResponseWriter, r *http.Request) {
 		// Only validate if the fields are actually populated
 		if req.Config.StartIP != "" && req.Config.EndIP != "" {
 			if err := validateIPRange(req.InterfaceName, req.Config.StartIP, req.Config.EndIP, req.Config.Gateway); err != nil {
-				http.Error(w, fmt.Sprintf("IPv4 DHCP validation error: %v", err), http.StatusBadRequest)
+				respondInvalidRequest(w, "IPv4 DHCP validation error")
 				return
 			}
 		}
@@ -542,7 +542,7 @@ func setDHCPConfig(w http.ResponseWriter, r *http.Request) {
 	// Load existing config
 	store, err := loadDHCPConfig()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrDHCPConfigFailed, "Failed to load config", err)
 		return
 	}
 
@@ -551,13 +551,13 @@ func setDHCPConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Save to file
 	if err := saveDHCPConfig(store); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrDHCPSaveFailed, "Failed to save config", err)
 		return
 	}
 
 	// Regenerate dnsmasq config
 	if err := regenerateDnsmasqDHCPConfig(store); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to update dnsmasq: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrDHCPConfigFailed, "Failed to update dnsmasq", err)
 		return
 	}
 
@@ -574,7 +574,7 @@ func deleteDHCPConfig(w http.ResponseWriter, r *http.Request) {
 
 	store, err := loadDHCPConfig()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrDHCPConfigFailed, "Failed to load config", err)
 		return
 	}
 
@@ -583,13 +583,13 @@ func deleteDHCPConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Save to file
 	if err := saveDHCPConfig(store); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrDHCPSaveFailed, "Failed to save config", err)
 		return
 	}
 
 	// Regenerate dnsmasq config
 	if err := regenerateDnsmasqDHCPConfig(store); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to update dnsmasq: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrDHCPConfigFailed, "Failed to update dnsmasq", err)
 		return
 	}
 
@@ -600,7 +600,7 @@ func deleteDHCPConfig(w http.ResponseWriter, r *http.Request) {
 func getDHCPLeases(w http.ResponseWriter, r *http.Request) {
 	leases, err := parseDHCPLeases()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to read leases: %v", err), http.StatusInternalServerError)
+		respondSystemError(w, ErrGenericInternalError, "Failed to read leases", err)
 		return
 	}
 
