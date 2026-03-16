@@ -94,7 +94,7 @@ func saveKnownGoodSnapshot(ruleset string) error {
 	log.Println("[RESILIENCE] Saving known-good firewall snapshot")
 
 	// Ensure directory exists
-	if err := os.MkdirAll("/etc/softrouter", 0755); err != nil {
+	if err := os.MkdirAll("/etc/softrouter", 0750); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -126,7 +126,7 @@ func syncToNftablesConf(ruleset string) error {
 	}
 
 	// Write the new ruleset
-	if err := os.WriteFile(nftablesConfPath, []byte(ruleset), 0644); err != nil {
+	if err := os.WriteFile(nftablesConfPath, []byte(ruleset), 0600); err != nil {
 		return fmt.Errorf("failed to write /etc/nftables.conf: %w", err)
 	}
 

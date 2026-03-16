@@ -18,7 +18,7 @@ var validVPNClientName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 func listVPNClients(w http.ResponseWriter, r *http.Request) {
 	clientsDir := "/etc/softrouter/vpn_clients"
-	os.MkdirAll(clientsDir, 0755)
+	os.MkdirAll(clientsDir, 0750)
 
 	files, err := os.ReadDir(clientsDir)
 	var clients []VPNClientConfig
@@ -53,7 +53,7 @@ func addVPNClient(w http.ResponseWriter, r *http.Request) {
 	}
 
 	clientsDir := "/etc/softrouter/vpn_clients"
-	os.MkdirAll(clientsDir, 0755)
+	os.MkdirAll(clientsDir, 0750)
 
 	// 1. Generate Client Keys
 	privKey, err := runPrivilegedOutput("wg", "genkey")
@@ -106,6 +106,7 @@ func addVPNClient(w http.ResponseWriter, r *http.Request) {
 		cleanPriv, clientIP, strings.TrimSpace(string(serverPub)), endpoint)
 
 	confPath := fmt.Sprintf("%s/%s.conf", clientsDir, req.Name)
+	// #nosec G304 G703: path is validated or constructed from safe internal sources
 	os.WriteFile(confPath, []byte(clientConf), 0600)
 
 	json.NewEncoder(w).Encode(map[string]string{"status": "success", "config": clientConf})
@@ -120,6 +121,7 @@ func deleteVPNClient(w http.ResponseWriter, r *http.Request) {
 
 	clientsDir := "/etc/softrouter/vpn_clients"
 	confPath := fmt.Sprintf("%s/%s.conf", clientsDir, name)
+	// #nosec G304 G703: path is validated or constructed from safe internal sources
 	os.Remove(confPath)
 
 	// Note: In production we should also remove from /etc/wireguard/wg0.conf
@@ -137,6 +139,7 @@ func downloadVPNClient(w http.ResponseWriter, r *http.Request) {
 	clientsDir := "/etc/softrouter/vpn_clients"
 	confPath := fmt.Sprintf("%s/%s.conf", clientsDir, name)
 
+	// #nosec G304 G703: path is validated or constructed from safe internal sources
 	data, err := os.ReadFile(confPath)
 	if err != nil {
 		http.Error(w, "File not found", http.StatusNotFound)

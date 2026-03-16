@@ -42,7 +42,7 @@ func saveDHCPConfig(store *DHCPConfigStore) error {
 	}
 
 	// Ensure directory exists
-	if err := os.MkdirAll("/etc/softrouter", 0755); err != nil {
+	if err := os.MkdirAll("/etc/softrouter", 0750); err != nil {
 		log.Printf("ERROR: Failed to create /etc/softrouter directory: %v", err)
 		return err
 	}
@@ -106,12 +106,16 @@ func isValidDHCPRange(startIPStr, endIPStr string, routerIP net.IP, subnet *net.
 
 	// 4. Must not include Network Address (lowest IP)
 	if startInt <= networkInt {
-		return fmt.Errorf("DHCP range cannot include the subnet's network address (%s)", net.IP{byte(networkInt >> 24), byte(networkInt >> 16), byte(networkInt >> 8), byte(networkInt)}.String())
+		// #nosec G115: Intentionally taking lowest 8 bits
+		networkIPStr := net.IP{byte(networkInt >> 24), byte(networkInt >> 16), byte(networkInt >> 8), byte(networkInt)}.String()
+		return fmt.Errorf("DHCP range cannot include the subnet's network address (%s)", networkIPStr)
 	}
 
 	// 5. Must not include Broadcast Address (highest IP)
 	if endInt >= broadcastInt {
-		return fmt.Errorf("DHCP range cannot include the subnet's broadcast address (%s)", net.IP{byte(broadcastInt >> 24), byte(broadcastInt >> 16), byte(broadcastInt >> 8), byte(broadcastInt)}.String())
+		// #nosec G115: Intentionally taking lowest 8 bits
+		broadcastIPStr := net.IP{byte(broadcastInt >> 24), byte(broadcastInt >> 16), byte(broadcastInt >> 8), byte(broadcastInt)}.String()
+		return fmt.Errorf("DHCP range cannot include the subnet's broadcast address (%s)", broadcastIPStr)
 	}
 
 	// 6. Must NOT hand out the router's own IP address
@@ -270,13 +274,13 @@ func regenerateDnsmasqDHCPConfig(store *DHCPConfigStore) error {
 	}
 
 	// Ensure directory exists
-	if err := os.MkdirAll("/etc/dnsmasq.d", 0755); err != nil {
+	if err := os.MkdirAll("/etc/dnsmasq.d", 0750); err != nil {
 		log.Printf("ERROR: Failed to create /etc/dnsmasq.d directory: %v", err)
 		return fmt.Errorf("failed to create dnsmasq.d directory: %w", err)
 	}
 
 	// Write the configuration file
-	err := os.WriteFile(dnsmasqDHCPPath, []byte(config.String()), 0644)
+	err := os.WriteFile(dnsmasqDHCPPath, []byte(config.String()), 0600)
 	if err != nil {
 		return err
 	}

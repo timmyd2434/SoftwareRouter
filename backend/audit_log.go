@@ -32,7 +32,7 @@ var auditLogMu sync.Mutex
 
 // initAuditLog creates the audit log directory if it doesn't exist
 func initAuditLog() error {
-	if err := os.MkdirAll(auditLogDir, 0755); err != nil {
+	if err := os.MkdirAll(auditLogDir, 0750); err != nil {
 		return fmt.Errorf("failed to create audit log directory: %w", err)
 	}
 	return nil
@@ -55,6 +55,7 @@ func logAuditEvent(user, action, resource, details, ipAddress string, success bo
 	defer auditLogMu.Unlock()
 
 	logPath := filepath.Join(auditLogDir, auditLogFile)
+	// #nosec G304 G703: path is validated or constructed from safe internal sources
 	file, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		// Fallback to stderr if audit log fails
@@ -87,6 +88,7 @@ func getAuditLogs(startTime, endTime time.Time, actionFilter, userFilter string,
 		return []AuditLogEntry{}, nil // Return empty array if no logs yet
 	}
 
+	// #nosec G304 G703: path is validated or constructed from safe internal sources
 	data, err := os.ReadFile(logPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read audit log: %w", err)

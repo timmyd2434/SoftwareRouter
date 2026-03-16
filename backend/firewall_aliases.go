@@ -30,7 +30,7 @@ const aliasConfigPath = "/etc/softrouter/firewall_aliases.json"
 func loadFirewallAliases() (*AliasStore, error) {
 	// Ensure directory exists
 	dir := filepath.Dir(aliasConfigPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -57,7 +57,7 @@ func loadFirewallAliases() (*AliasStore, error) {
 func saveFirewallAliases(store *AliasStore) error {
 	// Ensure directory exists
 	dir := filepath.Dir(aliasConfigPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 

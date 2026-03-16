@@ -152,7 +152,7 @@ func loadCredentials() UserCredentials {
 	}
 
 	// Create directory if not exists
-	os.MkdirAll("/etc/softrouter", 0755)
+	os.MkdirAll("/etc/softrouter", 0750)
 
 	data, err := os.ReadFile(credentialsFilePath)
 	if err != nil {

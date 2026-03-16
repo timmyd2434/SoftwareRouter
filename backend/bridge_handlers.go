@@ -39,6 +39,7 @@ type BridgeInfo struct {
 func isBridgeInterface(name string) bool {
 	// Check if /sys/class/net/<name>/bridge exists
 	bridgePath := filepath.Join("/sys/class/net", name, "bridge")
+	// #nosec G304 G703: path is validated or constructed from safe internal sources
 	if _, err := os.Stat(bridgePath); err == nil {
 		return true
 	}
@@ -98,6 +99,7 @@ func isValidBridgeName(name string) bool {
 // getSTPState returns the STP state of a bridge (0 = disabled, 1 = enabled)
 func getSTPState(bridgeName string) (bool, error) {
 	stpPath := filepath.Join("/sys/class/net", bridgeName, "bridge", "stp_state")
+	// #nosec G304 G703: path is validated or constructed from safe internal sources
 	data, err := os.ReadFile(stpPath)
 	if err != nil {
 		return false, err

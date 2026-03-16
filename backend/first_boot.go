@@ -16,10 +16,10 @@ func isFirstBoot() bool {
 // markFirstBootComplete creates the flag file to indicate first boot is done
 func markFirstBootComplete() error {
 	// Ensure directory exists
-	if err := os.MkdirAll("/etc/softrouter", 0755); err != nil {
+	if err := os.MkdirAll("/etc/softrouter", 0750); err != nil {
 		return err
 	}
-	return os.WriteFile(firstBootFlagFile, []byte("1"), 0644)
+	return os.WriteFile(firstBootFlagFile, []byte("1"), 0600)
 }
 
 // needsWANConfiguration checks if any interface is explicitly labeled as WAN

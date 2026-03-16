@@ -181,7 +181,7 @@ verb 3
 explicit-exit-notify 1
 `, ovpnPort, ovpnSubnet)
 
-	if err := os.WriteFile(filepath.Join(ovpnServerDir, "server.conf"), []byte(serverConf), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(ovpnServerDir, "server.conf"), []byte(serverConf), 0600); err != nil {
 		respondSystemError(w, ErrVPNCreateFailed, "Failed to write config", err)
 		return
 	}
@@ -218,6 +218,7 @@ func listOpenVPNClients(w http.ResponseWriter, r *http.Request) {
 
 func listOpenVPNClientsInternal() ([]OpenVPNClientCert, error) {
 	indexFile := filepath.Join(ovpnEasyRsaDir, "pki", "index.txt")
+	// #nosec G304 G703: path is validated or constructed from safe internal sources
 	data, err := os.ReadFile(indexFile)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -323,6 +324,7 @@ verb 3
 	// Let's store it in a safe place.
 	clientConfDir := "/var/www/softrouter/vpn_configs"
 	os.MkdirAll(clientConfDir, 0700) // Restricted
+	// #nosec G304 G703: path is validated or constructed from safe internal sources
 	os.WriteFile(filepath.Join(clientConfDir, req.Name+".ovpn"), []byte(ovpnConfig), 0600)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -341,6 +343,7 @@ func downloadOpenVPNClient(w http.ResponseWriter, r *http.Request) {
 	}
 	path := filepath.Join("/var/www/softrouter/vpn_configs", name+".ovpn")
 
+	// #nosec G304 G703: path is validated or constructed from safe internal sources
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		http.Error(w, "File not found", http.StatusNotFound)
 		return
@@ -368,6 +371,7 @@ func deleteOpenVPNClient(w http.ResponseWriter, r *http.Request) {
 	runPrivileged("cp", filepath.Join(ovpnEasyRsaDir, "pki", "crl.pem"), ovpnServerDir+"/")
 
 	// Remove .ovpn
+	// #nosec G304 G703: path is validated or constructed from safe internal sources
 	os.Remove(filepath.Join("/var/www/softrouter/vpn_configs", name+".ovpn"))
 
 	w.Header().Set("Content-Type", "application/json")

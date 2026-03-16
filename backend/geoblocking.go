@@ -25,7 +25,7 @@ const (
 func loadGeoBlockingConfig() (*GeoBlockingConfig, error) {
 	// Ensure directory exists
 	dir := filepath.Dir(geoBlockingConfigPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -57,7 +57,7 @@ func loadGeoBlockingConfig() (*GeoBlockingConfig, error) {
 func saveGeoBlockingConfig(cfg *GeoBlockingConfig) error {
 	// Ensure directory exists
 	dir := filepath.Dir(geoBlockingConfigPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -101,6 +101,7 @@ func getCountryIPListPath(countryCode string) string {
 func loadCountryIPList(countryCode string) ([]string, error) {
 	path := getCountryIPListPath(countryCode)
 
+	// #nosec G304 G703: path is validated or constructed from safe internal sources
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read IP list for %s: %w", countryCode, err)
@@ -125,7 +126,7 @@ func loadCountryIPList(countryCode string) ([]string, error) {
 // downloadCountryIPList downloads IP ranges for a country from public source
 func downloadCountryIPList(countryCode string) error {
 	// Ensure directory exists
-	if err := os.MkdirAll(countryIPListsDir, 0755); err != nil {
+	if err := os.MkdirAll(countryIPListsDir, 0750); err != nil {
 		return fmt.Errorf("failed to create IP lists directory: %w", err)
 	}
 

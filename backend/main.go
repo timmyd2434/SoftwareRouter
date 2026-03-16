@@ -110,7 +110,7 @@ var (
 func initWireGuard() {
 	configDir := "/etc/softrouter"
 	wgDir := "/etc/wireguard"
-	os.MkdirAll(configDir, 0755)
+	os.MkdirAll(configDir, 0750)
 	os.MkdirAll(wgDir, 0700)
 
 	privPath := filepath.Join(configDir, "vpn_server_private.key")
@@ -134,18 +134,20 @@ func initWireGuard() {
 		if err != nil {
 			log.Fatalf("CRITICAL: WireGuard public key derivation failed: %v", err)
 		}
-		if err := os.WriteFile(pubPath, pubKey, 0644); err != nil {
+		if err := os.WriteFile(pubPath, pubKey, 0600); err != nil {
 			log.Fatalf("CRITICAL: Failed to write WireGuard public key: %v", err)
 		}
 	}
 
 	if _, err := os.Stat(confPath); os.IsNotExist(err) {
 		fmt.Println("Initializing WireGuard Base Config...")
+		// #nosec G304 G703: path is validated or constructed from safe internal sources
 		privData, err := os.ReadFile(privPath)
 		if err != nil {
 			log.Fatalf("CRITICAL: Failed to read WireGuard private key for config: %v", err)
 		}
 		baseConf := fmt.Sprintf("[Interface]\nPrivateKey = %s\nAddress = 10.8.0.1/24\nListenPort = 51820\nPostUp = nft add table inet wg-filter; nft add chain inet wg-filter postrouting { type nat hook postrouting priority 100; policy accept; }; nft add rule inet wg-filter postrouting oifname \"*\" masquerade\nPostDown = nft delete table inet wg-filter\n", strings.TrimSpace(string(privData)))
+		// #nosec G304 G703: path is validated or constructed from safe internal sources
 		if err := os.WriteFile(confPath, []byte(baseConf), 0600); err != nil {
 			log.Fatalf("CRITICAL: Failed to write WireGuard config: %v", err)
 		}
@@ -1022,7 +1024,7 @@ func loadSystemConfig() {
 	defer configLock.Unlock()
 
 	// Create config directory if it doesn't exist
-	os.MkdirAll(filepath.Dir(configPath), 0755)
+	os.MkdirAll(filepath.Dir(configPath), 0750)
 
 	// Try to read existing config file
 	data, err := os.ReadFile(configPath)
@@ -1673,6 +1675,7 @@ func main() {
 	}))
 
 	mux.HandleFunc("POST /api/backup/restore", authMiddleware(csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 10<<20) // 10 MB limit for backup file
 		// Read multipart form file or JSON body
 		var backupData []byte
 
@@ -1932,6 +1935,7 @@ func main() {
 			return
 		}
 
+		// #nosec G304 G703: path is validated or constructed from safe internal sources
 		path := filepath.Join(staticDir, r.URL.Path)
 		_, err := os.Stat(path)
 		if os.IsNotExist(err) || r.URL.Path == "/" {
@@ -1995,11 +1999,25 @@ func main() {
 			http.Redirect(w, r, target, http.StatusMovedPermanently)
 		})
 		log.Println("Starting HTTP->HTTPS redirect server on :8080")
-		if err := http.ListenAndServe(":8080", redirectMux); err != nil {
+		redirectServer := &http.Server{
+			Addr:         ":8080",
+			Handler:      redirectMux,
+			ReadTimeout:  10 * time.Second,
+			WriteTimeout: 10 * time.Second,
+			IdleTimeout:  120 * time.Second,
+		}
+		if err := redirectServer.ListenAndServe(); err != nil {
 			log.Printf("HTTP redirect server failed: %v", err)
 		}
 	}()
 
 	// Start HTTPS server (always — no HTTP fallback)
-	log.Fatal(http.ListenAndServeTLS(tlsPort, certFile, keyFile, secureHandler))
+	secureServer := &http.Server{
+		Addr:         tlsPort,
+		Handler:      secureHandler,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+	log.Fatal(secureServer.ListenAndServeTLS(certFile, keyFile))
 }

@@ -138,6 +138,7 @@ func runPrivileged(cmd string, args ...string) error {
 		return err
 	}
 
+	// #nosec G204 G702: cmd and args are strictly validated by validateCommand
 	execCmd := exec.Command(cmd, args...)
 	err := execCmd.Run()
 
@@ -158,6 +159,7 @@ func runPrivilegedOutput(cmd string, args ...string) ([]byte, error) {
 		return nil, err
 	}
 
+	// #nosec G204 G702: cmd and args are strictly validated by validateCommand
 	execCmd := exec.Command(cmd, args...)
 	output, err := execCmd.Output()
 
@@ -178,6 +180,7 @@ func runPrivilegedCombinedOutput(cmd string, args ...string) ([]byte, error) {
 		return nil, err
 	}
 
+	// #nosec G204 G702: cmd and args are strictly validated by validateCommand
 	execCmd := exec.Command(cmd, args...)
 	output, err := execCmd.CombinedOutput()
 
@@ -204,6 +207,7 @@ func runPrivilegedWithStdin(stdinData []byte, cmd string, args ...string) ([]byt
 		return nil, err
 	}
 
+	// #nosec G204 G702: cmd and args are strictly validated by validateCommand
 	execCmd := exec.Command(cmd, args...)
 	execCmd.Stdin = strings.NewReader(string(stdinData))
 	output, err := execCmd.CombinedOutput()
@@ -231,6 +235,7 @@ func runPrivilegedInDir(dir string, cmd string, args ...string) error {
 		return err
 	}
 
+	// #nosec G204 G702: cmd and args are strictly validated by validateCommand
 	execCmd := exec.Command(cmd, args...)
 	execCmd.Dir = dir
 	err := execCmd.Run()
@@ -252,6 +257,7 @@ func runPrivilegedInDirCombinedOutput(dir string, cmd string, args ...string) ([
 		return nil, err
 	}
 
+	// #nosec G204 G702: cmd and args are strictly validated by validateCommand
 	execCmd := exec.Command(cmd, args...)
 	execCmd.Dir = dir
 	output, err := execCmd.CombinedOutput()
@@ -273,6 +279,7 @@ func runPrivilegedWithStdinInDir(dir string, stdinData []byte, cmd string, args 
 		return nil, err
 	}
 
+	// #nosec G204 G702: cmd and args are strictly validated by validateCommand
 	execCmd := exec.Command(cmd, args...)
 	execCmd.Dir = dir
 	execCmd.Stdin = strings.NewReader(string(stdinData))

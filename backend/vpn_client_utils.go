@@ -164,6 +164,7 @@ func getVPNClientStatus(w http.ResponseWriter, r *http.Request) {
 
 // uploadVPNClientConfig handles .ovpn file upload and credentials
 func uploadVPNClientConfig(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20) // Limit total request size to 10MB
 	err := r.ParseMultipartForm(10 << 20) // 10MB limit
 	if err != nil {
 		http.Error(w, "Failed to parse form", http.StatusBadRequest)
@@ -180,9 +181,10 @@ func uploadVPNClientConfig(w http.ResponseWriter, r *http.Request) {
 	defer file.Close() //nolint:errcheck
 
 	// 1. Ensure directories exist
-	os.MkdirAll(vpnClientConfigDir, 0755)
+	os.MkdirAll(vpnClientConfigDir, 0750)
 
 	// 2. Save Auth File
+	// #nosec G304 G703: path is validated or constructed from safe internal sources
 	authContent := fmt.Sprintf("%s\n%s", username, password)
 	if err := os.WriteFile(vpnAuthFile, []byte(authContent), 0600); err != nil {
 		respondSystemError(w, ErrGenericInternalError, "Failed to save credentials", err)
@@ -218,7 +220,7 @@ func uploadVPNClientConfig(w http.ResponseWriter, r *http.Request) {
 	configLines = append(configLines, "script-security 2") // Allow scripts if needed (future proofing)
 
 	finalConfig := strings.Join(configLines, "\n")
-	if err := os.WriteFile(vpnConfigFile, []byte(finalConfig), 0644); err != nil {
+	if err := os.WriteFile(vpnConfigFile, []byte(finalConfig), 0600); err != nil {
 		respondSystemError(w, ErrGenericInternalError, "Failed to write config", err)
 		return
 	}

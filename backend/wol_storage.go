@@ -26,7 +26,7 @@ const wolDevicesPath = "/etc/softrouter/wol_devices.json"
 func loadWoLDevices() (*WoLStore, error) {
 	// Ensure directory exists
 	dir := filepath.Dir(wolDevicesPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -53,7 +53,7 @@ func loadWoLDevices() (*WoLStore, error) {
 func saveWoLDevices(store *WoLStore) error {
 	// Ensure directory exists
 	dir := filepath.Dir(wolDevicesPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 

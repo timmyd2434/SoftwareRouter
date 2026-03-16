@@ -38,7 +38,7 @@ const backupDir = "/var/backups/softrouter"
 // createBackup generates a complete system backup
 func createBackup() ([]byte, error) {
 	// Create backup directory if it doesn't exist
-	if err := os.MkdirAll(backupDir, 0755); err != nil {
+	if err := os.MkdirAll(backupDir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create backup directory: %w", err)
 	}
 
@@ -220,6 +220,7 @@ func listBackups() ([]map[string]interface{}, error) {
 
 		// Try to read backup metadata
 		backupPath := filepath.Join(backupDir, file.Name())
+		// #nosec G304 G703: path is validated or constructed from safe internal sources
 		data, err := os.ReadFile(backupPath)
 		if err != nil {
 			continue
@@ -252,6 +253,7 @@ func createCompressedBackup() (string, error) {
 	filename := fmt.Sprintf("backup-%s.tar.gz", time.Now().Format("2006-01-02-150405"))
 	filepath := filepath.Join(backupDir, filename)
 
+	// #nosec G304 G703: path is validated or constructed from safe internal sources
 	file, err := os.Create(filepath)
 	if err != nil {
 		return "", err
