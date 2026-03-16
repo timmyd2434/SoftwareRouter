@@ -5,8 +5,16 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
 	"sync"
 )
+
+// validBandwidth matches safe bandwidth values like "100mbit", "1gbit", "500kbit"
+// SECURITY: Prevents command injection via tc arguments
+var validBandwidth = regexp.MustCompile(`^[0-9]+(kbit|mbit|gbit|tbit)$`)
+
+// validQoSMode matches allowed QoS modes
+var validQoSModes = map[string]bool{"cake": true, "htb": true, "none": true}
 
 // QoSConfig represents the Traffic Control settings for an interface
 type QoSConfig struct {
@@ -173,6 +181,34 @@ func updateQoSConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// SECURITY: Validate interface name to prevent command injection via tc args
+	if !isValidInterfaceName(req.Interface) {
+		http.Error(w, "Invalid interface name", http.StatusBadRequest)
+		return
+	}
+
+	// SECURITY: Validate mode
+	if !validQoSModes[req.Mode] {
+		http.Error(w, "Invalid QoS mode: must be 'cake', 'htb', or 'none'", http.StatusBadRequest)
+		return
+	}
+
+	// SECURITY: Validate bandwidth format to prevent command injection
+	if req.Upload != "" && !validBandwidth.MatchString(req.Upload) {
+		http.Error(w, "Invalid upload bandwidth format (e.g. '100mbit', '1gbit')", http.StatusBadRequest)
+		return
+	}
+	if req.Download != "" && !validBandwidth.MatchString(req.Download) {
+		http.Error(w, "Invalid download bandwidth format (e.g. '100mbit', '1gbit')", http.StatusBadRequest)
+		return
+	}
+
+	// SECURITY: Validate overhead range
+	if req.Overhead < 0 || req.Overhead > 128 {
+		http.Error(w, "Invalid overhead: must be 0-128", http.StatusBadRequest)
+		return
+	}
+
 	// Apply (System)
 	if err := ApplyQoS(req); err != nil {
 		http.Error(w, "Failed to apply QoS: "+err.Error(), http.StatusInternalServerError)
@@ -195,6 +231,12 @@ func deleteQoSConfig(w http.ResponseWriter, r *http.Request) {
 	iface := r.URL.Query().Get("interface")
 	if iface == "" {
 		http.Error(w, "Interface param required", http.StatusBadRequest)
+		return
+	}
+
+	// SECURITY: Validate interface name to prevent command injection
+	if !isValidInterfaceName(iface) {
+		http.Error(w, "Invalid interface name", http.StatusBadRequest)
 		return
 	}
 

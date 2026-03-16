@@ -130,6 +130,7 @@ export const API_ENDPOINTS = {
     RA_STATUS: `${API_BASE_URL}/api/ra/status`, // Router Advertisement status
     BONDS: `${API_BASE_URL}/api/bonds`,
     BOND_MEMBER: `${API_BASE_URL}/api/bonds/member`,
+    SCHEDULES: `${API_BASE_URL}/api/schedules`,
 };
 
 

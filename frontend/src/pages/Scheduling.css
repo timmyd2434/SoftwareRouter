@@ -1,0 +1,261 @@
+.scheduling-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: var(--space-6);
+}
+
+/* Schedule Table */
+.schedule-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.schedule-table thead th {
+    text-align: left;
+    padding: var(--space-3) var(--space-4);
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--glass-border);
+}
+
+.schedule-table tbody td {
+    padding: var(--space-3) var(--space-4);
+    font-size: 0.9rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    vertical-align: middle;
+}
+
+.schedule-table tbody tr:hover {
+    background: rgba(99, 102, 241, 0.05);
+}
+
+.schedule-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* Time display */
+.time-display {
+    font-family: 'Courier New', monospace;
+    font-weight: 500;
+    color: var(--primary);
+    font-size: 0.95rem;
+}
+
+.time-arrow {
+    color: var(--text-muted);
+    margin: 0 6px;
+}
+
+/* Day pills */
+.day-pills {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.day-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 24px;
+    border-radius: var(--radius-sm);
+    font-size: 0.7rem;
+    font-weight: 600;
+    background: rgba(99, 102, 241, 0.15);
+    color: var(--primary);
+    letter-spacing: 0.02em;
+}
+
+/* Toggle switch */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 22px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: var(--bg-card);
+    border-radius: 22px;
+    transition: background-color 0.3s;
+}
+
+.toggle-slider::before {
+    content: "";
+    position: absolute;
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    bottom: 3px;
+    background-color: var(--text-muted);
+    border-radius: 50%;
+    transition: all 0.3s;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background-color: var(--primary);
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+    transform: translateX(18px);
+    background-color: #fff;
+}
+
+/* Form: Day selector */
+.day-selector {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.day-checkbox {
+    display: none;
+}
+
+.day-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 34px;
+    border-radius: var(--radius-md);
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid var(--glass-border);
+    background: var(--bg-card);
+    color: var(--text-muted);
+    transition: all 0.2s;
+    user-select: none;
+}
+
+.day-label:hover {
+    border-color: var(--primary);
+    color: var(--text-main);
+}
+
+.day-checkbox:checked + .day-label {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+}
+
+/* Comment text */
+.schedule-comment {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-style: italic;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Actions */
+.schedule-actions {
+    display: flex;
+    gap: 6px;
+}
+
+/* Interface badge */
+.iface-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-main);
+}
+
+/* Empty state */
+.schedule-empty {
+    text-align: center;
+    padding: var(--space-8) var(--space-6);
+    color: var(--text-muted);
+}
+
+.schedule-empty p {
+    margin-top: 8px;
+    font-size: 0.85rem;
+}
+
+/* Alert boxes */
+.sched-alert {
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-4);
+    font-size: 0.9rem;
+}
+
+.sched-alert.success {
+    background: rgba(74, 222, 128, 0.1);
+    border: 1px solid rgba(74, 222, 128, 0.3);
+    color: #4ade80;
+}
+
+.sched-alert.error {
+    background: rgba(248, 113, 113, 0.1);
+    border: 1px solid rgba(248, 113, 113, 0.3);
+    color: #f87171;
+}
+
+/* Info box */
+.sched-info-box {
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+    font-size: 0.85rem;
+    color: var(--text-secondary, var(--text-muted));
+    margin-top: var(--space-4);
+}
+
+/* Time input styling */
+.time-input {
+    font-family: 'Courier New', monospace;
+    font-size: 1rem;
+    letter-spacing: 0.05em;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+    .scheduling-container {
+        padding: var(--space-4);
+    }
+
+    .schedule-table {
+        display: block;
+        overflow-x: auto;
+    }
+}
+
+@media (max-width: 600px) {
+    .day-selector {
+        gap: 4px;
+    }
+
+    .day-label {
+        width: 38px;
+        height: 30px;
+        font-size: 0.7rem;
+    }
+}

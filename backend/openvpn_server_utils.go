@@ -263,7 +263,10 @@ func createOpenVPNClient(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name string `json:"name"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
 
 	if req.Name == "" || !validVPNClientName.MatchString(req.Name) {
 		http.Error(w, "Invalid name: must be alphanumeric, hyphens, or underscores only", http.StatusBadRequest)

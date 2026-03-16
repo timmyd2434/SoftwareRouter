@@ -94,8 +94,12 @@ func addVPNClient(w http.ResponseWriter, r *http.Request) {
 		endpoint = h
 	}
 	// Better yet, use the Host header from the request if it looks like an IP/Domain
+	// SECURITY: Validate Host header against injection (newlines, config directives)
 	if h := r.Host; h != "" {
-		endpoint = strings.Split(h, ":")[0]
+		hostOnly := strings.Split(h, ":")[0]
+		if hostRegex.MatchString(hostOnly) {
+			endpoint = hostOnly
+		}
 	}
 
 	clientConf := fmt.Sprintf("[Interface]\nPrivateKey = %s\nAddress = %s\nDNS = 1.1.1.1\n\n[Peer]\nPublicKey = %s\nEndpoint = %s:51820\nAllowedIPs = 0.0.0.0/0\nPersistentKeepalive = 25\n",
@@ -139,7 +143,7 @@ func downloadVPNClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.conf", name))
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.conf\"", name))
 	w.Header().Set("Content-Type", "application/x-wireguard-config")
 	w.Write(data)
 }

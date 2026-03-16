@@ -404,6 +404,21 @@ func enableCORS(next http.Handler) http.Handler {
 	})
 }
 
+// maxBodyMiddleware wraps all request bodies with http.MaxBytesReader to prevent
+// memory exhaustion attacks (Go's equivalent of buffer overflow protection).
+// SECURITY: This is a defense-in-depth measure — individual endpoints with
+// multipart forms already have their own ParseMultipartForm limits.
+func maxBodyMiddleware(next http.Handler, maxBytes int64) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip body limit for multipart uploads (they have their own limits)
+		contentType := r.Header.Get("Content-Type")
+		if r.Body != nil && !strings.HasPrefix(contentType, "multipart/") {
+			r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // --- Audit Helpers ---
 
 // getClientIP extracts the client IP address from the request
@@ -1512,6 +1527,12 @@ func main() {
 
 	mux := http.NewServeMux()
 
+	// SECURITY: Wrap all handlers with a max body size limit to prevent
+	// memory exhaustion attacks (Go's equivalent of buffer overflow protection).
+	// Multipart endpoints (VPN upload, backup restore) have their own ParseMultipartForm limits.
+	const maxBodySize = 1 << 20 // 1 MB
+	wrappedMux := maxBodyMiddleware(mux, maxBodySize)
+
 	// Public Auth Endpoints (strict 10 req/min to prevent brute force)
 	mux.HandleFunc("POST /api/login", rateLimitMiddleware(authLimiter, 10, time.Minute)(login))
 	mux.HandleFunc("POST /api/logout", authMiddleware(csrfMiddleware(logout)))
@@ -1884,6 +1905,12 @@ func main() {
 	mux.HandleFunc("GET /api/routing/dynamic", authMiddleware(getDynamicRouting))
 	mux.HandleFunc("POST /api/routing/dynamic", authMiddleware(csrfMiddleware(updateDynamicRouting)))
 
+	// Interface Scheduling
+	mux.HandleFunc("GET /api/schedules", authMiddleware(getSchedules))
+	mux.HandleFunc("POST /api/schedules", authMiddleware(csrfMiddleware(createSchedule)))
+	mux.HandleFunc("PUT /api/schedules", authMiddleware(csrfMiddleware(updateSchedule)))
+	mux.HandleFunc("DELETE /api/schedules", authMiddleware(csrfMiddleware(deleteSchedule)))
+
 	// Start Background Services
 	go func() {
 		// Wait a bit for network to settle then apply routes
@@ -1891,6 +1918,7 @@ func main() {
 		initRoutes()
 		initWANManager()
 		initDynamicRouting()
+		initScheduler()
 	}()
 
 	// SPA Static File Server
@@ -1914,7 +1942,7 @@ func main() {
 		http.FileServer(http.Dir(staticDir)).ServeHTTP(w, r)
 	})
 
-	handler := enableCORS(mux)
+	handler := enableCORS(wrappedMux)
 
 	// Load TLS configuration
 	configLock.RLock()

@@ -4,7 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 )
+
+// validCountryCode matches exactly 2 ASCII letters (case-insensitive)
+// SECURITY: Prevents injection via country code query param in curl arguments
+var validCountryCode = regexp.MustCompile(`^[A-Za-z]{2}$`)
 
 // handleGetGeoBlockingConfig returns the current geoblocking configuration
 func handleGetGeoBlockingConfig(w http.ResponseWriter, r *http.Request) {
@@ -81,6 +86,12 @@ func handleDownloadCountryIPList(w http.ResponseWriter, r *http.Request) {
 	countryCode := r.URL.Query().Get("country")
 	if countryCode == "" {
 		http.Error(w, "Country code is required", http.StatusBadRequest)
+		return
+	}
+
+	// SECURITY: Validate country code format to prevent injection via curl arguments
+	if !validCountryCode.MatchString(countryCode) {
+		http.Error(w, "Invalid country code: must be exactly 2 letters", http.StatusBadRequest)
 		return
 	}
 

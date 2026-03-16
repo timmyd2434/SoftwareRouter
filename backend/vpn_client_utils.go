@@ -240,6 +240,12 @@ func controlVPNClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// SECURITY: Strictly validate action to prevent unexpected systemctl arguments
+	if req.Action != "start" && req.Action != "stop" {
+		http.Error(w, "Invalid action: must be 'start' or 'stop'", http.StatusBadRequest)
+		return
+	}
+
 	var output []byte
 	var err error
 	if req.Action == "start" {
