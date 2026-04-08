@@ -130,7 +130,7 @@ sleep 3
 echo ""
 echo -e "${CYAN}[1/10] Installing System Dependencies...${NC}"
 apt update
-apt install -y curl git golang-go nftables iproute2 systemd jq wget bsdmainutils wireguard openvpn easy-rsa qrencode unbound dnsmasq net-tools iptables ca-certificates gnupg lsb-release frr frr-pythontools
+apt install -y curl git golang-go nftables iproute2 systemd jq wget bsdmainutils wireguard openvpn easy-rsa qrencode unbound dnsmasq net-tools iptables ca-certificates gnupg lsb-release frr frr-pythontools speedtest-cli miniupnpd ieee-data
 
 # Enable FRR Daemons
 sed -i 's/bgpd=no/bgpd=yes/' /etc/frr/daemons
