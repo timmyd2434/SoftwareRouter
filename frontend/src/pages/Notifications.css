@@ -1,0 +1,467 @@
+.notifications-page {
+    padding: 0;
+}
+
+.notifications-page .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.notifications-page .header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.notifications-page .header-left h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    color: var(--text-primary);
+}
+
+.notifications-page .subtitle {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.notifications-page .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.notifications-page .save-confirmation {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: #4ade80;
+    font-size: 0.85rem;
+    animation: fadeIn 0.3s ease;
+}
+
+/* Cards */
+.notifications-page .card {
+    background: var(--card-bg, rgba(255,255,255,0.04));
+    border: 1px solid var(--border-color, rgba(255,255,255,0.08));
+    border-radius: 12px;
+    margin-bottom: 1.25rem;
+    overflow: hidden;
+}
+
+.notifications-page .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.06));
+}
+
+.notifications-page .card-title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.notifications-page .card-title-row h3 {
+    margin: 0;
+    font-size: 1.05rem;
+    color: var(--text-primary);
+}
+
+.notifications-page .card-body {
+    padding: 1.25rem;
+}
+
+.notifications-page .card-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color, rgba(255,255,255,0.06));
+}
+
+/* Master Toggle */
+.notifications-page .master-toggle {
+    padding: 1.25rem;
+}
+
+.notifications-page .toggle-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.notifications-page .toggle-info h3 {
+    margin: 0 0 0.25rem;
+    font-size: 1.1rem;
+    color: var(--text-primary);
+}
+
+.notifications-page .toggle-info p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.notifications-page .global-settings {
+    margin-top: 1.25rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--border-color, rgba(255,255,255,0.06));
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.notifications-page .setting-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.notifications-page .setting-row label {
+    min-width: 160px;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.notifications-page .setting-row select,
+.notifications-page .setting-row input[type="number"] {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-color, rgba(255,255,255,0.1));
+    border-radius: 8px;
+    background: var(--input-bg, rgba(0,0,0,0.2));
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    min-width: 200px;
+}
+
+.notifications-page .setting-row .hint {
+    font-size: 0.8rem;
+    color: var(--text-muted, rgba(255,255,255,0.4));
+}
+
+/* Toggle Switch */
+.notifications-page .switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+}
+
+.notifications-page .switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.notifications-page .switch .slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: rgba(255,255,255,0.15);
+    transition: 0.3s;
+    border-radius: 24px;
+}
+
+.notifications-page .switch .slider:before {
+    content: "";
+    position: absolute;
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background: white;
+    transition: 0.3s;
+    border-radius: 50%;
+}
+
+.notifications-page .switch input:checked + .slider {
+    background-color: #4f8ff7;
+}
+
+.notifications-page .switch input:checked + .slider:before {
+    transform: translateX(20px);
+}
+
+.notifications-page .switch-sm {
+    width: 36px;
+    height: 20px;
+}
+
+.notifications-page .switch-sm .slider:before {
+    height: 14px;
+    width: 14px;
+}
+
+.notifications-page .switch-sm input:checked + .slider:before {
+    transform: translateX(16px);
+}
+
+/* Form Grid */
+.notifications-page .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.notifications-page .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.notifications-page .form-group label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.notifications-page .form-group input {
+    padding: 0.55rem 0.75rem;
+    border: 1px solid var(--border-color, rgba(255,255,255,0.1));
+    border-radius: 8px;
+    background: var(--input-bg, rgba(0,0,0,0.2));
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+.notifications-page .form-group input::placeholder {
+    color: var(--text-muted, rgba(255,255,255,0.3));
+}
+
+/* Buttons */
+.notifications-page .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.55rem 1rem;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-weight: 500;
+}
+
+.notifications-page .btn-primary {
+    background: linear-gradient(135deg, #4f8ff7, #3b6fd9);
+    color: white;
+}
+
+.notifications-page .btn-primary:hover {
+    background: linear-gradient(135deg, #6ba1ff, #4f8ff7);
+    transform: translateY(-1px);
+}
+
+.notifications-page .btn-secondary {
+    background: rgba(255,255,255,0.08);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color, rgba(255,255,255,0.1));
+}
+
+.notifications-page .btn-secondary:hover {
+    background: rgba(255,255,255,0.12);
+}
+
+.notifications-page .btn-sm {
+    padding: 0.4rem 0.7rem;
+    font-size: 0.8rem;
+}
+
+.notifications-page .btn-danger {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+
+.notifications-page .btn-danger:hover {
+    background: rgba(239, 68, 68, 0.3);
+}
+
+.notifications-page .btn-test {
+    background: rgba(79, 143, 247, 0.15);
+    color: #4f8ff7;
+}
+
+.notifications-page .btn-test:hover {
+    background: rgba(79, 143, 247, 0.3);
+}
+
+.notifications-page .btn-success-state {
+    background: rgba(74, 222, 128, 0.15);
+    color: #4ade80;
+}
+
+.notifications-page .btn-error-state {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+
+/* Webhook Items */
+.notifications-page .webhooks-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.notifications-page .webhook-item {
+    padding: 1rem;
+    border: 1px solid var(--border-color, rgba(255,255,255,0.08));
+    border-radius: 10px;
+    background: rgba(0,0,0,0.15);
+}
+
+.notifications-page .webhook-top-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.notifications-page .type-select {
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--border-color, rgba(255,255,255,0.1));
+    border-radius: 6px;
+    background: var(--input-bg, rgba(0,0,0,0.2));
+    color: var(--text-primary);
+    font-size: 0.85rem;
+}
+
+.notifications-page .name-input {
+    flex: 1;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--border-color, rgba(255,255,255,0.1));
+    border-radius: 6px;
+    background: var(--input-bg, rgba(0,0,0,0.2));
+    color: var(--text-primary);
+    font-size: 0.85rem;
+}
+
+.notifications-page .webhook-url-row {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.notifications-page .webhook-url-row input {
+    flex: 1;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-color, rgba(255,255,255,0.1));
+    border-radius: 8px;
+    background: var(--input-bg, rgba(0,0,0,0.2));
+    color: var(--text-primary);
+    font-size: 0.85rem;
+}
+
+/* Empty State */
+.notifications-page .empty-state {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-secondary);
+}
+
+/* Events Table */
+.notifications-page .events-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.notifications-page .events-table th {
+    text-align: left;
+    padding: 0.6rem 0.75rem;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.08));
+}
+
+.notifications-page .events-table td {
+    padding: 0.65rem 0.75rem;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.04));
+}
+
+.notifications-page .events-table code {
+    background: rgba(79, 143, 247, 0.1);
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    color: #8bb8ff;
+}
+
+.notifications-page .severity-badge {
+    display: inline-block;
+    padding: 0.15rem 0.6rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.notifications-page .severity-badge.critical {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+
+.notifications-page .severity-badge.warning {
+    background: rgba(250, 204, 21, 0.15);
+    color: #facc15;
+}
+
+.notifications-page .severity-badge.info {
+    background: rgba(79, 143, 247, 0.15);
+    color: #4f8ff7;
+}
+
+/* Spinner */
+.notifications-page .spinner-sm {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,0.2);
+    border-top-color: #4f8ff7;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+
+.notifications-page .loading-state {
+    text-align: center;
+    padding: 3rem;
+    color: var(--text-secondary);
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .notifications-page .form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .notifications-page .setting-row {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .notifications-page .webhook-top-row {
+        flex-wrap: wrap;
+    }
+
+    .notifications-page .page-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+}

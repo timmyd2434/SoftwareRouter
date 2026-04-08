@@ -1,0 +1,183 @@
+.parental-page {
+    padding: 1rem;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.policies-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 1.5rem;
+}
+
+.policy-card {
+    display: flex;
+    flex-direction: column;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    transition: all 0.2s;
+    overflow: hidden;
+}
+
+.policy-card.is-active {
+    border-color: rgba(239, 68, 68, 0.4);
+    box-shadow: 0 0 15px rgba(239, 68, 68, 0.1);
+}
+
+.policy-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.25rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.header-left h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: var(--text-primary, #e2e8f0);
+}
+
+.badge {
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+}
+
+.badge-danger {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.badge-idle {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-secondary, #94a3b8);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.policy-card-body {
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    flex: 1;
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.9rem;
+}
+
+.info-row .label {
+    color: var(--text-secondary, #94a3b8);
+}
+
+.info-row .value {
+    color: var(--text-primary, #e2e8f0);
+    font-weight: 500;
+}
+
+.days-row {
+    display: flex;
+    gap: 0.35rem;
+    margin-top: 0.5rem;
+}
+
+.day-pill {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-size: 0.75rem;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-muted, #64748b);
+    font-weight: 600;
+}
+
+.day-pill.active {
+    background: #3b82f6;
+    color: #fff;
+}
+
+.policy-card-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 1rem 1.25rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    background: rgba(0, 0, 0, 0.1);
+}
+
+/* Schedule Card in Modal */
+.schedule-card {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    padding: 1rem;
+    border-radius: 8px;
+}
+
+.day-btn {
+    flex: 1;
+    padding: 0.4rem 0;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-secondary, #94a3b8);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: all 0.2s;
+}
+
+.day-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.day-btn.active {
+    background: rgba(59, 130, 246, 0.2);
+    border-color: #3b82f6;
+    color: #60a5fa;
+}
+
+.text-xs {
+    font-size: 0.75rem;
+    color: var(--text-secondary, #94a3b8);
+    margin-bottom: 0.25rem;
+    display: block;
+}
+
+/* Utility classes */
+.flex-center {
+    display: flex;
+    align-items: center;
+}
+
+.flex-between {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.gap { gap: 1rem; }
+.gap-sm { gap: 0.5rem; }
+.mb { margin-bottom: 1rem; }
+.mb-sm { margin-bottom: 0.5rem; }
+.mt-sm { margin-top: 0.5rem; }
+.flex-1 { flex: 1; }
+.flex-col { display: flex; flex-direction: column; }

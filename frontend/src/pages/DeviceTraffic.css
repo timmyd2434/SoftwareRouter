@@ -1,0 +1,191 @@
+.device-traffic-page {
+    padding: 1rem;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.traffic-summary {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+}
+
+.summary-card {
+    display: flex;
+    align-items: center;
+    padding: 1.5rem;
+    gap: 1.5rem;
+}
+
+.summary-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 60px;
+    height: 60px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.summary-icon.mb { color: #4ade80; background: rgba(74, 222, 128, 0.15); }
+.summary-icon.gb { color: #60a5fa; background: rgba(96, 165, 250, 0.15); }
+.summary-icon.tb { color: #facc15; background: rgba(250, 204, 21, 0.15); }
+
+.summary-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.summary-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary, #94a3b8);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.summary-value {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--text-primary, #e2e8f0);
+}
+
+.text-success { color: #4ade80; }
+.text-primary { color: #60a5fa; }
+
+.table-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.table-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.25rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.search-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    width: 300px;
+    color: var(--text-secondary, #94a3b8);
+}
+
+.search-bar input {
+    background: none;
+    border: none;
+    color: var(--text-primary, #e2e8f0);
+    outline: none;
+    width: 100%;
+}
+
+.toolbar-stats {
+    font-size: 0.85rem;
+    color: var(--text-muted, #64748b);
+}
+
+.table-responsive {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.traffic-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.traffic-table th {
+    text-align: left;
+    padding: 1rem 1.25rem;
+    color: var(--text-secondary, #94a3b8);
+    font-size: 0.85rem;
+    font-weight: 500;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.04);
+}
+
+.traffic-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+}
+
+.traffic-table th.sortable:hover {
+    color: var(--text-primary, #e2e8f0);
+}
+
+.traffic-table td {
+    padding: 1.25rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+    vertical-align: middle;
+}
+
+.traffic-table tbody tr:hover td {
+    background: rgba(255, 255, 255, 0.015);
+}
+
+.device-ident {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.device-name {
+    font-weight: 500;
+    color: var(--text-primary, #e2e8f0);
+}
+
+.device-mac {
+    font-size: 0.8rem;
+    font-family: 'Fira Code', monospace;
+    color: var(--text-muted, #64748b);
+}
+
+.ip-badge {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-family: 'Fira Code', monospace;
+    font-size: 0.85rem;
+    color: var(--text-secondary, #94a3b8);
+}
+
+.rate-active {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-weight: 500;
+}
+
+.rate-active.rx { color: #4ade80; }
+.rate-active.tx { color: #60a5fa; }
+
+.rate-idle {
+    color: var(--text-muted, #64748b);
+    font-size: 0.85rem;
+}
+
+.total-volume {
+    font-weight: 600;
+    color: var(--text-primary, #e2e8f0);
+}
+
+.text-right { text-align: right !important; }
+.text-center { text-align: center !important; }
+.mb-sm { margin-bottom: 0.5rem; }
+.pad-lg { padding: 3rem 1.25rem; }
+
+@media (max-width: 1024px) {
+    .traffic-summary {
+        grid-template-columns: 1fr;
+    }
+}

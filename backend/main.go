@@ -65,6 +65,7 @@ type Config struct {
 	CORS            CORSConfig      `json:"cors"`
 	ProtectedSubnet string          `json:"protected_subnet"`
 	WebAccess       WebAccessConfig `json:"web_access"`
+	DNSPrivacy      DNSPrivacyConfig `json:"dns_privacy"`
 
 	// Merged AppConfig fields
 	CloudflareToken string `json:"cf_token"`
@@ -95,6 +96,12 @@ type TLSConfig struct {
 	CertFile string `json:"cert_file"`
 	KeyFile  string `json:"key_file"`
 	Port     string `json:"port"` // Default ":443"
+}
+
+type DNSPrivacyConfig struct {
+	Enabled  bool   `json:"enabled"`
+	Provider string `json:"provider"` // "cloudflare", "quad9", "google"
+	Mode     string `json:"mode"`     // "dot", "doh"
 }
 
 type CORSConfig struct {
@@ -300,11 +307,14 @@ type StaticLease struct {
 
 // DHCPLease represents an active DHCP lease
 type DHCPLease struct {
-	IP        string `json:"ip"`
-	MAC       string `json:"mac"`
-	Hostname  string `json:"hostname"`
-	Expires   string `json:"expires"`
-	Interface string `json:"interface"`
+	IP         string `json:"ip"`
+	MAC        string `json:"mac"`
+	Hostname   string `json:"hostname"`
+	Expires    string `json:"expires"`
+	Interface  string `json:"interface"`
+	Vendor     string `json:"vendor"`
+	DeviceName string `json:"device_name"` // User overridden name
+	DeviceType string `json:"device_type"` // User classified type
 }
 
 const configFilePath = "/etc/softrouter/config.json"
@@ -1498,13 +1508,18 @@ func main() {
 	firewallManager.ApplyFirewallRules()
 
 	initTrafficStats()
+	initDeviceTraffic()
 	initDynamicRouting()
+	initParentalControls()
+	initUPnP()
+	initDeviceFingerprint()
 
 	// Initialize audit logging
 	if err := initAuditLog(); err != nil {
 		log.Printf("WARNING: Failed to initialize audit log: %v", err)
 	}
 	startAuditLogRotation()
+	initNotifications()
 
 	// Initialize rate limiters
 	authLimiter := NewRateLimiter()  // 10 req/min for login
@@ -1801,6 +1816,8 @@ func main() {
 	mux.HandleFunc("POST /api/tools/ping", authMiddleware(csrfMiddleware(handlePing)))
 	mux.HandleFunc("POST /api/tools/traceroute", authMiddleware(csrfMiddleware(handleTraceroute)))
 	mux.HandleFunc("GET /api/system/logs", authMiddleware(handleSystemLogs))
+	mux.HandleFunc("POST /api/diagnostics/speedtest", authMiddleware(csrfMiddleware(handleSpeedTest)))
+	mux.HandleFunc("GET /api/diagnostics/speedtest/history", authMiddleware(getSpeedTestHistory))
 
 	// Wake-on-LAN
 	mux.HandleFunc("POST /api/wol/wake", authMiddleware(csrfMiddleware(handleWakeOnLAN)))
@@ -1828,6 +1845,8 @@ func main() {
 	mux.HandleFunc("GET /api/traffic/stats", authMiddleware(getTrafficStats))
 
 	mux.HandleFunc("GET /api/traffic/connections", authMiddleware(getActiveConnections))
+	mux.HandleFunc("GET /api/traffic/devices", authMiddleware(getDeviceTraffic))
+	mux.HandleFunc("GET /api/traffic/device", authMiddleware(getDeviceTrafficDetail))
 	mux.HandleFunc("GET /api/security/suricata/alerts", authMiddleware(getSuricataAlerts))
 	mux.HandleFunc("GET /api/security/crowdsec/decisions", authMiddleware(getCrowdSecDecisions))
 	mux.HandleFunc("GET /api/security/stats", authMiddleware(getSecurityStats))
@@ -1839,6 +1858,18 @@ func main() {
 	mux.HandleFunc("DELETE /api/dhcp/config", authMiddleware(csrfMiddleware(deleteDHCPConfig)))
 	mux.HandleFunc("GET /api/dhcp/leases", authMiddleware(getDHCPLeases))
 	mux.HandleFunc("POST /api/dhcp/static", authMiddleware(csrfMiddleware(addStaticLease)))
+
+	// Parental Controls
+	mux.HandleFunc("GET /api/parental/config", authMiddleware(getParentalConfigHandler))
+	mux.HandleFunc("POST /api/parental/config", authMiddleware(csrfMiddleware(updateParentalConfigHandler)))
+
+	// UPnP / NAT-PMP
+	mux.HandleFunc("GET /api/upnp/config", authMiddleware(getUPnPConfigHandler))
+	mux.HandleFunc("POST /api/upnp/config", authMiddleware(csrfMiddleware(updateUPnPConfigHandler)))
+
+	// Device Metadata
+	mux.HandleFunc("POST /api/devices/meta", authMiddleware(csrfMiddleware(updateDeviceMetaHandler)))
+	
 	mux.HandleFunc("DELETE /api/dhcp/static", authMiddleware(csrfMiddleware(removeStaticLease)))
 
 	// Router Advertisement (IPv6 SLAAC)
@@ -1907,6 +1938,11 @@ func main() {
 	// Dynamic Routing
 	mux.HandleFunc("GET /api/routing/dynamic", authMiddleware(getDynamicRouting))
 	mux.HandleFunc("POST /api/routing/dynamic", authMiddleware(csrfMiddleware(updateDynamicRouting)))
+
+	// Notifications
+	mux.HandleFunc("GET /api/notifications/config", authMiddleware(getNotificationConfig))
+	mux.HandleFunc("POST /api/notifications/config", authMiddleware(csrfMiddleware(updateNotificationConfig)))
+	mux.HandleFunc("POST /api/notifications/test", authMiddleware(csrfMiddleware(sendTestNotification)))
 
 	// Interface Scheduling
 	mux.HandleFunc("GET /api/schedules", authMiddleware(getSchedules))

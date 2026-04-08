@@ -331,6 +331,14 @@ func login(w http.ResponseWriter, r *http.Request) {
 	if loginAttempts[ip] >= 5 {
 		loginBanUntil[ip] = time.Now().Add(15 * time.Minute)
 		log.Printf("Banned IP %s due to excessive login failures", ip)
+
+		// Notify on brute force detection
+		SendNotification(NotificationEvent{
+			Type:     "brute_force_detected",
+			Severity: "critical",
+			Title:    fmt.Sprintf("IP %s banned — excessive login failures", ip),
+			Details:  fmt.Sprintf("IP address %s has been banned for 15 minutes after %d failed login attempts. Target username: %s", ip, loginAttempts[ip], req.Username),
+		})
 	}
 	loginMu.Unlock()
 

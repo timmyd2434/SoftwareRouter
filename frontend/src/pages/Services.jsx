@@ -152,6 +152,102 @@ const Services = () => {
                 </div>
             )}
 
+            <div className="section-header" style={{ marginTop: '2rem' }}>
+                <div>
+                    <h2>UPnP & NAT-PMP Configuration</h2>
+                    <span className="subtitle">Automatically configure port forwarding for compatible devices</span>
+                </div>
+            </div>
+            
+            <div className="glass-panel upnp-config-panel">
+                <UPnPConfig />
+            </div>
+
+        </div>
+    );
+};
+
+// UPnP Configuration Component
+const UPnPConfig = () => {
+    const [config, setConfig] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        authFetch(`${API_ENDPOINTS.BASE}/api/upnp/config`)
+            .then(res => res.json())
+            .then(data => {
+                setConfig(data);
+                setLoading(false);
+            })
+            .catch(console.error);
+    }, []);
+
+    const handleSave = async () => {
+        setSaving(true);
+        try {
+            await authFetch(`${API_ENDPOINTS.BASE}/api/upnp/config`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(config)
+            });
+            alert('UPnP Configuration Saved');
+        } catch (err) {
+            alert('Failed to save config: ' + err.message);
+        }
+        setSaving(false);
+    };
+
+    if (loading) return <div>Loading UPnP settings...</div>;
+
+    return (
+        <div style={{ padding: '1.5rem' }}>
+            <div style={{ display: 'flex', gap: '2rem', marginBottom: '1.5rem' }}>
+                <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <label className="switch switch-sm">
+                        <input
+                            type="checkbox"
+                            checked={config.enabled}
+                            onChange={(e) => setConfig({ ...config, enabled: e.target.checked })}
+                        />
+                        <span className="slider"></span>
+                    </label>
+                    <span>Enable UPnP Service Node</span>
+                </div>
+                
+                {config.enabled && (
+                    <>
+                        <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <input
+                                type="checkbox"
+                                checked={config.enable_upnp}
+                                onChange={(e) => setConfig({ ...config, enable_upnp: e.target.checked })}
+                            />
+                            <span>Allow UPnP Port Mapping</span>
+                        </div>
+                        <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <input
+                                type="checkbox"
+                                checked={config.enable_nat_pmp}
+                                onChange={(e) => setConfig({ ...config, enable_nat_pmp: e.target.checked })}
+                            />
+                            <span>Allow NAT-PMP Mapping</span>
+                        </div>
+                        <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <input
+                                type="checkbox"
+                                checked={config.secure_mode}
+                                onChange={(e) => setConfig({ ...config, secure_mode: e.target.checked })}
+                            />
+                            <span>Secure Mode (Only requesting IP)</span>
+                        </div>
+                    </>
+                )}
+            </div>
+            
+            <button className="primary-btn" onClick={handleSave} disabled={saving}>
+                {saving ? 'Saving & Restarting...' : 'Save & Apply Configuration'}
+            </button>
         </div>
     );
 };

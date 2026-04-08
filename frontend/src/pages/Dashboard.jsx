@@ -9,6 +9,7 @@ const Dashboard = () => {
     const [systemStatus, setSystemStatus] = useState(null);
     const [trafficHistory, setTrafficHistory] = useState([]);
     const [securityAlerts, setSecurityAlerts] = useState([]);
+    const [topDevices, setTopDevices] = useState([]);
     const [loading, setLoading] = useState(true);
 
     const fetchStatus = async () => {
@@ -28,14 +29,12 @@ const Dashboard = () => {
             const res = await authFetch(API_ENDPOINTS.TRAFFIC_HISTORY);
             if (res.ok) {
                 const data = await res.json();
-                // Map API "rx_rate" to expected "rx_bps" if needed
                 if (Array.isArray(data)) {
                     const mapped = data.map(pt => ({
                         ...pt,
                         rx_bps: pt.rx_rate || pt.rx_bps || 0,
                         tx_bps: pt.tx_rate || pt.tx_bps || 0,
-                        // Ensure timestamp is valid (API sends unix epoch int)
-                        timestamp: pt.timestamp * 1000 // Convert to ms if needed by recharts or leave as is
+                        timestamp: pt.timestamp * 1000
                     }));
                     setTrafficHistory(mapped);
                 } else {
@@ -61,31 +60,47 @@ const Dashboard = () => {
         }
     };
 
+    const fetchTopDevices = async () => {
+        try {
+            const res = await authFetch('/api/traffic/devices');
+            if (res.ok) {
+                const data = await res.json();
+                if (data && Array.isArray(data)) {
+                    const sorted = [...data].sort((a, b) => b.rx_rate - a.rx_rate).slice(0, 5);
+                    setTopDevices(sorted);
+                }
+            }
+        } catch (err) {
+            console.error("Failed to fetch top devices", err);
+        }
+    };
+
     useEffect(() => {
         fetchStatus();
         fetchTrafficHistory();
         fetchSecurityAlerts();
+        fetchTopDevices();
 
-        // Optimized polling intervals (reduced from 1s/5s/10s to 2s/10s/30s)
         let statusInterval = setInterval(fetchStatus, 10000);
         let trafficInterval = setInterval(fetchTrafficHistory, 2000);
         let securityInterval = setInterval(fetchSecurityAlerts, 30000);
+        let deviceInterval = setInterval(fetchTopDevices, 5000);
 
-        // Pause polling when tab is not visible (performance optimization)
         const handleVisibilityChange = () => {
             if (document.hidden) {
-                // Tab is hidden - pause all polling
                 clearInterval(statusInterval);
                 clearInterval(trafficInterval);
                 clearInterval(securityInterval);
+                clearInterval(deviceInterval);
             } else {
-                // Tab is visible - resume polling and fetch immediately
                 fetchStatus();
                 fetchTrafficHistory();
                 fetchSecurityAlerts();
+                fetchTopDevices();
                 statusInterval = setInterval(fetchStatus, 10000);
                 trafficInterval = setInterval(fetchTrafficHistory, 2000);
                 securityInterval = setInterval(fetchSecurityAlerts, 30000);
+                deviceInterval = setInterval(fetchTopDevices, 5000);
             }
         };
 
@@ -95,6 +110,7 @@ const Dashboard = () => {
             clearInterval(statusInterval);
             clearInterval(trafficInterval);
             clearInterval(securityInterval);
+            clearInterval(deviceInterval);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
     }, []);
@@ -250,6 +266,27 @@ const Dashboard = () => {
                             <span className="label">Uptime:</span>
                             <span className="value">{systemStatus?.uptime || 'Loading...'}</span>
                         </div>
+                    </div>
+                </div>
+
+                <div className="section-panel glass-panel">
+                    <h3>Top Bandwidth Users</h3>
+                    <div className="panel-content">
+                        {topDevices.length === 0 ? (
+                            <div className="empty-state">No device data yet</div>
+                        ) : (
+                            <table style={{width: '100%', fontSize: '0.85rem'}}>
+                                <tbody>
+                                    {topDevices.map((d, i) => (
+                                        <tr key={i} style={{borderBottom: '1px solid rgba(255,255,255,0.05)'}}>
+                                            <td style={{padding: '8px 0'}}>{d.hostname || d.ip}</td>
+                                            <td style={{padding: '8px 0', textAlign: 'right'}}>{formatBandwidth(d.rx_rate)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                        <a href="/device-traffic" className="view-all-link">View All Devices →</a>
                     </div>
                 </div>
 

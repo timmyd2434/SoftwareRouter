@@ -177,13 +177,16 @@ func validateIPRange(interfaceName, startIP, endIP, gateway string) error {
 
 // ARPEntry represents a row in /proc/net/arp
 type ARPEntry struct {
-	IP       string `json:"ip"`
-	MAC      string `json:"mac"`
-	Device   string `json:"device"`
-	Hostname string `json:"hostname"` // Enriched data
-	IsStatic bool   `json:"is_static"`
-	IsActive bool   `json:"is_active"` // In ARP table
-	Expires  string `json:"expires"`   // For DHCP leases
+	IP         string `json:"ip"`
+	MAC        string `json:"mac"`
+	Device     string `json:"device"`
+	Hostname   string `json:"hostname"`
+	IsStatic   bool   `json:"is_static"`
+	IsActive   bool   `json:"is_active"`
+	Expires    string `json:"expires"`
+	Vendor     string `json:"vendor"`
+	DeviceName string `json:"device_name"`
+	DeviceType string `json:"device_type"`
 }
 
 // getARPTable parses /proc/net/arp
@@ -416,9 +419,13 @@ func getNetworkClients(w http.ResponseWriter, r *http.Request) {
 		clientMap[arp.MAC] = entry
 	}
 
-	// Convert map to slice
+	// Convert map to slice and enrich with metadata
 	clients := make([]ARPEntry, 0, len(clientMap))
 	for _, c := range clientMap {
+		vendor, dName, dType := GetDeviceFingerprint(c.MAC)
+		c.Vendor = vendor
+		c.DeviceName = dName
+		c.DeviceType = dType
 		clients = append(clients, c)
 	}
 

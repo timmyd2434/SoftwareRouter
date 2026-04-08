@@ -32,13 +32,16 @@ var allowedCommands = map[string]bool{
 	"journalctl":  true, // Log access
 	// SECURITY FIX (HIGH-1): bash/sh removed - shell access eliminated
 	// Any operations requiring shell must be refactored to use native Go
-	"curl":      true, // HTTP client (for downloads during setup)
-	"pihole":    true, // Pi-hole CLI
-	"cscli":     true, // CrowdSec CLI
-	"tail":      true, // Log reading (for Suricata alerts)
-	"./easyrsa": true, // OpenVPN PKI management (run via runPrivilegedInDir)
-	"openvpn":   true, // OpenVPN key generation
-	"cp":        true, // File copy (used by OpenVPN setup)
+	"curl":          true, // HTTP client (for downloads during setup)
+	"pihole":        true, // Pi-hole CLI
+	"cscli":         true, // CrowdSec CLI
+	"tail":          true, // Log reading (for Suricata alerts)
+	"./easyrsa":     true, // OpenVPN PKI management (run via runPrivilegedInDir)
+	"openvpn":       true, // OpenVPN key generation
+	"cp":            true, // File copy (used by OpenVPN setup)
+	"speedtest-cli": true, // WAN speed test
+	"uptime":        true, // System uptime
+	"mkdir":         true, // Creating directories
 }
 
 // commandExecutionLog stores recent command executions for debugging

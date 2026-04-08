@@ -16,6 +16,13 @@ const Clients = () => {
         hostname: ''
     });
 
+    const [showMetaModal, setShowMetaModal] = useState(false);
+    const [metaForm, setMetaForm] = useState({
+        mac: '',
+        name: '',
+        type: 'unknown'
+    });
+
     const fetchClients = () => {
         setLoading(true);
         authFetch(API_ENDPOINTS.NETWORK_CLIENTS)
@@ -83,14 +90,53 @@ const Clients = () => {
         }
     };
 
-    const getDeviceIcon = (hostname) => {
-        const h = (hostname || "").toLowerCase();
+    const getDeviceIcon = (client) => {
+        const type = client.device_type;
+        const h = (client.device_name || client.hostname || "").toLowerCase();
+        
+        if (type === 'mobile') return Smartphone;
+        if (type === 'laptop') return Laptop;
+        if (type === 'desktop') return Monitor;
+        if (type === 'printer') return Printer;
+        if (type === 'server') return Server;
+        if (type === 'tv') return Monitor;
+
         if (h.includes("iphone") || h.includes("android") || h.includes("phone")) return Smartphone;
         if (h.includes("macbook") || h.includes("laptop")) return Laptop;
         if (h.includes("printer")) return Printer;
         if (h.includes("server") || h.includes("nas") || h.includes("unifi")) return Server;
         if (h.includes("tv")) return Monitor;
+        
         return Network; // Default
+    };
+
+    const handleEditMeta = (client) => {
+        setSelectedClient(client);
+        setMetaForm({
+            mac: client.mac,
+            name: client.device_name || '',
+            type: client.device_type || 'unknown'
+        });
+        setShowMetaModal(true);
+    };
+
+    const handleSaveMeta = async () => {
+        try {
+            const res = await authFetch('/api/devices/meta', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(metaForm)
+            });
+
+            if (res.ok) {
+                setShowMetaModal(false);
+                fetchClients();
+            } else {
+                alert("Failed to save device details.");
+            }
+        } catch (err) {
+            console.error(err);
+        }
     };
 
     const filteredClients = clients.filter(c =>
@@ -139,7 +185,7 @@ const Clients = () => {
             {viewMode === 'grid' ? (
                 <div className="clients-grid">
                     {filteredClients.map((client, idx) => {
-                        const Icon = getDeviceIcon(client.hostname);
+                        const Icon = getDeviceIcon(client);
                         return (
                             <div key={idx} className={`client-card glass-panel ${client.is_active ? 'active' : ''}`}>
                                 <div className="client-header">
@@ -148,8 +194,8 @@ const Clients = () => {
                                     </div>
                                     <div className={`client-status-indicator`} title={client.is_active ? "Online" : "Offline"}></div>
                                 </div>
-                                <div className="client-info">
-                                    <h3>{client.hostname || "Unknown Device"}</h3>
+                                <div className="client-info" onClick={() => handleEditMeta(client)} style={{ cursor: 'pointer' }} title="Click to edit device details">
+                                    <h3>{client.device_name || client.hostname || "Unknown Device"}</h3>
                                     <div className="client-ip">{client.ip}</div>
                                 </div>
                                 <div className="client-details">
@@ -158,7 +204,13 @@ const Clients = () => {
                                         <span className="value">{client.mac}</span>
                                     </div>
                                     <div className="detail-row">
-                                        <span className="label">Type</span>
+                                        <span className="label">Vendor</span>
+                                        <span className="value" style={{ fontSize: '0.75rem', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={client.vendor}>
+                                            {client.vendor || 'Unknown'}
+                                        </span>
+                                    </div>
+                                    <div className="detail-row">
+                                        <span className="label">IP Type</span>
                                         <span className={`client-badge ${client.is_static ? 'static' : 'dynamic'}`}>
                                             {client.is_static ? 'Static' : 'Dynamic'}
                                         </span>
@@ -194,14 +246,23 @@ const Clients = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredClients.map((client, idx) => (
+                                {filteredClients.map((client, idx) => {
+                                    const Icon = getDeviceIcon(client);
+                                    return (
                                     <tr key={idx}>
                                         <td>
                                             <div className={`status-dot ${client.is_active ? 'active' : ''}`}></div>
                                         </td>
-                                        <td>{client.hostname || "Unknown"}</td>
+                                        <td onClick={() => handleEditMeta(client)} style={{ cursor: 'pointer', color: 'var(--primary-color)' }} title="Edit device details">
+                                            {client.device_name || client.hostname || "Unknown"}
+                                        </td>
                                         <td>{client.ip}</td>
                                         <td>{client.mac}</td>
+                                        <td>
+                                            <span className="value" style={{ fontSize: '0.85rem', display: 'block', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={client.vendor}>
+                                                {client.vendor || 'Unknown'}
+                                            </span>
+                                        </td>
                                         <td>
                                             <span className={`client-badge ${client.is_static ? 'static' : 'dynamic'}`}>
                                                 {client.is_static ? 'Static' : 'Dynamic'}
@@ -219,7 +280,8 @@ const Clients = () => {
                                             )}
                                         </td>
                                     </tr>
-                                ))}
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
@@ -273,6 +335,58 @@ const Clients = () => {
                             <button className="cancel-btn" onClick={() => setShowStaticModal(false)}>Cancel</button>
                             <button className="primary-btn" onClick={handleSaveStatic}>
                                 <Save size={16} /> Save Reservation
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showMetaModal && (
+                <div className="modal-overlay">
+                    <div className="modal-content">
+                        <div className="modal-header">
+                            <h3>Edit Device Details</h3>
+                            <button className="close-btn" onClick={() => setShowMetaModal(false)}>
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="form-group">
+                                <label>Custom Name</label>
+                                <input
+                                    type="text"
+                                    className="form-input"
+                                    value={metaForm.name}
+                                    placeholder="e.g. Tim's iPhone"
+                                    onChange={e => setMetaForm({ ...metaForm, name: e.target.value })}
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label>Device Type</label>
+                                <select 
+                                    className="form-input"
+                                    value={metaForm.type}
+                                    onChange={e => setMetaForm({ ...metaForm, type: e.target.value })}
+                                    style={{ width: '100%', padding: '0.75rem', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: '8px' }}
+                                >
+                                    <option value="unknown">Unknown / Auto-detect</option>
+                                    <option value="mobile">Mobile Phone / Tablet</option>
+                                    <option value="laptop">Laptop</option>
+                                    <option value="desktop">Desktop / Workstation</option>
+                                    <option value="tv">Smart TV / Media Player</option>
+                                    <option value="server">Server / NAS</option>
+                                    <option value="printer">Printer / Scanner</option>
+                                    <option value="iot">IoT Device / Smart Home</option>
+                                </select>
+                            </div>
+                            <div className="info-box">
+                                <span>Overrides default hostname and icon detection.</span>
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="cancel-btn" onClick={() => setShowMetaModal(false)}>Cancel</button>
+                            <button className="primary-btn" onClick={handleSaveMeta}>
+                                <Save size={16} /> Save Changes
                             </button>
                         </div>
                     </div>

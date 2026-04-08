@@ -8,9 +8,8 @@
 
 .diag-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
     gap: 1.5rem;
-    height: calc(100vh - 180px);
 }
 
 .tools-panel,
@@ -74,4 +73,154 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+}
+
+/* Speed Test Panel */
+.speedtest-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.speedtest-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.speedtest-header h3 {
+    margin: 0;
+    display: flex;
+    align-items: center;
+}
+
+.speedtest-results {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+}
+
+.speed-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem 1rem;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    gap: 0.5rem;
+}
+
+.speed-card.download {
+    border-color: rgba(74, 222, 128, 0.2);
+    color: #4ade80;
+}
+
+.speed-card.upload {
+    border-color: rgba(96, 165, 250, 0.2);
+    color: #60a5fa;
+}
+
+.speed-card.latency {
+    border-color: rgba(250, 204, 21, 0.2);
+    color: #facc15;
+}
+
+.speed-value {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--text-primary, #e2e8f0);
+}
+
+.speed-label {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    opacity: 0.7;
+}
+
+.speedtest-progress {
+    text-align: center;
+    padding: 1.5rem;
+}
+
+.speedtest-progress p {
+    margin: 0.75rem 0 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary, #94a3b8);
+}
+
+.progress-bar {
+    width: 100%;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    width: 30%;
+    height: 100%;
+    background: linear-gradient(90deg, #4f8ff7, #4ade80);
+    border-radius: 2px;
+    animation: progressSlide 2s ease-in-out infinite;
+}
+
+@keyframes progressSlide {
+    0% { width: 5%; margin-left: 0; }
+    50% { width: 40%; margin-left: 30%; }
+    100% { width: 5%; margin-left: 95%; }
+}
+
+.speedtest-error {
+    padding: 1rem;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    border-radius: 8px;
+    color: #fca5a5;
+    font-size: 0.9rem;
+}
+
+.speedtest-server {
+    font-size: 0.8rem;
+    color: var(--text-secondary, #94a3b8);
+    text-align: center;
+}
+
+.speedtest-history {
+    margin-top: 0.5rem;
+}
+
+.speedtest-history h4 {
+    margin: 0 0 0.75rem;
+    font-size: 0.9rem;
+    color: var(--text-secondary, #94a3b8);
+}
+
+.speedtest-history table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.speedtest-history th {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    color: var(--text-secondary, #94a3b8);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    font-weight: 500;
+    font-size: 0.8rem;
+}
+
+.speedtest-history td {
+    padding: 0.5rem 0.75rem;
+    color: var(--text-primary, #e2e8f0);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+@media (max-width: 768px) {
+    .speedtest-results {
+        grid-template-columns: 1fr;
+    }
 }

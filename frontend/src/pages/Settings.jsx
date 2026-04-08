@@ -375,6 +375,73 @@ const Settings = () => {
                     </form>
                 </div>
 
+                <div className="settings-card glass-panel dns-privacy-card">
+                    <div className="card-header">
+                        <Shield size={20} className="header-icon shield" />
+                        <h3>DNS Privacy (DoT/DoH)</h3>
+                    </div>
+                    <form onSubmit={handleSaveConfig} className="card-form">
+                        <div className="form-group checkbox-group mb">
+                            <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={config.dns_privacy?.enabled || false}
+                                    onChange={e => setConfig({
+                                        ...config,
+                                        dns_privacy: { ...config.dns_privacy, enabled: e.target.checked }
+                                    })}
+                                />
+                                Enable DNS Encryption (System-wide)
+                            </label>
+                            <p className="hint" style={{ marginTop: '0.5rem' }}>
+                                Encrypts DNS queries using DNS-over-TLS (DoT) via systemd-resolved.
+                                Note: May conflict if using Pi-hole or AdGuard Home.
+                            </p>
+                        </div>
+                        
+                        {config.dns_privacy?.enabled && (
+                            <>
+                                <div className="input-group">
+                                    <label>DNS Provider</label>
+                                    <select 
+                                        className="form-input"
+                                        value={config.dns_privacy?.provider || 'cloudflare'}
+                                        onChange={e => setConfig({
+                                            ...config,
+                                            dns_privacy: { ...config.dns_privacy, provider: e.target.value }
+                                        })}
+                                        style={{ width: '100%', padding: '0.75rem', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: '8px' }}
+                                    >
+                                        <option value="cloudflare">Cloudflare (1.1.1.1)</option>
+                                        <option value="quad9">Quad9 (9.9.9.9)</option>
+                                        <option value="google">Google (8.8.8.8)</option>
+                                    </select>
+                                </div>
+                                <div className="input-group">
+                                    <label>Strict Mode</label>
+                                    <select 
+                                        className="form-input"
+                                        value={config.dns_privacy?.mode || 'opportunistic'}
+                                        onChange={e => setConfig({
+                                            ...config,
+                                            dns_privacy: { ...config.dns_privacy, mode: e.target.value }
+                                        })}
+                                        style={{ width: '100%', padding: '0.75rem', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: '8px' }}
+                                    >
+                                        <option value="opportunistic">Opportunistic (Fallback to unencrypted)</option>
+                                        <option value="strict">Strict (Fail if encryption fails)</option>
+                                    </select>
+                                </div>
+                            </>
+                        )}
+                        
+                        <button type="submit" className="save-btn" disabled={saving}>
+                            {saving === 'config' ? <Loader2 size={18} className="spin" /> : <Save size={18} />}
+                            Save DNS Privacy Config
+                        </button>
+                    </form>
+                </div>
+
                 {/* DNS Adblocker */}
                 <div className="settings-card glass-panel">
                     <div className="card-header">

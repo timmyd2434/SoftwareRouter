@@ -174,6 +174,44 @@ func applyAdBlockerConfig(cfg Config) error {
 	return nil
 }
 
+func applyDNSPrivacyConfig(cfg Config) error {
+	if !cfg.DNSPrivacy.Enabled {
+		return nil
+	}
+
+	dnsServers := "1.1.1.1 1.0.0.1" // Default Cloudflare
+	if cfg.DNSPrivacy.Provider == "quad9" {
+		dnsServers = "9.9.9.9 149.112.112.112"
+	} else if cfg.DNSPrivacy.Provider == "google" {
+		dnsServers = "8.8.8.8 8.8.4.4"
+	}
+
+	mode := "opportunistic"
+	if cfg.DNSPrivacy.Mode == "dot" || cfg.DNSPrivacy.Mode == "strict" {
+		mode = "yes" // strict mode in systemd-resolved
+	}
+
+	// Read existing config or create new
+	// In a real scenario, we'd want to parse and replace only specific lines,
+	// but a drop-in file is safer and recommended by systemd. Let's use a drop-in.
+	
+	dropInDir := "/etc/systemd/resolved.conf.d"
+	runPrivileged("mkdir", "-p", dropInDir)
+
+	confStr := fmt.Sprintf(`[Resolve]
+DNS=%s
+DNSOverTLS=%s
+`, dnsServers, mode)
+
+	tmpFile := "/tmp/softrouter-dns-privacy.conf"
+	os.WriteFile(tmpFile, []byte(confStr), 0644)
+	
+	runPrivileged("cp", tmpFile, dropInDir+"/softrouter-dns-privacy.conf")
+	runPrivileged("systemctl", "restart", "systemd-resolved")
+
+	return nil
+}
+
 func updateConfig(w http.ResponseWriter, r *http.Request) {
 	var cfg Config
 	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
@@ -205,6 +243,18 @@ func updateConfig(w http.ResponseWriter, r *http.Request) {
 			err := applyAdBlockerConfig(cfg)
 			if err != nil {
 				fmt.Printf("ERROR applying Ad-blocker config: %v\n", err)
+			}
+		}()
+	}
+
+	// Trigger DNS Privacy setup if changed
+	if cfg.DNSPrivacy.Enabled != oldCfg.DNSPrivacy.Enabled || 
+	   cfg.DNSPrivacy.Provider != oldCfg.DNSPrivacy.Provider || 
+	   cfg.DNSPrivacy.Mode != oldCfg.DNSPrivacy.Mode {
+		go func() {
+			err := applyDNSPrivacyConfig(cfg)
+			if err != nil {
+				fmt.Printf("ERROR applying DNS Privacy config: %v\n", err)
 			}
 		}()
 	}

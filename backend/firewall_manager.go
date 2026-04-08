@@ -281,6 +281,16 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 	b.WriteString("  chain forward {\n")
 	b.WriteString("    type filter hook forward priority filter; policy drop;\n\n")
 
+	// Parental Controls - Block specific devices
+	blockedMACs := GetActiveBlockedMACs()
+	if len(blockedMACs) > 0 {
+		b.WriteString("    # Parental Controls Blocks\n")
+		for _, mac := range blockedMACs {
+			b.WriteString(fmt.Sprintf("    ether saddr %s drop comment \"Parental Control Block\"\n", mac))
+		}
+		b.WriteString("\n")
+	}
+
 	// Accept established/related
 	b.WriteString("    ct state established,related accept\n")
 

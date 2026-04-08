@@ -9,7 +9,9 @@ import TrafficStats from './pages/TrafficStats';
 import Diagnostics from './pages/Diagnostics';
 import Services from './pages/Services';
 import Traffic from './pages/Traffic';
+import DeviceTraffic from './pages/DeviceTraffic';
 import Security from './pages/Security';
+import ParentalControls from './pages/ParentalControls';
 import Login from './pages/Login';
 import Settings from './pages/Settings';
 import RemoteAccess from './pages/RemoteAccess';
@@ -24,6 +26,7 @@ import WakeOnLAN from './pages/WakeOnLAN';
 import GeoBlocking from './pages/GeoBlocking';
 import Bonding from './pages/Bonding';
 import Scheduling from './pages/Scheduling';
+import Notifications from './pages/Notifications';
 import SetupWizard from './components/SetupWizard';
 import './App.css';
 
@@ -143,6 +146,7 @@ function App() {
           <Route path="/interfaces" element={<Interfaces />} />
           <Route path="/firewall" element={<Firewall />} />
           <Route path="/traffic" element={<TrafficControl />} />
+          <Route path="/device-traffic" element={<DeviceTraffic />} />
           <Route path="/stats" element={<TrafficStats />} />
           <Route path="/diagnostics" element={<Diagnostics />} />
           <Route path="/security" element={<Security />} />
@@ -158,6 +162,8 @@ function App() {
           <Route path="/geoblocking" element={<GeoBlocking />} />
           <Route path="/bonding" element={<Bonding />} />
           <Route path="/scheduling" element={<Scheduling />} />
+          <Route path="/notifications" element={<Notifications />} />
+          <Route path="/parental-controls" element={<ParentalControls />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

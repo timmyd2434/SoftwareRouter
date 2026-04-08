@@ -116,6 +116,18 @@ func checkWANHealth() {
 			interfaces[i].State = newState
 			updated = true
 			fmt.Printf("WAN Interface %s (%s) is now %s\n", interfaces[i].Name, interfaces[i].Interface, newState)
+
+			// Notify on WAN state change
+			severity := "warning"
+			if newState == "offline" {
+				severity = "critical"
+			}
+			SendNotification(NotificationEvent{
+				Type:     "wan_state_change",
+				Severity: severity,
+				Title:    fmt.Sprintf("WAN %s is now %s", interfaces[i].Name, newState),
+				Details:  fmt.Sprintf("Interface %s (%s) changed state to %s. Check target: %s", interfaces[i].Name, interfaces[i].Interface, newState, target),
+			})
 		}
 	}
 

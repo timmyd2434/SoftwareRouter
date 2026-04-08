@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Network, ShieldCheck, Activity, Settings, Menu, X, LogOut, Lock, Server, Globe, ExternalLink, Box, ArrowRight, FileText, Monitor, Route, Zap, Power, Link, Clock } from 'lucide-react';
+import { LayoutDashboard, Network, ShieldCheck, Activity, Settings, Menu, X, LogOut, Lock, Server, Globe, ExternalLink, Box, ArrowRight, FileText, Monitor, Route, Zap, Power, Link, Clock, Bell, ShieldAlert } from 'lucide-react';
 import './Sidebar.css';
 
 const Sidebar = ({ isOpen, toggleSidebar, onLogout }) => {
@@ -15,12 +15,15 @@ const Sidebar = ({ isOpen, toggleSidebar, onLogout }) => {
         { icon: ShieldCheck, label: 'Firewall', path: '/firewall' },
         { icon: Activity, label: 'Traffic Control', path: '/traffic' },
         { icon: Activity, label: 'Traffic Stats', path: '/stats' },
+        { icon: Activity, label: 'Device Bandwidth', path: '/device-traffic' },
         { icon: Lock, label: 'Security', path: '/security' },
         { icon: FileText, label: 'Diagnostics', path: '/diagnostics' },
         { icon: FileText, label: 'Audit Logs', path: '/audit-logs' },
         { icon: Power, label: 'Wake-on-LAN', path: '/wake-on-lan' },
         { icon: Globe, label: 'GeoBlocking', path: '/geoblocking' },
         { icon: Clock, label: 'Scheduling', path: '/scheduling' },
+        { icon: ShieldAlert, label: 'Parental Controls', path: '/parental-controls' },
+        { icon: Bell, label: 'Notifications', path: '/notifications' },
         { icon: Globe, label: 'Remote Access', path: '/remote-access' },
         { icon: Server, label: 'Services', path: '/services' },
         { icon: ShieldCheck, label: 'DNS Analytics', path: '/dns-analytics' },
