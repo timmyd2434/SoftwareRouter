@@ -274,7 +274,7 @@ func getDeviceTraffic(w http.ResponseWriter, r *http.Request) {
 func getDeviceTrafficDetail(w http.ResponseWriter, r *http.Request) {
 	ip := r.URL.Query().Get("ip")
 	if ip == "" {
-		http.Error(w, "IP parameter required", http.StatusBadRequest)
+		respondWithError(w, ErrGenericInvalidRequest, "IP address parameter is required", http.StatusBadRequest, nil)
 		return
 	}
 
@@ -284,7 +284,7 @@ func getDeviceTrafficDetail(w http.ResponseWriter, r *http.Request) {
 	deviceTrafficMu.RUnlock()
 
 	if !exists {
-		http.Error(w, "Device not found in traffic tracking", http.StatusNotFound)
+		respondWithError(w, ErrGenericNotFound, "Device not found in traffic tracking", http.StatusNotFound, nil)
 		return
 	}
 

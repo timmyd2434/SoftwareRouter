@@ -120,7 +120,7 @@ func saveDeviceMetas() {
 func updateDeviceMetaHandler(w http.ResponseWriter, r *http.Request) {
 	var meta DeviceMeta
 	if err := json.NewDecoder(r.Body).Decode(&meta); err != nil {
-		http.Error(w, "Invalid device data", http.StatusBadRequest)
+		respondWithError(w, ErrGenericInvalidRequest, "Invalid device data format", http.StatusBadRequest, err)
 		return
 	}
 

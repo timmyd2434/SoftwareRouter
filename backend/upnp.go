@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -139,9 +138,8 @@ func applyUPnPConfig(cfg UPnPConfig) error {
 		return err
 	}
 
-	// We don't have direct root access to write to /etc/miniupnpd,
-	// write to temp file then use a privileged copy if needed, or if we run as root, just write it.
-	err = ioutil.WriteFile("/tmp/miniupnpd.conf", []byte(confStr), 0644)
+	// Write config to temp file then privileged-copy to final location
+	err = os.WriteFile("/tmp/miniupnpd.conf", []byte(confStr), 0644)
 	if err == nil {
 		runPrivileged("cp", "/tmp/miniupnpd.conf", miniupnpdConf)
 	}
@@ -162,7 +160,7 @@ func getUPnPConfigHandler(w http.ResponseWriter, r *http.Request) {
 func updateUPnPConfigHandler(w http.ResponseWriter, r *http.Request) {
 	var newCfg UPnPConfig
 	if err := json.NewDecoder(r.Body).Decode(&newCfg); err != nil {
-		http.Error(w, "Invalid config JSON", http.StatusBadRequest)
+		respondWithError(w, ErrGenericInvalidRequest, "Invalid configuration format", http.StatusBadRequest, err)
 		return
 	}
 
@@ -171,12 +169,12 @@ func updateUPnPConfigHandler(w http.ResponseWriter, r *http.Request) {
 	upnpMu.Unlock()
 
 	if err := saveUPnPConfig(); err != nil {
-		http.Error(w, "Failed to save config", http.StatusInternalServerError)
+		respondWithError(w, ErrSystemConfigSave, "Failed to save UPnP configuration", http.StatusInternalServerError, err)
 		return
 	}
 
 	if err := applyUPnPConfig(newCfg); err != nil {
-		http.Error(w, "Failed to apply UPnP config: "+err.Error(), http.StatusInternalServerError)
+		respondWithError(w, ErrSystemServiceControl, "Failed to apply UPnP configuration", http.StatusInternalServerError, err)
 		return
 	}
 

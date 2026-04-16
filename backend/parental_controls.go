@@ -196,7 +196,7 @@ func getParentalConfigHandler(w http.ResponseWriter, r *http.Request) {
 func updateParentalConfigHandler(w http.ResponseWriter, r *http.Request) {
 	var newCfg ParentalConfig
 	if err := json.NewDecoder(r.Body).Decode(&newCfg); err != nil {
-		http.Error(w, "Invalid config JSON", http.StatusBadRequest)
+		respondWithError(w, ErrGenericInvalidRequest, "Invalid configuration format", http.StatusBadRequest, err)
 		return
 	}
 
@@ -205,7 +205,7 @@ func updateParentalConfigHandler(w http.ResponseWriter, r *http.Request) {
 	parentalMu.Unlock()
 
 	if err := saveParentalConfig(); err != nil {
-		http.Error(w, "Failed to save config", http.StatusInternalServerError)
+		respondWithError(w, ErrSystemConfigSave, "Failed to save parental control configuration", http.StatusInternalServerError, err)
 		return
 	}
 

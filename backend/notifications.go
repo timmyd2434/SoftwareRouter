@@ -423,7 +423,7 @@ func getNotificationConfig(w http.ResponseWriter, r *http.Request) {
 func updateNotificationConfig(w http.ResponseWriter, r *http.Request) {
 	var newCfg NotificationConfig
 	if err := json.NewDecoder(r.Body).Decode(&newCfg); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		respondWithError(w, ErrGenericInvalidRequest, "Invalid request format", http.StatusBadRequest, err)
 		return
 	}
 
@@ -457,7 +457,7 @@ func updateNotificationConfig(w http.ResponseWriter, r *http.Request) {
 
 	if err := saveNotificationConfig(); err != nil {
 		log.Printf("ERROR: Failed to save notification config: %v", err)
-		http.Error(w, "Failed to save config", http.StatusInternalServerError)
+		respondWithError(w, ErrSystemConfigSave, "Failed to save notification configuration", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -474,7 +474,7 @@ func sendTestNotification(w http.ResponseWriter, r *http.Request) {
 		ID      string `json:"id"`      // Webhook ID (if channel is "webhook")
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		respondWithError(w, ErrGenericInvalidRequest, "Invalid request format", http.StatusBadRequest, err)
 		return
 	}
 
@@ -495,7 +495,7 @@ func sendTestNotification(w http.ResponseWriter, r *http.Request) {
 	switch req.Channel {
 	case "email":
 		if !cfg.Email.Enabled {
-			http.Error(w, "Email notifications are not enabled", http.StatusBadRequest)
+			respondWithError(w, ErrGenericInvalidRequest, "Email notifications are not enabled", http.StatusBadRequest, nil)
 			return
 		}
 		sendErr = sendEmailNotification(testEvent, cfg.Email)
@@ -510,12 +510,12 @@ func sendTestNotification(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !found {
-			http.Error(w, "Webhook not found", http.StatusNotFound)
+			respondWithError(w, ErrGenericNotFound, "Webhook not found", http.StatusNotFound, nil)
 			return
 		}
 
 	default:
-		http.Error(w, "Invalid channel. Use 'email' or 'webhook'", http.StatusBadRequest)
+		respondWithError(w, ErrGenericInvalidRequest, "Invalid channel. Use 'email' or 'webhook'", http.StatusBadRequest, nil)
 		return
 	}
 
