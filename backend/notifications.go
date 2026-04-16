@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/smtp"
 	"os"
@@ -305,6 +306,12 @@ func sendEmailTLS(addr string, cfg EmailConfig, msg []byte) error {
 // --- Webhook Sending ---
 
 func sendWebhookNotification(event NotificationEvent, wh WebhookConfig) error {
+	// SECURITY: Validate webhook URL to prevent SSRF attacks
+	if err := validateWebhookURL(wh.URL); err != nil {
+		log.Printf("[NOTIFY] SECURITY: Blocked webhook '%s' - %v", wh.Name, err)
+		return fmt.Errorf("webhook URL rejected: %w", err)
+	}
+
 	var payload []byte
 	var err error
 
@@ -336,6 +343,55 @@ func sendWebhookNotification(event NotificationEvent, wh WebhookConfig) error {
 
 	log.Printf("[NOTIFY] Webhook '%s' sent: %s", wh.Name, event.Title)
 	return nil
+}
+
+// validateWebhookURL rejects private/loopback URLs to prevent SSRF
+func validateWebhookURL(rawURL string) error {
+	if rawURL == "" {
+		return fmt.Errorf("webhook URL is empty")
+	}
+
+	// Must be https or http
+	if !strings.HasPrefix(rawURL, "https://") && !strings.HasPrefix(rawURL, "http://") {
+		return fmt.Errorf("webhook URL must start with http:// or https://")
+	}
+
+	// Parse to extract hostname
+	parsed, err := net.LookupHost(extractHost(rawURL))
+	if err != nil {
+		// Can't resolve — allow it (may be valid external host not reachable at config time)
+		log.Printf("[NOTIFY] Could not resolve webhook host, allowing: %v", err)
+		return nil
+	}
+
+	// Block private/loopback IPs
+	for _, ip := range parsed {
+		parsedIP := net.ParseIP(ip)
+		if parsedIP == nil {
+			continue
+		}
+		if parsedIP.IsLoopback() || parsedIP.IsPrivate() || parsedIP.IsLinkLocalUnicast() {
+			return fmt.Errorf("webhook URL resolves to private/local address %s — not allowed (SSRF protection)", ip)
+		}
+	}
+	return nil
+}
+
+func extractHost(rawURL string) string {
+	// Strip scheme
+	s := rawURL
+	if i := strings.Index(s, "://"); i >= 0 {
+		s = s[i+3:]
+	}
+	// Strip path/query
+	if i := strings.IndexAny(s, "/?#"); i >= 0 {
+		s = s[:i]
+	}
+	// Strip port
+	if i := strings.LastIndex(s, ":"); i >= 0 {
+		s = s[:i]
+	}
+	return s
 }
 
 func buildDiscordPayload(event NotificationEvent) ([]byte, error) {

@@ -382,7 +382,7 @@ func enableCORS(next http.Handler) http.Handler {
 		origin := r.Header.Get("Origin")
 		allowed := false
 		for _, allowedOrigin := range allowedOrigins {
-			if origin == allowedOrigin || allowedOrigin == "*" {
+			if origin == allowedOrigin {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				allowed = true
 				break

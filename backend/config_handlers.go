@@ -204,7 +204,7 @@ DNSOverTLS=%s
 `, dnsServers, mode)
 
 	tmpFile := "/tmp/softrouter-dns-privacy.conf"
-	os.WriteFile(tmpFile, []byte(confStr), 0644)
+	os.WriteFile(tmpFile, []byte(confStr), 0600)
 	
 	runPrivileged("cp", tmpFile, dropInDir+"/softrouter-dns-privacy.conf")
 	runPrivileged("systemctl", "restart", "systemd-resolved")
