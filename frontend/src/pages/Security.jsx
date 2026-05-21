@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Shield, AlertTriangle, Ban, TrendingUp, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react';
+import { Shield, Ban, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react';
 import './Security.css';
 import { API_ENDPOINTS, authFetch } from '../apiConfig';
 
@@ -9,6 +9,11 @@ const Security = () => {
     const [decisions, setDecisions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState('all'); // all, high, medium, low
+
+    const [ipsEnabled, setIpsEnabled] = useState(false);
+    const [blockedCategories, setBlockedCategories] = useState([]);
+    const [ipsLoading, setIpsLoading] = useState(true);
+    const availableCategories = ["P2P", "Malware", "Social Media", "Adult", "Gaming"];
 
     const fetchStats = () => {
         authFetch(API_ENDPOINTS.SECURITY_STATS)
@@ -37,10 +42,23 @@ const Security = () => {
             .catch(err => console.error(err));
     };
 
+    const fetchIpsState = () => {
+        authFetch(API_ENDPOINTS.SURICATA_IPS)
+            .then(res => res.json())
+            .then(data => { setIpsEnabled(data.enabled); setIpsLoading(false); })
+            .catch(err => { console.error(err); setIpsLoading(false); });
+            
+        authFetch(API_ENDPOINTS.SURICATA_APP_CONTROL)
+            .then(res => res.json())
+            .then(data => setBlockedCategories(data.categories || []))
+            .catch(err => console.error(err));
+    };
+
     useEffect(() => {
         fetchStats();
         fetchAlerts();
         fetchDecisions();
+        fetchIpsState();
 
         // Auto-refresh every 5 seconds
         const interval = setInterval(() => {
@@ -78,6 +96,41 @@ const Security = () => {
         return true;
     });
 
+    const handleIpsToggle = () => {
+        const newEnabled = !ipsEnabled;
+        setIpsLoading(true);
+        authFetch(API_ENDPOINTS.SURICATA_IPS, {
+            method: 'POST',
+            body: JSON.stringify({ enabled: newEnabled })
+        }).then(res => {
+            if(res.ok) setIpsEnabled(newEnabled);
+            setIpsLoading(false);
+        }).catch(() => setIpsLoading(false));
+    };
+
+    const handleCategoryToggle = (category) => {
+        const previousCats = blockedCategories;
+        const newCats = blockedCategories.includes(category)
+            ? blockedCategories.filter(c => c !== category)
+            : [...blockedCategories, category];
+
+        // Optimistic update
+        setBlockedCategories(newCats);
+
+        authFetch(API_ENDPOINTS.SURICATA_APP_CONTROL, {
+            method: 'POST',
+            body: JSON.stringify({ categories: newCats })
+        }).then(res => {
+            if (!res.ok) {
+                // Rollback on failure
+                setBlockedCategories(previousCats);
+            }
+        }).catch(() => {
+            // Rollback on network error
+            setBlockedCategories(previousCats);
+        });
+    };
+
     return (
         <div className="security-container">
             <div className="section-header">
@@ -88,13 +141,53 @@ const Security = () => {
                 <div className="header-actions">
                     <button
                         className="icon-btn"
-                        onClick={() => { fetchStats(); fetchAlerts(); fetchDecisions(); }}
+                        onClick={() => { fetchStats(); fetchAlerts(); fetchDecisions(); fetchIpsState(); }}
                         title="Refresh"
                     >
                         <RefreshCw size={20} className={loading ? "spin" : ""} />
                     </button>
                 </div>
             </div>
+
+            {/* IPS Configuration */}
+            {stats && (
+            <div className="ips-control-section glass-panel">
+                <div className="ips-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: ipsEnabled ? '20px' : '0' }}>
+                    <div>
+                        <h3 style={{ margin: '0 0 5px 0' }}>Inline Deep Packet Inspection (IPS)</h3>
+                        <p className="hint" style={{ margin: '0' }}>When enabled, Suricata will sit inline and drop traffic based on rules. When disabled, it runs passively as an IDS.</p>
+                    </div>
+                    <label className="switch">
+                        <input
+                            type="checkbox"
+                            checked={ipsEnabled}
+                            onChange={handleIpsToggle}
+                            disabled={ipsLoading}
+                        />
+                        <span className="slider round"></span>
+                    </label>
+                </div>
+                
+                {ipsEnabled && (
+                    <div className="app-control-section" style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '20px' }}>
+                        <h4 style={{ margin: '0 0 10px 0' }}>Application Control</h4>
+                        <p className="hint" style={{ margin: '0 0 15px 0' }}>Select categories to immediately drop traffic matching these application signatures.</p>
+                        <div className="category-grid" style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
+                            {availableCategories.map(cat => (
+                                <label key={cat} className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                                    <input 
+                                        type="checkbox" 
+                                        checked={blockedCategories.includes(cat)}
+                                        onChange={() => handleCategoryToggle(cat)}
+                                    />
+                                    {cat}
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+            )}
 
             {/* Security Statistics Cards */}
             {stats && (

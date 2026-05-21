@@ -40,8 +40,10 @@ var allowedCommands = map[string]bool{
 	"openvpn":       true, // OpenVPN key generation
 	"cp":            true, // File copy (used by OpenVPN setup)
 	"speedtest-cli": true, // WAN speed test
-	"uptime":        true, // System uptime
-	"mkdir":         true, // Creating directories
+	"uptime":          true, // System uptime
+	"mkdir":           true, // Creating directories
+	"suricata":        true, // Suricata IPS engine
+	"suricata-update": true, // Suricata rule updater
 }
 
 // commandExecutionLog stores recent command executions for debugging

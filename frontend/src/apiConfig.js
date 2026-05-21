@@ -131,6 +131,8 @@ export const API_ENDPOINTS = {
     BONDS: `${API_BASE_URL}/api/bonds`,
     BOND_MEMBER: `${API_BASE_URL}/api/bonds/member`,
     SCHEDULES: `${API_BASE_URL}/api/schedules`,
+    SURICATA_IPS: `${API_BASE_URL}/api/suricata/ips`,
+    SURICATA_APP_CONTROL: `${API_BASE_URL}/api/suricata/app-control`,
 };
 
 

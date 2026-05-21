@@ -77,6 +77,8 @@ type Config struct {
 		Port         int    `json:"port"`
 		Protocol     string `json:"protocol"`
 	} `json:"vpn_server"`
+	IPSEnabled           bool     `json:"ips_enabled"`
+	BlockedAppCategories []string `json:"blocked_app_categories"`
 }
 
 type WebAccessConfig struct {
@@ -273,6 +275,8 @@ type AppConfig struct {
 		Port         int    `json:"port"`
 		Protocol     string `json:"protocol"`
 	} `json:"vpn_server"`
+	IPSEnabled           bool     `json:"ips_enabled"`
+	BlockedAppCategories []string `json:"blocked_app_categories"`
 }
 
 // DHCPConfig represents DHCP configuration for a single interface
@@ -1829,6 +1833,12 @@ func main() {
 	mux.HandleFunc("GET /api/geoblocking/config", authMiddleware(handleGetGeoBlockingConfig))
 	mux.HandleFunc("POST /api/geoblocking/config", authMiddleware(csrfMiddleware(handleUpdateGeoBlockingConfig)))
 	mux.HandleFunc("POST /api/geoblocking/download", authMiddleware(csrfMiddleware(handleDownloadCountryIPList)))
+
+	// Suricata (IDS/IPS)
+	mux.HandleFunc("GET /api/suricata/ips", authMiddleware(handleSuricataIPS))
+	mux.HandleFunc("POST /api/suricata/ips", authMiddleware(csrfMiddleware(handleSuricataIPS)))
+	mux.HandleFunc("GET /api/suricata/app-control", authMiddleware(handleSuricataAppControl))
+	mux.HandleFunc("POST /api/suricata/app-control", authMiddleware(csrfMiddleware(handleSuricataAppControl)))
 
 	// Traffic History
 	mux.HandleFunc("GET /api/traffic/history", authMiddleware(getTrafficHistory))
