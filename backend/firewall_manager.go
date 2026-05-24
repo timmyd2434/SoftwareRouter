@@ -291,6 +291,11 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 		b.WriteString("\n")
 	}
 
+	// Suricata IPS Queue
+	if cfg.IPSEnabled {
+		b.WriteString("    queue num 0 bypass comment \"suricata-ips\"\n\n")
+	}
+
 	// Accept established/related
 	b.WriteString("    ct state established,related accept\n")
 

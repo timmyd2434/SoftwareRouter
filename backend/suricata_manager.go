@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -45,20 +44,27 @@ func handleSuricataIPS(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := toggleIPSMode(req.Enabled); err != nil {
-			respondSystemError(w, ErrSystemServiceControl, "Failed to toggle IPS mode", err)
-			return
-		}
-
-		// Save configuration
+		// Save configuration first (to make sure it's reflected in the global config during ApplyFirewallRules)
 		configLock.Lock()
+		oldEnabled := config.IPSEnabled
 		config.IPSEnabled = req.Enabled
 		if err := saveConfigLocked(); err != nil {
+			config.IPSEnabled = oldEnabled // Rollback in-memory
 			configLock.Unlock()
 			respondSystemError(w, ErrSystemConfigSave, "Failed to save IPS config", err)
 			return
 		}
 		configLock.Unlock()
+
+		if err := toggleIPSMode(req.Enabled); err != nil {
+			// Rollback configuration on failure
+			configLock.Lock()
+			config.IPSEnabled = oldEnabled
+			_ = saveConfigLocked()
+			configLock.Unlock()
+			respondSystemError(w, ErrSystemServiceControl, "Failed to toggle IPS mode", err)
+			return
+		}
 
 		auditJSON, _ := json.Marshal(map[string]bool{"enabled": req.Enabled})
 		logAuditEvent(getUsernameFromToken(r), "suricata.ips_toggle", "global", string(auditJSON), getClientIP(r), true)
@@ -126,69 +132,41 @@ func handleSuricataAppControl(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 }
 
-// toggleIPSMode modifies the Suricata operating mode and nftables rules
+// toggleIPSMode modifies the Suricata operating mode and systemd / firewall rules
 func toggleIPSMode(enable bool) error {
-	// 1. Modify /etc/default/suricata
-	defaultFile := "/etc/default/suricata"
-	data, err := os.ReadFile(defaultFile)
-	if err == nil {
-		content := string(data)
-		if enable {
-			content = strings.ReplaceAll(content, "LISTENMODE=af-packet", "LISTENMODE=nfq")
-			// If neither exists, append it (fallback)
-			if !strings.Contains(content, "LISTENMODE=nfq") {
-				content += "\nLISTENMODE=nfq\n"
-			}
-		} else {
-			content = strings.ReplaceAll(content, "LISTENMODE=nfq", "LISTENMODE=af-packet")
-			if !strings.Contains(content, "LISTENMODE=af-packet") {
-				content += "\nLISTENMODE=af-packet\n"
-			}
-		}
-		// Write back
-		if err := os.WriteFile(defaultFile, []byte(content), 0644); err != nil {
-			log.Printf("Warning: Could not write /etc/default/suricata: %v", err)
-		}
-	} else {
-		log.Printf("Warning: /etc/default/suricata not found, skipping LISTENMODE edit")
-	}
+	overrideDir := "/etc/systemd/system/suricata.service.d"
+	overrideFile := overrideDir + "/override.conf"
 
-	// 2. Add or Remove NFTables queue rule
-	// nft add rule inet filter forward queue num 0 bypass
-	// nft delete rule inet filter forward handle X
 	if enable {
-		// First check if rule already exists to avoid duplicates
-		out, err := runPrivilegedCombinedOutput("nft", "list", "chain", "inet", "filter", "forward")
-		if err == nil && !strings.Contains(string(out), "queue num 0") {
-			if _, err := runPrivilegedCombinedOutput("nft", "add", "rule", "inet", "filter", "forward", "queue", "num", "0", "bypass"); err != nil {
-				return fmt.Errorf("failed to add nftables queue rule: %v", err)
-			}
+		// 1. Create drop-in override for IPS (NFQ mode)
+		if err := os.MkdirAll(overrideDir, 0755); err != nil {
+			return fmt.Errorf("failed to create systemd override directory: %v", err)
+		}
+		overrideContent := `[Service]
+ExecStart=
+ExecStart=/usr/bin/suricata -D -q 0 -c /etc/suricata/suricata.yaml --pidfile /run/suricata.pid
+`
+		if err := os.WriteFile(overrideFile, []byte(overrideContent), 0644); err != nil {
+			return fmt.Errorf("failed to write systemd override file: %v", err)
 		}
 	} else {
-		// Remove queue rule
-		// Easiest way to remove a specific rule without knowing handle is to rebuild the chain or find the handle.
-		// For simplicity, we can fetch the handle using json output, or flush and recreate forward chain.
-		// Since forward chain might have other rules (like from VPN), we must find the handle.
-		out, err := runPrivilegedOutput("nft", "-j", "list", "chain", "inet", "filter", "forward")
-		if err == nil {
-			var root NftablesRoot
-			if err := json.Unmarshal(out, &root); err == nil {
-				for _, item := range root.Nftables {
-					if ruleObj, ok := item["rule"].(map[string]interface{}); ok {
-						rawJsonBytes, _ := json.Marshal(ruleObj["expr"])
-						rawJson := string(rawJsonBytes)
-						if strings.Contains(rawJson, "queue") {
-							if handle, ok := ruleObj["handle"].(float64); ok {
-								runPrivilegedCombinedOutput("nft", "delete", "rule", "inet", "filter", "forward", "handle", fmt.Sprintf("%d", int(handle)))
-							}
-						}
-					}
-				}
-			}
+		// 2. Remove drop-in override to revert to default IDS (AF_PACKET mode)
+		if err := os.Remove(overrideFile); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to remove systemd override file: %v", err)
 		}
 	}
 
-	// 3. Restart Suricata service
+	// 3. Reload systemd manager configuration
+	if _, err := runPrivilegedCombinedOutput("systemctl", "daemon-reload"); err != nil {
+		return fmt.Errorf("failed to reload systemd daemon: %v", err)
+	}
+
+	// 4. Re-apply firewall rules (which will configure the forward queue rule if enabled)
+	if err := firewallManager.ApplyFirewallRules(); err != nil {
+		return fmt.Errorf("failed to apply firewall rules for IPS mode: %v", err)
+	}
+
+	// 5. Restart Suricata service to apply the mode change
 	if _, err := runPrivilegedCombinedOutput("systemctl", "restart", "suricata"); err != nil {
 		return fmt.Errorf("failed to restart suricata: %v", err)
 	}
