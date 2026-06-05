@@ -597,15 +597,14 @@ func addFirewallRule(w http.ResponseWriter, r *http.Request) {
 	ruleJSON, _ := json.Marshal(rule)
 
 	if out, err := runPrivilegedCombinedOutput("nft", args...); err != nil {
-		errorMsg := fmt.Sprintf("NFT Error: %s (CMD: nft %v)", string(out), args)
-		fmt.Println(errorMsg)
+		log.Printf("[ERROR] NFT command failed: %s (CMD: nft %v)", string(out), args)
 
 		// Log failed firewall rule addition
 		logAuditEvent(getUsernameFromToken(r), "firewall.add",
 			fmt.Sprintf("%s/%s", rule.Table, rule.Chain),
 			string(ruleJSON), getClientIP(r), false)
 
-		http.Error(w, errorMsg, http.StatusInternalServerError)
+		respondFirewallError(w, ErrFirewallAddFailed, "Failed to add firewall rule", fmt.Errorf("%s", string(out)))
 		return
 	}
 
@@ -795,7 +794,8 @@ func getTrafficStats(w http.ResponseWriter, r *http.Request) {
 	// Read /proc/net/dev for interface statistics
 	data, err := os.ReadFile("/proc/net/dev")
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to read interface stats: %s", err.Error()), http.StatusInternalServerError)
+		log.Printf("[ERROR] Failed to read interface stats: %v", err)
+		respondSystemError(w, ErrGenericInternalError, "Failed to read interface stats", err)
 		return
 	}
 
@@ -845,7 +845,8 @@ func getActiveConnections(w http.ResponseWriter, r *http.Request) {
 		// Fallback to netstat if ss fails
 		output, err = runPrivilegedOutput("netstat", "-tunap")
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to get connections: %s", err.Error()), http.StatusInternalServerError)
+			log.Printf("[ERROR] Failed to get connections: %v", err)
+			respondSystemError(w, ErrGenericInternalError, "Failed to get active connections", err)
 			return
 		}
 	}
@@ -946,7 +947,8 @@ func getSuricataAlerts(w http.ResponseWriter, r *http.Request) {
 	// Use tail command to get last N lines
 	output, err := runPrivilegedOutput("tail", "-n", fmt.Sprintf("%d", limit), eveLogPath)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to read Suricata logs: %s", err.Error()), http.StatusInternalServerError)
+		log.Printf("[ERROR] Failed to read Suricata logs: %v", err)
+		respondSystemError(w, ErrGenericInternalError, "Failed to read Suricata logs", err)
 		return
 	}
 
@@ -1024,7 +1026,8 @@ func getCrowdSecDecisions(w http.ResponseWriter, r *http.Request) {
 
 	var decisions []CrowdSecDecision
 	if err := json.Unmarshal(output, &decisions); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to parse CrowdSec decisions: %s", err.Error()), http.StatusInternalServerError)
+		log.Printf("[ERROR] Failed to parse CrowdSec decisions: %v", err)
+		respondSystemError(w, ErrGenericInternalError, "Failed to parse CrowdSec decisions", err)
 		return
 	}
 
@@ -1388,19 +1391,18 @@ func controlService(w http.ResponseWriter, r *http.Request) {
 		"softrouter":   true,
 	}
 	if !validServices[req.ServiceName] {
-		http.Error(w, "Invalid service name: "+req.ServiceName, http.StatusBadRequest)
+		http.Error(w, "Invalid service name", http.StatusBadRequest)
 		return
 	}
 
-	fmt.Printf("Controlling service: %s %s\n", req.Action, req.ServiceName)
+	log.Printf("Controlling service: %s %s", req.Action, req.ServiceName)
 
 	// Execute systemctl command
 	output, err := runPrivilegedCombinedOutput("systemctl", req.Action, req.ServiceName)
 
 	if err != nil {
-		errMsg := fmt.Sprintf("Service control failed: %s\nOutput: %s", err.Error(), string(output))
-		fmt.Printf("ERROR: %s\n", errMsg)
-		http.Error(w, errMsg, http.StatusInternalServerError)
+		log.Printf("[ERROR] Service control failed: %s - output: %s", err.Error(), string(output))
+		respondSystemError(w, ErrSystemServiceControl, "Service control failed", err)
 		return
 	}
 
@@ -1665,7 +1667,8 @@ func main() {
 
 		logs, err := getAuditLogs(startTime, endTime, actionFilter, userFilter, limit)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to retrieve audit logs: %v", err), http.StatusInternalServerError)
+			log.Printf("[ERROR] Failed to retrieve audit logs: %v", err)
+			respondSystemError(w, ErrGenericInternalError, "Failed to retrieve audit logs", err)
 			return
 		}
 
@@ -1679,7 +1682,7 @@ func main() {
 		if err != nil {
 			logAuditEvent(getUsernameFromToken(r), "backup.create", "system",
 				fmt.Sprintf("{\"error\":\"%s\"}", err.Error()), getClientIP(r), false)
-			http.Error(w, fmt.Sprintf("Failed to create backup: %v", err), http.StatusInternalServerError)
+			respondSystemError(w, ErrSystemBackupFailed, "Failed to create backup", err)
 			return
 		}
 
@@ -1724,7 +1727,7 @@ func main() {
 		if err := restoreBackup(backupData); err != nil {
 			logAuditEvent(getUsernameFromToken(r), "backup.restore", "system",
 				fmt.Sprintf("{\"error\":\"%s\"}", err.Error()), getClientIP(r), false)
-			http.Error(w, fmt.Sprintf("Failed to restore backup: %v", err), http.StatusInternalServerError)
+			respondSystemError(w, ErrSystemRestoreFailed, "Failed to restore backup", err)
 			return
 		}
 
@@ -1741,7 +1744,8 @@ func main() {
 	mux.HandleFunc("GET /api/backup/list", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		backups, err := listBackups()
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to list backups: %v", err), http.StatusInternalServerError)
+			log.Printf("[ERROR] Failed to list backups: %v", err)
+			respondSystemError(w, ErrGenericInternalError, "Failed to list backups", err)
 			return
 		}
 

@@ -139,7 +139,7 @@ func applyUPnPConfig(cfg UPnPConfig) error {
 	}
 
 	// Write config to temp file then privileged-copy to final location
-	err = os.WriteFile("/tmp/miniupnpd.conf", []byte(confStr), 0644)
+	err = os.WriteFile("/tmp/miniupnpd.conf", []byte(confStr), 0600)
 	if err == nil {
 		runPrivileged("cp", "/tmp/miniupnpd.conf", miniupnpdConf)
 	}

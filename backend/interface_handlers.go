@@ -126,6 +126,12 @@ func setInterfaceState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate interface name
+	if !isValidInterfaceName(req.InterfaceName) {
+		http.Error(w, "Invalid interface name", http.StatusBadRequest)
+		return
+	}
+
 	// Validate state
 	if req.State != "up" && req.State != "down" {
 		http.Error(w, "State must be 'up' or 'down'", http.StatusBadRequest)
@@ -175,8 +181,8 @@ func setInterfaceLabel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.InterfaceName == "" {
-		http.Error(w, "Interface name is required", http.StatusBadRequest)
+	if req.InterfaceName == "" || !isValidInterfaceName(req.InterfaceName) {
+		http.Error(w, "Invalid or missing interface name", http.StatusBadRequest)
 		return
 	}
 

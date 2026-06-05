@@ -581,7 +581,7 @@ func sendTestNotification(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{
 			"status": "error",
-			"error":  sendErr.Error(),
+			"error":  "Failed to send test notification. Please check logs and configuration.",
 		})
 		return
 	}
