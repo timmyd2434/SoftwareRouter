@@ -38,14 +38,20 @@ func verifySecureToken(token string) bool {
 		return false
 	}
 
-	parts := strings.Split(strings.TrimPrefix(token, "Bearer sr-"), "-")
-	if len(parts) != 3 {
+	tokenValue := strings.TrimPrefix(token, "Bearer sr-")
+	// Find the last two dashes which separate username from timestamp and signature
+	lastDash := strings.LastIndex(tokenValue, "-")
+	if lastDash == -1 {
+		return false
+	}
+	secondLastDash := strings.LastIndex(tokenValue[:lastDash], "-")
+	if secondLastDash == -1 {
 		return false
 	}
 
-	username := parts[0]
-	timestampStr := parts[1]
-	providedSignature := parts[2]
+	username := tokenValue[:secondLastDash]
+	timestampStr := tokenValue[secondLastDash+1 : lastDash]
+	providedSignature := tokenValue[lastDash+1:]
 
 	// Re-generate signature to verify using HMAC-SHA256
 	payload := fmt.Sprintf("%s:%s", username, timestampStr)
@@ -90,25 +96,24 @@ func getUsernameFromToken(r *http.Request) string {
 	}
 
 	// Extract username from token (token format: "Bearer sr-username-timestamp-signature")
-	if !strings.HasPrefix(token, "Bearer ") {
+	if !strings.HasPrefix(token, "Bearer sr-") {
 		return "unknown"
 	}
 
-	tokenValue := strings.TrimPrefix(token, "Bearer ")
-	// Remove "sr-" prefix
-	if !strings.HasPrefix(tokenValue, "sr-") {
+	tokenValue := strings.TrimPrefix(token, "Bearer sr-")
+
+	// The format is username-timestamp-signature.
+	// Username can contain dashes, so we find the last two dashes.
+	lastDash := strings.LastIndex(tokenValue, "-")
+	if lastDash == -1 {
+		return "unknown"
+	}
+	secondLastDash := strings.LastIndex(tokenValue[:lastDash], "-")
+	if secondLastDash == -1 {
 		return "unknown"
 	}
 
-	tokenValue = strings.TrimPrefix(tokenValue, "sr-")
-	// Split by "-" to get username-timestamp-signature
-	parts := strings.Split(tokenValue, "-")
-	if len(parts) >= 3 {
-		// Username is the first part
-		return parts[0]
-	}
-
-	return "unknown"
+	return tokenValue[:secondLastDash]
 }
 
 // --- Password Management ---
@@ -254,6 +259,14 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
+		// SECURITY: Verify session exists in store (handles revocation/logout)
+		tokenValue := strings.TrimPrefix(token, "Bearer ")
+		if !sessionStore.ValidateSession(tokenValue) {
+			log.Printf("SECURITY: Valid token but session not found or expired: %s", tokenValue[:10])
+			http.Error(w, "Unauthorized: Session invalid or logged out", http.StatusUnauthorized)
+			return
+		}
+
 		next.ServeHTTP(w, r)
 	}
 }
@@ -348,22 +361,26 @@ func login(w http.ResponseWriter, r *http.Request) {
 		fmt.Sprintf("{\"ip\":\"%s\"}", ip), ip, false)
 }
 
-// logout handler for session management (Tier 4 improvement)
-// Client-side logout - server remains stateless
+// logout handler for session management
 func logout(w http.ResponseWriter, r *http.Request) {
 	// Extract IP for audit logging
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 
-	// Optional: Extract username from token for logging
+	// Extract username and token
 	token := r.Header.Get("Authorization")
-	username := "unknown"
-	if token != "" {
-		// Assuming token format "Bearer user:timestamp:signature"
-		tokenValue := strings.TrimPrefix(token, "Bearer ")
-		parts := strings.Split(tokenValue, ":")
-		if len(parts) >= 1 {
-			username = parts[0]
+	if token == "" {
+		token = r.URL.Query().Get("token")
+		if token != "" {
+			token = "Bearer " + token
 		}
+	}
+
+	username := getUsernameFromToken(r)
+	tokenValue := strings.TrimPrefix(token, "Bearer ")
+
+	// Revoke session from store
+	if tokenValue != "" {
+		sessionStore.DeleteSession(tokenValue)
 	}
 
 	logAuditEvent(username, "logout", "success",

@@ -115,6 +115,12 @@ func validateCommand(cmd string, args []string) error {
 				return fmt.Errorf("SECURITY: dangerous character '%s' in argument", char)
 			}
 		}
+
+		// Check for potential path traversal in arguments
+		if strings.Contains(arg, "..") {
+			log.Printf("SECURITY: Blocked potential path traversal in argument: %s", arg)
+			return fmt.Errorf("SECURITY: potential path traversal in argument")
+		}
 	}
 
 	// Command-specific validation
