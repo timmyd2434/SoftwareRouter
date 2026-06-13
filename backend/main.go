@@ -1006,6 +1006,10 @@ func main() {
 		initWANManager()
 		initDynamicRouting()
 		initScheduler()
+
+		if isFirstBoot() && needsWANConfiguration() {
+			ensureFallbackNetwork()
+		}
 	}()
 
 	// SPA Static File Server
