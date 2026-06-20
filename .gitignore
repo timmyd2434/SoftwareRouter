@@ -60,3 +60,8 @@ fast.log
 # Testing
 coverage/
 .nyc_output/
+
+# Compiled Go binaries
+backend/router-backend
+backend/softrouter
+backend/softrouter-backend

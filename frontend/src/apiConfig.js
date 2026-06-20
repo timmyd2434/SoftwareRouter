@@ -54,21 +54,33 @@ export const getCSRFToken = async () => {
 
 export const authFetch = async (url, options = {}) => {
     const token = localStorage.getItem('sr_token');
-    const headers = {
+    let headers = {
         ...options.headers,
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
     };
 
     // Add CSRF token for state-changing operations
-    if (options.method && ['POST', 'PUT', 'DELETE'].includes(options.method.toUpperCase())) {
+    const isStateChanging = options.method && ['POST', 'PUT', 'DELETE'].includes(options.method.toUpperCase());
+    if (isStateChanging) {
         const csrf = await getCSRFToken();
         if (csrf) {
             headers['X-CSRF-Token'] = csrf;
         }
     }
 
-    const response = await fetch(url, { ...options, headers });
+    let response = await fetch(url, { ...options, headers });
+
+    // If 403 Forbidden and it's a state-changing operation, CSRF token might have expired.
+    // Try to clear cached token, fetch a new one, and retry once.
+    if (response.status === 403 && isStateChanging) {
+        csrfToken = null; // Clear cached token
+        const freshCsrf = await getCSRFToken();
+        if (freshCsrf) {
+            headers['X-CSRF-Token'] = freshCsrf;
+            response = await fetch(url, { ...options, headers });
+        }
+    }
 
     if (response.status === 401) {
         localStorage.removeItem('sr_token');

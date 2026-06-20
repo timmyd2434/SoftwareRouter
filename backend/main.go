@@ -77,6 +77,7 @@ type Config struct {
 	} `json:"vpn_server"`
 	IPSEnabled           bool     `json:"ips_enabled"`
 	BlockedAppCategories []string `json:"blocked_app_categories"`
+	TrustProxies         bool     `json:"trust_proxies"`
 }
 
 type WebAccessConfig struct {
@@ -162,8 +163,9 @@ func initWireGuard() {
 }
 
 type UpdateCredsRequest struct {
-	NewUsername string `json:"newUsername"`
-	NewPassword string `json:"newPassword"`
+	CurrentPassword string `json:"currentPassword"`
+	NewUsername     string `json:"newUsername"`
+	NewPassword     string `json:"newPassword"`
 }
 
 // SystemStatus represents the basic health and info
@@ -341,6 +343,8 @@ func enableCORS(next http.Handler) http.Handler {
 		for _, allowedOrigin := range allowedOrigins {
 			if origin == allowedOrigin {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
+				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token")
 				allowed = true
 				break
 			}
@@ -353,9 +357,6 @@ func enableCORS(next http.Handler) http.Handler {
 			// Don't set ANY CORS headers for unauthorized origins
 			// This prevents CORS bypass attacks
 		}
-
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token")
 
 		// Security Headers
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -392,15 +393,21 @@ func maxBodyMiddleware(next http.Handler, maxBytes int64) http.Handler {
 
 // getClientIP extracts the client IP address from the request
 func getClientIP(r *http.Request) string {
-	// Check X-Forwarded-For header first (if behind proxy)
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		ips := strings.Split(xff, ",")
-		return strings.TrimSpace(ips[0])
-	}
+	configLock.RLock()
+	trust := config.TrustProxies
+	configLock.RUnlock()
 
-	// Check X-Real-IP header
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
+	if trust {
+		// Check X-Forwarded-For header first (if behind proxy)
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			ips := strings.Split(xff, ",")
+			return strings.TrimSpace(ips[0])
+		}
+
+		// Check X-Real-IP header
+		if xri := r.Header.Get("X-Real-IP"); xri != "" {
+			return xri
+		}
 	}
 
 	// Fall back to RemoteAddr
@@ -813,13 +820,13 @@ func main() {
 			return
 		}
 
-		session, exists := sessionStore.GetSession("Bearer " + tokenToRevoke)
+		session, exists := sessionStore.GetSession(tokenToRevoke)
 		if !exists || session.Username != username {
 			http.Error(w, "Cannot revoke this session", http.StatusForbidden)
 			return
 		}
 
-		sessionStore.DeleteSession("Bearer " + tokenToRevoke)
+		sessionStore.DeleteSession(tokenToRevoke)
 		logAuditEvent(username, "session.revoke", "token",
 			fmt.Sprintf("{\"token\":\"%s\"}", tokenToRevoke), getClientIP(r), true)
 

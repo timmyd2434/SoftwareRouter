@@ -119,9 +119,26 @@ const RemoteAccess = () => {
         } catch (err) { alert("Error revoking"); }
     };
 
-    const handleDownloadOvpn = (name) => {
-        const token = localStorage.getItem('sr_token');
-        window.open(`${API_ENDPOINTS.OVPN_SERVER_DOWNLOAD}?name=${name}&token=${token}`, '_blank');
+    const handleDownloadOvpn = async (name) => {
+        try {
+            const res = await authFetch(`${API_ENDPOINTS.OVPN_SERVER_DOWNLOAD}?name=${name}`);
+            if (res.ok) {
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${name}.ovpn`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+            } else {
+                alert("Failed to download configuration");
+            }
+        } catch (err) {
+            console.error(err);
+            alert("Error downloading configuration");
+        }
     };
 
     const handleTestEndpoint = async () => {
@@ -229,9 +246,26 @@ const RemoteAccess = () => {
         } catch (err) { setMessage({ type: 'error', text: 'Failed to delete.' }); }
     };
 
-    const handleDownload = (name) => {
-        const token = localStorage.getItem('sr_token');
-        window.open(`${API_ENDPOINTS.VPN_DOWNLOAD}?name=${name}&token=${token}`, '_blank');
+    const handleDownload = async (name) => {
+        try {
+            const res = await authFetch(`${API_ENDPOINTS.VPN_DOWNLOAD}?name=${name}`);
+            if (res.ok) {
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${name}.conf`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+            } else {
+                alert("Failed to download configuration");
+            }
+        } catch (err) {
+            console.error(err);
+            alert("Error downloading configuration");
+        }
     };
 
     // --- Client Handlers ---

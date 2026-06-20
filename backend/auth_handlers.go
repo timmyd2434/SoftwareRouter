@@ -82,12 +82,6 @@ func verifySecureToken(token string) bool {
 // getUsernameFromToken extracts username from the Bearer token
 func getUsernameFromToken(r *http.Request) string {
 	token := r.Header.Get("Authorization")
-	if token == "" {
-		token = r.URL.Query().Get("token")
-		if token != "" {
-			token = "Bearer " + token
-		}
-	}
 
 	// Extract username from token (token format: "Bearer sr-username-timestamp-signature")
 	if !strings.HasPrefix(token, "Bearer ") {
@@ -241,16 +235,15 @@ func csrfMiddleware(next http.HandlerFunc) http.HandlerFunc {
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := r.Header.Get("Authorization")
-		if token == "" {
-			// Also check query param for downloads
-			token = r.URL.Query().Get("token")
-			if token != "" {
-				token = "Bearer " + token
-			}
-		}
 
 		if token == "" || !verifySecureToken(token) {
 			http.Error(w, "Unauthorized: Invalid or missing token", http.StatusUnauthorized)
+			return
+		}
+
+		tokenValue := strings.TrimPrefix(token, "Bearer ")
+		if !sessionStore.ValidateSession(tokenValue) {
+			http.Error(w, "Unauthorized: Session expired or logged out", http.StatusUnauthorized)
 			return
 		}
 
@@ -354,16 +347,13 @@ func logout(w http.ResponseWriter, r *http.Request) {
 	// Extract IP for audit logging
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 
-	// Optional: Extract username from token for logging
+	// Extract username from token for logging
+	username := getUsernameFromToken(r)
+
 	token := r.Header.Get("Authorization")
-	username := "unknown"
 	if token != "" {
-		// Assuming token format "Bearer user:timestamp:signature"
 		tokenValue := strings.TrimPrefix(token, "Bearer ")
-		parts := strings.Split(tokenValue, ":")
-		if len(parts) >= 1 {
-			username = parts[0]
-		}
+		sessionStore.DeleteSession(tokenValue)
 	}
 
 	logAuditEvent(username, "logout", "success",
@@ -381,6 +371,14 @@ func updateCredentials(w http.ResponseWriter, r *http.Request) {
 	var req UpdateCredsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	storedCreds := loadCredentials()
+	if !verifyPassword(req.CurrentPassword, storedCreds.Password) {
+		logAuditEvent(getUsernameFromToken(r), "credentials.update", "password",
+			"{\"error\":\"incorrect current password\"}", getClientIP(r), false)
+		http.Error(w, "Incorrect current password", http.StatusUnauthorized)
 		return
 	}
 

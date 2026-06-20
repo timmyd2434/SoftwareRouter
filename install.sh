@@ -524,18 +524,35 @@ echo -e "${CYAN}[9/10] Creating Systemd Service...${NC}"
 
 cat <<EOF > /etc/systemd/system/softrouter.service
 [Unit]
-Description=SoftRouter Governance Backend & UI
-After=network.target
+Description=SoftRouter Backend Service
+After=network.target network-online.target
+Wants=network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/softrouter-backend
-WorkingDirectory=/usr/local/bin
+Type=simple
 User=root
+WorkingDirectory=/usr/local/bin
+ExecStart=/usr/local/bin/softrouter-backend
 Restart=always
 RestartSec=5
-# Security hardening for service
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN CAP_NET_BIND_SERVICE
-AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN CAP_NET_BIND_SERVICE
+
+# Security & Capabilities
+# CAP_NET_ADMIN: Network configuration (IP, routes, firewall)
+# CAP_NET_BIND_SERVICE: Bind to privileged ports
+# CAP_NET_RAW: Raw sockets (ping, etc)
+# CAP_SYS_MODULE: Load kernel modules (bonding, wireguard)
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW CAP_SYS_MODULE
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW CAP_SYS_MODULE
+
+# Explicitly allow kernel module loading
+ProtectKernelModules=no
+
+# Basic filesystem protections
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+# Allow writing to configuration directories
+ReadWritePaths=/etc/softrouter /etc/dnsmasq.d /etc/wireguard
 
 [Install]
 WantedBy=multi-user.target

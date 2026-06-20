@@ -44,6 +44,9 @@ var allowedCommands = map[string]bool{
 	"mkdir":           true, // Creating directories
 	"suricata":        true, // Suricata IPS engine
 	"suricata-update": true, // Suricata rule updater
+	"ss":              true, // Socket statistics (active connections)
+	"netstat":         true, // Network statistics (fallback)
+	"dnsmasq":         true, // DHCP/DNS server (version check)
 }
 
 // commandExecutionLog stores recent command executions for debugging

@@ -10,7 +10,6 @@ WorkingDirectory=/usr/local/bin
 ExecStart=/usr/local/bin/softrouter-backend
 Restart=always
 RestartSec=5
-Environment=GIN_MODE=release
 
 # Security & Capabilities
 # CAP_NET_ADMIN: Network configuration (IP, routes, firewall)

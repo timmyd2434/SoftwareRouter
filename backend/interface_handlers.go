@@ -252,7 +252,7 @@ func createVLAN(w http.ResponseWriter, r *http.Request) {
 
 	// Create VLAN interface using ip link
 	// Using absolute path for safety and explicit arguments
-	if _, err := runPrivilegedCombinedOutput("/usr/sbin/ip", "link", "add", "link", req.ParentInterface, "name", vlanInterface, "type", "vlan", "id", fmt.Sprintf("%d", req.VLANId)); err != nil {
+	if _, err := runPrivilegedCombinedOutput("ip", "link", "add", "link", req.ParentInterface, "name", vlanInterface, "type", "vlan", "id", fmt.Sprintf("%d", req.VLANId)); err != nil {
 		http.Error(w, "Failed to create VLAN interface", http.StatusInternalServerError)
 		return
 	}

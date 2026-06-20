@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 )
 
@@ -191,6 +192,24 @@ func deleteFirewallRule(w http.ResponseWriter, r *http.Request) {
 
 	if family == "" || table == "" || chain == "" || handle == "" {
 		http.Error(w, "Missing params", http.StatusBadRequest)
+		return
+	}
+
+	// Validate params to prevent nftables argument injection
+	if !regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]*$`).MatchString(family) {
+		http.Error(w, "Invalid family parameter", http.StatusBadRequest)
+		return
+	}
+	if !regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]*$`).MatchString(table) {
+		http.Error(w, "Invalid table parameter", http.StatusBadRequest)
+		return
+	}
+	if !regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]*$`).MatchString(chain) {
+		http.Error(w, "Invalid chain parameter", http.StatusBadRequest)
+		return
+	}
+	if !regexp.MustCompile(`^\d+$`).MatchString(handle) {
+		http.Error(w, "Invalid handle parameter", http.StatusBadRequest)
 		return
 	}
 
