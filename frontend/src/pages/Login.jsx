@@ -29,7 +29,7 @@ const Login = ({ onLogin }) => {
             } else {
                 setError('Invalid username or password');
             }
-        } catch (err) {
+        } catch {
             setError('Failed to connect to the server');
         } finally {
             setLoading(false);

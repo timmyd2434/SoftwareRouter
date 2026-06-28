@@ -58,30 +58,7 @@ const MultiWAN = () => {
 
                 // Merge strategy:
                 // 1. Keep local mode if different? No, server is truth, but we don't want to jump.
-                //    Actually, for mode, server should probably win unless we are editing.
-                // 2. For interfaces:
-                //    - Update status of existing ones.
-                //    - Do NOT remove local ones that are missing from server (e.g. just added).
-
                 setConfig(prevConfig => {
-                    const newIfaces = [...prevConfig.interfaces];
-
-                    // Update existing ones from server
-                    serverConfig.interfaces.forEach(srvIface => {
-                        // Find by interface name (assuming unique) or some index mapping if stable?
-                        // Since we don't have IDs, we might rely on 'interface' field or index if strict.
-                        // Let's rely on index for now as that's how we map, but this is brittle if array changes size.
-                        // Better: Match by 'interface' field if set, otherwise fallback to index?
-                        // Given the backend uses a simple array, index matching is the only 1:1 map we have guaranteed 
-                        // unless we introduce IDs. For now, we'll try to match by index for existing items.
-
-                        // BUT, if user added a new item at end, prevConfig has length N+1.
-                        // We iterate server interfaces (N) and update the first N items of prevConfig.
-                    });
-
-                    // Simpler approach for this specific bug:
-                    // Just update the 'state' field of items that match, and don't touch others.
-
                     const mergedInterfaces = prevConfig.interfaces.map((localIface, idx) => {
                         if (idx < serverConfig.interfaces.length) {
                             const srvIface = serverConfig.interfaces[idx];

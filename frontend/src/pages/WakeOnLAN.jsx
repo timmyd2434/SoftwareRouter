@@ -49,7 +49,7 @@ const WakeOnLAN = () => {
             });
 
             if (res.ok) {
-                const data = await res.json();
+                await res.json();
                 setMessage({ type: 'success', text: deviceName ? `✓ Waking ${deviceName}...` : '✓ Magic packet sent!' });
                 if (!deviceName) setQuickMAC(''); // Clear quick wake input
             } else {

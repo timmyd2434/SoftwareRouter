@@ -24,7 +24,6 @@ const GeoBlocking = () => {
         allowPrivateIPs: true,
         mode: 'blocklist'
     });
-    const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState(null);
     const [customCountry, setCustomCountry] = useState('');
@@ -37,8 +36,6 @@ const GeoBlocking = () => {
             setConfig(data);
         } catch (err) {
             console.error("Failed to fetch config:", err);
-        } finally {
-            setLoading(false);
         }
     };
 

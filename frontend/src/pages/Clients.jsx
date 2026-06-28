@@ -9,7 +9,6 @@ const Clients = () => {
     const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
     const [searchQuery, setSearchQuery] = useState('');
     const [showStaticModal, setShowStaticModal] = useState(false);
-    const [selectedClient, setSelectedClient] = useState(null);
     const [staticForm, setStaticForm] = useState({
         mac: '',
         ip: '',
@@ -38,13 +37,12 @@ const Clients = () => {
     };
 
     useEffect(() => {
-        fetchClients();
+        fetchClients(); // eslint-disable-line react-hooks/set-state-in-effect
         const interval = setInterval(fetchClients, 10000); // Auto refresh every 10s
         return () => clearInterval(interval);
     }, []);
 
     const handleMakeStatic = (client) => {
-        setSelectedClient(client);
         setStaticForm({
             mac: client.mac,
             ip: client.ip,
@@ -111,7 +109,6 @@ const Clients = () => {
     };
 
     const handleEditMeta = (client) => {
-        setSelectedClient(client);
         setMetaForm({
             mac: client.mac,
             name: client.device_name || '',

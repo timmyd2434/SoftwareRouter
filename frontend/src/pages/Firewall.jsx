@@ -22,7 +22,7 @@ const Firewall = () => {
         comment: ''
     });
 
-    const [families] = useState(['inet', 'ip', 'ip6']);
+    const [_families] = useState(['inet', 'ip', 'ip6']);
     const [tables] = useState(['filter', 'nat', 'mangle']);
     const [chains] = useState(['INPUT', 'OUTPUT', 'FORWARD', 'PREROUTING', 'POSTROUTING']);
 
@@ -129,7 +129,7 @@ const Firewall = () => {
                 return parts.join(' ').trim() || raw;
             }
             return raw;
-        } catch (e) {
+        } catch {
             return raw; // Fallback
         }
     };
@@ -461,6 +461,7 @@ const Firewall = () => {
     };
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         fetchRules();
         fetchAliases();
     }, []);

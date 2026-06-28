@@ -53,7 +53,7 @@ const Notifications = () => {
             if (res.ok) {
                 setHasChanges(false);
                 setTestResults(prev => ({ ...prev, save: 'success' }));
-                setTimeout(() => setTestResults(prev => { const { save, ...rest } = prev; return rest; }), 3000);
+                setTimeout(() => setTestResults(prev => { const { save: _save, ...rest } = prev; return rest; }), 3000);
             }
         } catch (err) {
             console.error('Failed to save config:', err);
@@ -73,7 +73,7 @@ const Notifications = () => {
             });
             const data = await res.json();
             setTestResults(prev => ({ ...prev, [key]: data.status === 'sent' ? 'success' : 'error' }));
-        } catch (err) {
+        } catch {
             setTestResults(prev => ({ ...prev, [key]: 'error' }));
         }
 

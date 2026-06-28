@@ -12,7 +12,6 @@ const Bonding = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [showCreateModal, setShowCreateModal] = useState(false);
-    const [showDeleteModal, setShowDeleteModal] = useState(null);
 
     // Form state
     const [newBondName, setNewBondName] = useState('bond0');

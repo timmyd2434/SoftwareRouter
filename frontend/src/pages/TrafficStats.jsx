@@ -8,10 +8,11 @@ const TrafficStats = () => {
     const [history, setHistory] = useState([]);
     const [interfaces, setInterfaces] = useState([]);
     const [selectedInterface, setSelectedInterface] = useState(null);
-    const [loading, setLoading] = useState(true);
+    const [_loading, setLoading] = useState(true);
 
     useEffect(() => {
         fetchInterfaces();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
@@ -36,6 +37,7 @@ const TrafficStats = () => {
                 document.removeEventListener('visibilitychange', handleVisibilityChange);
             };
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedInterface]);
 
     const fetchInterfaces = async () => {

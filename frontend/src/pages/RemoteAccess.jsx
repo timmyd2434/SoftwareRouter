@@ -52,6 +52,7 @@ const RemoteAccess = () => {
             const interval = setInterval(fetchClientStatus, 5000);
             return () => clearInterval(interval);
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab]);
 
     // --- OpenVPN Server Handlers ---
@@ -88,7 +89,7 @@ const RemoteAccess = () => {
             } else {
                 alert("Setup Failed. Check logs.");
             }
-        } catch (err) { alert("Network Error"); }
+        } catch { alert("Network Error"); }
         finally { setLoadingOvpn(false); }
     };
 
@@ -107,7 +108,7 @@ const RemoteAccess = () => {
                 fetchOvpnServerData(); // Update count
                 alert("Client Generated Successfully!");
             } else { alert("Failed to generate client"); }
-        } catch (err) { alert("Error"); }
+        } catch { alert("Error"); }
         finally { setGenerating(false); }
     };
 
@@ -116,7 +117,7 @@ const RemoteAccess = () => {
         try {
             await authFetch(`${API_ENDPOINTS.OVPN_SERVER_CLIENTS}?name=${name}`, { method: 'DELETE' });
             fetchOvpnClients();
-        } catch (err) { alert("Error revoking"); }
+        } catch { alert("Error revoking"); }
     };
 
     const handleDownloadOvpn = async (name) => {
@@ -150,7 +151,7 @@ const RemoteAccess = () => {
                 const data = await res.json();
                 setEndpointResult(data);
             }
-        } catch (err) {
+        } catch {
             setEndpointResult({ success: false, error: 'Network error' });
         } finally {
             setTestingEndpoint(false);
@@ -234,7 +235,7 @@ const RemoteAccess = () => {
             } else {
                 setMessage({ type: 'error', text: 'Failed to generate profile.' });
             }
-        } catch (err) { setMessage({ type: 'error', text: 'Network error' }); }
+        } catch { setMessage({ type: 'error', text: 'Network error' }); }
         finally { setGenerating(false); }
     };
 
@@ -243,7 +244,7 @@ const RemoteAccess = () => {
         try {
             const res = await authFetch(`${API_ENDPOINTS.VPN_CLIENTS}?name=${name}`, { method: 'DELETE' });
             if (res.ok) { fetchClients(); setMessage({ type: 'success', text: 'Access revoked.' }); }
-        } catch (err) { setMessage({ type: 'error', text: 'Failed to delete.' }); }
+        } catch { setMessage({ type: 'error', text: 'Failed to delete.' }); }
     };
 
     const handleDownload = async (name) => {
@@ -291,7 +292,7 @@ const RemoteAccess = () => {
                 body: JSON.stringify({ action })
             });
             setTimeout(fetchClientStatus, 2000); // Wait for service to react
-        } catch (err) { alert('Action failed'); }
+        } catch { alert('Action failed'); }
         finally { setRefreshingClient(false); }
     };
 
@@ -321,7 +322,7 @@ const RemoteAccess = () => {
             } else {
                 alert("Upload failed.");
             }
-        } catch (err) { alert("Upload error"); }
+        } catch { alert("Upload error"); }
         finally { setUploading(false); }
     };
 
@@ -338,7 +339,7 @@ const RemoteAccess = () => {
             } else {
                 alert("Failed to add policy (duplicate?)");
             }
-        } catch (err) { alert("Error adding policy"); }
+        } catch { alert("Error adding policy"); }
     };
 
     const handleDeletePolicy = async (ip) => {
@@ -346,7 +347,7 @@ const RemoteAccess = () => {
         try {
             const res = await authFetch(`${API_ENDPOINTS.VPN_CLIENT_POLICIES}?ip=${ip}`, { method: 'DELETE' });
             if (res.ok) setPolicies(await res.json());
-        } catch (err) { alert("Error deleting policy"); }
+        } catch { alert("Error deleting policy"); }
     };
 
     const copyToClipboard = (text) => {

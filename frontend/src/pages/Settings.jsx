@@ -82,7 +82,7 @@ const Settings = () => {
             } else {
                 setMessage({ type: 'error', text: 'Failed to save AdGuard settings' });
             }
-        } catch (err) {
+        } catch {
             setMessage({ type: 'error', text: 'Network error' });
         } finally {
             setSaving(null);
@@ -104,7 +104,7 @@ const Settings = () => {
             } else {
                 setMessage({ type: 'error', text: 'Failed to save configuration' });
             }
-        } catch (err) {
+        } catch {
             setMessage({ type: 'error', text: 'Network error' });
         } finally {
             setSaving(null);
@@ -136,7 +136,7 @@ const Settings = () => {
             } else {
                 setMessage({ type: 'error', text: 'Failed to update credentials' });
             }
-        } catch (err) {
+        } catch {
             setMessage({ type: 'error', text: 'Network error' });
         } finally {
             setSaving(null);
@@ -581,7 +581,7 @@ const BackupRestore = () => {
             } else {
                 setMessage({ type: 'error', text: 'Failed to create backup' });
             }
-        } catch (err) {
+        } catch {
             setMessage({ type: 'error', text: 'Network error' });
         } finally {
             setLoading(false);
@@ -611,7 +611,7 @@ const BackupRestore = () => {
             } else {
                 setMessage({ type: 'error', text: 'Failed to restore backup' });
             }
-        } catch (err) {
+        } catch {
             setMessage({ type: 'error', text: 'Network error' });
         } finally {
             setLoading(false);
@@ -730,7 +730,7 @@ const SessionManagement = () => {
             } else {
                 setMessage({ type: 'error', text: 'Failed to revoke session' });
             }
-        } catch (err) {
+        } catch {
             setMessage({ type: 'error', text: 'Network error' });
         } finally {
             setShowRevokeModal(false);

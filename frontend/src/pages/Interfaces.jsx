@@ -16,7 +16,6 @@ const Interfaces = () => {
     const [showLeasesModal, setShowLeasesModal] = useState(false);
     const [leases, setLeases] = useState([]);
     const [bridges, setBridges] = useState([]);
-    const [selectedInterface, setSelectedInterface] = useState(null);
 
     const [vlanForm, setVlanForm] = useState({
         parentInterface: '',
@@ -547,10 +546,15 @@ const Interfaces = () => {
     };
 
     useEffect(() => {
-        fetchInterfaces();
-        fetchMetadata();
-        fetchDhcpConfig();
-        fetchBridges();
+        const init = () => {
+            fetchInterfaces();
+            fetchMetadata();
+            fetchDhcpConfig();
+            fetchBridges();
+        };
+        // Run asynchronously in next tick to avoid synchronous setState in effect body
+        setTimeout(init, 0);
+
         // Auto-refresh every 15 seconds
         const interval = setInterval(() => {
             fetchInterfaces();

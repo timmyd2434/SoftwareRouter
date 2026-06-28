@@ -38,7 +38,7 @@ function App() {
   const [lastActivity, setLastActivity] = useState(Date.now());
   const [showWizard, setShowWizard] = useState(false);
 
-  const handleLogin = (data) => {
+  const handleLogin = () => {
     setIsAuthenticated(true);
     setLastActivity(Date.now());
   };
@@ -58,7 +58,9 @@ function App() {
             const csrfData = await csrfRes.json();
             csrfToken = csrfData.token;
           }
-        } catch {}
+        } catch {
+          // Ignore CSRF fetch errors during logout
+        }
 
         await fetch('/api/logout', {
           method: 'POST',

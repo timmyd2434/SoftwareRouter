@@ -51,6 +51,7 @@ const Traffic = () => {
     };
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         fetchStats();
         fetchConnections();
 
@@ -107,7 +108,7 @@ const Traffic = () => {
                     <div className="stats-grid">
                         {interfaceList.map(ifaceName => {
                             const ifaceStats = stats[ifaceName];
-                            const totalBytes = ifaceStats.rx_bytes + ifaceStats.tx_bytes;
+                            const _totalBytes = ifaceStats.rx_bytes + ifaceStats.tx_bytes;
 
                             return (
                                 <div

@@ -39,7 +39,7 @@ const Services = () => {
             });
 
             if (res.ok) {
-                const result = await res.json();
+                await res.json();
                 // Wait a moment for systemd to update, then refresh
                 setTimeout(() => {
                     fetchServices();
@@ -65,7 +65,7 @@ const Services = () => {
     };
 
     useEffect(() => {
-        fetchServices();
+        fetchServices(); // eslint-disable-line react-hooks/set-state-in-effect
         // Auto-refresh every 10 seconds
         const interval = setInterval(fetchServices, 10000);
         return () => clearInterval(interval);

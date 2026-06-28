@@ -31,7 +31,7 @@ const Diagnostics = () => {
                 const data = await res.json();
                 setLogs(data.output || 'No logs found.');
             }
-        } catch (err) {
+        } catch {
             setLogs('Failed to fetch logs.');
         } finally {
             setLoadingLogs(false);
