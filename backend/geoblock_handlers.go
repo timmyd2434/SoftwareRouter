@@ -63,7 +63,7 @@ func handleUpdateGeoBlockingConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Apply firewall rules if enabled
 	if cfg.Enabled {
-		if err := firewallManager.ApplyFirewallRules(); err != nil {
+		if err := firewallManager.ApplyFirewallRules(false); err != nil {
 			fmt.Printf("Warning: Failed to apply firewall rules after geoblocking update: %v\n", err)
 			// Don't fail the request - config is saved
 		}

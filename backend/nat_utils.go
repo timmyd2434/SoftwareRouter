@@ -87,7 +87,7 @@ func GetPortForwardingRules() []PortForwardingRule {
 
 func applyPortForwardingRules() {
 	// Delegate to FirewallManager
-	firewallManager.ApplyFirewallRules()
+	firewallManager.ApplyFirewallRules(false)
 }
 
 // Deprecated and REMOVED for security reasons

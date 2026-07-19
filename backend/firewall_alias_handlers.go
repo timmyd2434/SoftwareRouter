@@ -74,7 +74,7 @@ func createFirewallAlias(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Regenerate firewall rules to include new alias
-	if err := firewallManager.ApplyFirewallRules(); err != nil {
+	if err := firewallManager.ApplyFirewallRules(false); err != nil {
 		fmt.Printf("Warning: Failed to apply firewall rules after alias creation: %v\n", err)
 		// Don't fail the request - alias is saved, firewall will be updated on next apply
 	}
@@ -126,7 +126,7 @@ func updateFirewallAlias(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Regenerate firewall rules
-	if err := firewallManager.ApplyFirewallRules(); err != nil {
+	if err := firewallManager.ApplyFirewallRules(false); err != nil {
 		fmt.Printf("Warning: Failed to apply firewall rules after alias update: %v\n", err)
 	}
 
@@ -175,7 +175,7 @@ func deleteFirewallAlias(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Regenerate firewall rules
-	if err := firewallManager.ApplyFirewallRules(); err != nil {
+	if err := firewallManager.ApplyFirewallRules(false); err != nil {
 		fmt.Printf("Warning: Failed to apply firewall rules after alias deletion: %v\n", err)
 	}
 

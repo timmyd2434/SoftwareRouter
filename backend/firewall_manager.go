@@ -29,7 +29,10 @@ func InitFirewallManager() {
 }
 
 // ApplyFirewallRules regenerates and applies all firewall rules ATOMICALLY
-func (fm *FirewallManager) ApplyFirewallRules() error {
+// When skipWatchdog is true, the watchdog rollback timer is not started.
+// This should be true for boot-time initialization (where there's no user to confirm)
+// and false for manual changes via the dashboard (where rollback safety is needed).
+func (fm *FirewallManager) ApplyFirewallRules(skipWatchdog bool) error {
 	fm.mu.Lock()
 	defer fm.mu.Unlock()
 
@@ -92,11 +95,14 @@ func (fm *FirewallManager) ApplyFirewallRules() error {
 		return fmt.Errorf("Failed to generate ruleset: %v", err)
 	}
 
-	// 5. Snapshot current ruleset for rollback
-	snapshot, err := runPrivilegedOutput("nft", "list", "ruleset")
-	if err != nil {
-		fmt.Printf("Warning: Failed to snapshot current ruleset: %v\n", err)
-		snapshot = nil
+	// 5. Snapshot current ruleset for rollback (only needed if watchdog is active)
+	var snapshot []byte
+	if !skipWatchdog {
+		snapshot, err = runPrivilegedOutput("nft", "list", "ruleset")
+		if err != nil {
+			fmt.Printf("Warning: Failed to snapshot current ruleset: %v\n", err)
+			snapshot = nil
+		}
 	}
 
 	// 6. Write ruleset to temp file
@@ -175,7 +181,8 @@ func (fm *FirewallManager) ApplyFirewallRules() error {
 	}
 
 	// 11. Start watchdog timer (user must confirm or rollback occurs)
-	if snapshot != nil {
+	// Skip on boot-time initialization where there's no user to confirm
+	if !skipWatchdog && snapshot != nil {
 		if err := startWatchdogTimer(string(snapshot)); err != nil {
 			fmt.Printf("Warning: Could not start watchdog timer: %v\n", err)
 		}
@@ -195,7 +202,11 @@ func (fm *FirewallManager) ApplyFirewallRules() error {
 	}
 
 	fmt.Println("✓ Firewall rules applied successfully (atomic)")
-	fmt.Println("⚠️  You have 60 seconds to confirm changes via WebUI or rules will rollback")
+	if !skipWatchdog {
+		fmt.Println("⚠️  You have 60 seconds to confirm changes via WebUI or rules will rollback")
+	} else {
+		fmt.Println("ℹ️  Boot-time initialization — watchdog skipped, rules are permanent")
+	}
 	return nil
 }
 
@@ -331,13 +342,16 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 	b.WriteString("    type nat hook prerouting priority dstnat; policy accept;\n\n")
 
 	// LAN Access to WebUI (DNAT to localhost)
+	// IMPORTANT: Use "fib daddr type local" to only match traffic destined for the
+	// router's own IP addresses. Without this, ALL port 80/443 traffic from LAN clients
+	// (including traffic to external websites) gets redirected to the dashboard.
 	for _, lan := range lanInterfaces {
-		b.WriteString(fmt.Sprintf("    iifname \"%s\" tcp dport 80 dnat to 127.0.0.1:8080 comment \"LAN WebUI HTTP redirect\"\n", lan))
+		b.WriteString(fmt.Sprintf("    iifname \"%s\" fib daddr type local tcp dport 80 dnat to 127.0.0.1:8080 comment \"LAN WebUI HTTP redirect\"\n", lan))
 		targetHTTPS := "443"
 		if cfg.TLS.Port != "" {
 			targetHTTPS = strings.TrimPrefix(cfg.TLS.Port, ":")
 		}
-		b.WriteString(fmt.Sprintf("    iifname \"%s\" tcp dport %s dnat to 127.0.0.1:%s comment \"LAN WebUI HTTPS\"\n",
+		b.WriteString(fmt.Sprintf("    iifname \"%s\" fib daddr type local tcp dport %s dnat to 127.0.0.1:%s comment \"LAN WebUI HTTPS\"\n",
 			lan, targetHTTPS, targetHTTPS))
 	}
 

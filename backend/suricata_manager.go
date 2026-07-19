@@ -162,7 +162,7 @@ ExecStart=/usr/bin/suricata -D -q 0 -c /etc/suricata/suricata.yaml --pidfile /ru
 	}
 
 	// 4. Re-apply firewall rules (which will configure the forward queue rule if enabled)
-	if err := firewallManager.ApplyFirewallRules(); err != nil {
+	if err := firewallManager.ApplyFirewallRules(false); err != nil {
 		return fmt.Errorf("failed to apply firewall rules for IPS mode: %v", err)
 	}
 

@@ -118,7 +118,7 @@ func evalParentalSchedules() {
 	// Re-apply firewall rules if a state changed
 	if needsApply {
 		// Asynchronous apply so we don't block the ticker
-		go firewallManager.ApplyFirewallRules()
+		go firewallManager.ApplyFirewallRules(true)
 	}
 }
 

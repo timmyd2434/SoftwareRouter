@@ -337,25 +337,37 @@ func enableCORS(next http.Handler) http.Handler {
 			allowedOrigins = []string{"http://localhost:5173"}
 		}
 
-		// Check if request origin is allowed
 		origin := r.Header.Get("Origin")
 		allowed := false
-		for _, allowedOrigin := range allowedOrigins {
-			if origin == allowedOrigin {
+
+		if origin != "" {
+			// Check if same-origin (matches Host)
+			scheme := "http"
+			if r.TLS != nil {
+				scheme = "https"
+			}
+			sameOrigin := fmt.Sprintf("%s://%s", scheme, r.Host)
+			if origin == sameOrigin {
+				allowed = true
+			}
+
+			// Check allowed origins config
+			if !allowed {
+				for _, allowedOrigin := range allowedOrigins {
+					if origin == allowedOrigin {
+						allowed = true
+						break
+					}
+				}
+			}
+
+			if allowed {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
 				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token")
-				allowed = true
-				break
+			} else {
+				log.Printf("SECURITY: Blocked CORS request from unauthorized origin: %s", origin)
 			}
-		}
-
-		// If origin not specifically allowed and no wildcard, don't set CORS headers
-		// SECURITY FIX (MEDIUM-3): Properly reject unauthorized origins
-		if !allowed {
-			log.Printf("SECURITY: Blocked CORS request from unauthorized origin: %s", origin)
-			// Don't set ANY CORS headers for unauthorized origins
-			// This prevents CORS bypass attacks
 		}
 
 		// Security Headers
@@ -551,8 +563,8 @@ func main() {
 	// initPortForwarding() // Deprecated by FirewallManager
 
 	InitFirewallManager()
-	// Apply rules initially (will use default/detected WAN/LAN)
-	firewallManager.ApplyFirewallRules()
+	// Apply rules initially — skip watchdog since there's no user to confirm at boot
+	firewallManager.ApplyFirewallRules(true)
 
 	initTrafficStats()
 	initDeviceTraffic()
@@ -668,7 +680,7 @@ func main() {
 
 		// Regenerate firewall with new labels
 		go func() {
-			if err := firewallManager.ApplyFirewallRules(); err != nil {
+			if err := firewallManager.ApplyFirewallRules(false); err != nil {
 				log.Printf("Error regenerating firewall after setup: %v", err)
 			}
 		}()

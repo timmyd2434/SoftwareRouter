@@ -217,7 +217,7 @@ func setInterfaceLabel(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("Interface %s labeled as %s\n", req.InterfaceName, req.Label)
 
 	// Trigger firewall update to respect new zones
-	go firewallManager.ApplyFirewallRules()
+	go firewallManager.ApplyFirewallRules(false)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
