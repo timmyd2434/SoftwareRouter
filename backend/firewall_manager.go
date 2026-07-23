@@ -320,6 +320,15 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 		}
 	}
 
+	// Allow LAN -> LAN (Inter-LAN and Inter-Bridge routing)
+	for _, lan1 := range lanInterfaces {
+		for _, lan2 := range lanInterfaces {
+			if lan1 != lan2 {
+				b.WriteString(fmt.Sprintf("    iifname \"%s\" oifname \"%s\" accept comment \"LAN to LAN\"\n", lan1, lan2))
+			}
+		}
+	}
+
 	// Allow port forwarding (WAN -> LAN via DNAT) - INTERFACE SCOPED
 	for _, wan := range wanInterfaces {
 		b.WriteString(fmt.Sprintf("    iifname \"%s\" ct status dnat accept comment \"Port forwarding\"\n", wan))
