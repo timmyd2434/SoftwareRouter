@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 type NftablesRoot struct {
@@ -87,6 +88,78 @@ func getFirewallRules(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(rules)
 }
 
+// normaliseRule folds a raw nftables rule string to a canonical form for
+// duplicate comparison: lowercase, collapse all whitespace to single spaces,
+// strip leading/trailing space.
+func normaliseRule(raw string) string {
+	// Map every run of whitespace (including tabs/newlines) to a single space
+	var b strings.Builder
+	inSpace := false
+	for _, r := range raw {
+		if unicode.IsSpace(r) {
+			if !inSpace {
+				b.WriteByte(' ')
+				inSpace = true
+			}
+		} else {
+			b.WriteRune(unicode.ToLower(r))
+			inSpace = false
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// isDuplicateRule returns true when a rule with the same normalised raw
+// expression already exists in the specified table+chain.
+// It queries the live nftables ruleset so it reflects the current state.
+func isDuplicateRule(family, table, chain, rawStatement string) bool {
+	out, err := runPrivilegedOutput("nft", "-j", "list", "ruleset")
+	if err != nil {
+		// Cannot query — fail open (allow the add rather than block the user)
+		return false
+	}
+
+	var root NftablesRoot
+	if err := json.Unmarshal(out, &root); err != nil {
+		return false
+	}
+
+	wantNorm := normaliseRule(rawStatement)
+
+	for _, item := range root.Nftables {
+		ruleObj, ok := item["rule"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		existTable, _ := ruleObj["table"].(string)
+		existFamily, _ := ruleObj["family"].(string)
+		existChain, _ := ruleObj["chain"].(string)
+
+		// Only compare within the same table+chain (family comparison is
+		// case-insensitive; nftables normalises "inet" -> "inet" etc.)
+		if !strings.EqualFold(existFamily, family) ||
+			!strings.EqualFold(existTable, table) ||
+			!strings.EqualFold(existChain, chain) {
+			continue
+		}
+
+		// Re-serialise the stored expression JSON and normalise it the same
+		// way the incoming raw string is normalised.  This lets us compare
+		// "tcp dport 22 accept" against the JSON blob nftables stores.
+		// It is not a perfect semantic comparison but catches the common
+		// case of re-submitting the exact same text.
+		exprBytes, _ := json.Marshal(ruleObj["expr"])
+		existNorm := normaliseRule(string(exprBytes))
+
+		if existNorm == wantNorm {
+			return true
+		}
+	}
+
+	return false
+}
+
 func addFirewallRule(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -138,6 +211,21 @@ func addFirewallRule(w http.ResponseWriter, r *http.Request) {
 	if !hasValidKeyword {
 		http.Error(w, "Firewall rule must contain valid nftables keywords", http.StatusBadRequest)
 		return
+	}
+
+	// Duplicate detection: reject if an identical raw expression already
+	// exists in the same table+chain, unless the caller explicitly opts in
+	// with the X-Force-Duplicate header (set by the UI after user confirms).
+	if r.Header.Get("X-Force-Duplicate") != "true" {
+		if isDuplicateRule(rule.Family, rule.Table, rule.Chain, rule.Raw) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error":   "duplicate",
+				"message": fmt.Sprintf("A rule with the same expression already exists in %s/%s. Use 'Add Anyway' to override.", rule.Table, rule.Chain),
+			})
+			return
+		}
 	}
 
 	// Command: nft add rule <family> <table> <chain> <statement>

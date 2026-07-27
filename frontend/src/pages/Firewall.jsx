@@ -8,6 +8,7 @@ const Firewall = () => {
     const [loading, setLoading] = useState(true);
     const [errorHeader, setErrorHeader] = useState(null);
     const [showModal, setShowModal] = useState(false);
+    const [duplicateDetected, setDuplicateDetected] = useState(false);
 
     // State for editing
     const [isEditing, setIsEditing] = useState(false);
@@ -61,6 +62,7 @@ const Firewall = () => {
         setIsEditing(false);
         setEditingHandle(null);
         setDebugLog([]); // Clear log
+        setDuplicateDetected(false);
 
         // Auto-select valid defaults from existing rules
         let defaultFamily = 'inet';
@@ -102,6 +104,7 @@ const Firewall = () => {
         setIsEditing(true);
         setEditingHandle(rule.handle); // Store handle to delete later
         setDebugLog([]);
+        setDuplicateDetected(false);
 
         setNewRule({
             family: rule.family || 'inet',
@@ -275,7 +278,7 @@ const Firewall = () => {
             });
     };
 
-    const handleSubmitRule = async () => {
+    const handleSubmitRule = async (forceDuplicate = false) => {
         // Clear previous logs at the start of each attempt
         setDebugLog([]);
 
@@ -304,15 +307,35 @@ const Firewall = () => {
         // Add the new rule
         try {
             addLog("Sending POST request to backend...");
+            const headers = { 'Content-Type': 'application/json' };
+            if (forceDuplicate) {
+                headers['X-Force-Duplicate'] = 'true';
+            }
             const res = await authFetch(API_ENDPOINTS.FIREWALL, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify(newRule)
             });
 
             addLog(`Response status: ${res.status}`);
+
+            if (res.status === 409) {
+                // Duplicate detected — parse the message and offer override
+                let msg = 'A rule with the same expression already exists in this chain.';
+                try {
+                    const body = await res.json();
+                    if (body.message) msg = body.message;
+                } catch { /* ignore parse errors */ }
+
+                addLog(`⚠ DUPLICATE DETECTED: ${msg}`);
+                addLog('→ Click "Add Anyway" below to add it regardless.');
+                setDuplicateDetected(true);
+                return;
+            }
+
             if (res.ok) {
                 addLog("Success! Refreshing rules...");
+                setDuplicateDetected(false);
                 setTimeout(() => {
                     setShowModal(false);
                     fetchRules();
@@ -760,10 +783,35 @@ const Firewall = () => {
                             </div>
                         </div>
                         <div className="modal-footer">
-                            <button className="cancel-btn" onClick={() => setShowModal(false)}>Cancel</button>
-                            <button className="primary-btn" onClick={handleSubmitRule}>
-                                {isEditing ? 'CONFIRM EDIT' : 'CONFIRM ADD'}
-                            </button>
+                            {duplicateDetected && (
+                                <div style={{
+                                    width: '100%',
+                                    padding: '8px 12px',
+                                    marginBottom: '8px',
+                                    background: 'rgba(234,179,8,0.12)',
+                                    border: '1px solid rgba(234,179,8,0.4)',
+                                    borderRadius: '6px',
+                                    color: '#fbbf24',
+                                    fontSize: '13px',
+                                }}>
+                                    ⚠ A rule with this expression already exists. Add it anyway?
+                                </div>
+                            )}
+                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', width: '100%' }}>
+                                <button className="cancel-btn" onClick={() => setShowModal(false)}>Cancel</button>
+                                {duplicateDetected && (
+                                    <button
+                                        className="primary-btn"
+                                        style={{ background: 'var(--warning, #d97706)' }}
+                                        onClick={() => handleSubmitRule(true)}
+                                    >
+                                        Add Anyway
+                                    </button>
+                                )}
+                                <button className="primary-btn" onClick={() => handleSubmitRule(false)}>
+                                    {isEditing ? 'CONFIRM EDIT' : 'CONFIRM ADD'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
