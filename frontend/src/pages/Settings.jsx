@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Shield, Cloud, Terminal, Save, Lock, User, CheckCircle, AlertCircle, Loader2, Globe } from 'lucide-react';
+import { Settings as SettingsIcon, Shield, Cloud, Terminal, Save, Lock, User, CheckCircle, AlertCircle, Loader2, Globe, RotateCcw } from 'lucide-react';
 import { API_ENDPOINTS, authFetch } from '../apiConfig';
 import ConfirmModal from '../components/ConfirmModal';
 import './Settings.css';
@@ -542,6 +542,7 @@ const BackupRestore = () => {
     const [message, setMessage] = useState({ type: '', text: '' });
     const [showRestoreModal, setShowRestoreModal] = useState(false);
     const [selectedFile, setSelectedFile] = useState(null);
+    const [selectedLocalBackup, setSelectedLocalBackup] = useState(null);
 
     const fetchBackups = async () => {
         try {
@@ -589,25 +590,34 @@ const BackupRestore = () => {
     };
 
     const handleRestoreBackup = async () => {
-        if (!selectedFile) return;
+        if (!selectedFile && !selectedLocalBackup) return;
 
         try {
             setLoading(true);
             setMessage({ type: '', text: '' });
 
-            const formData = new FormData();
-            formData.append('file', selectedFile);
+            let res;
+            if (selectedLocalBackup) {
+                res = await authFetch('/api/backup/restore-local', {
+                    method: 'POST',
+                    body: JSON.stringify({ filename: selectedLocalBackup.filename })
+                });
+            } else {
+                const formData = new FormData();
+                formData.append('file', selectedFile);
 
-            const res = await authFetch('/api/backup/restore', {
-                method: 'POST',
-                body: formData,
-                headers: {} // Let browser set content-type for FormData
-            });
+                res = await authFetch('/api/backup/restore', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {} // Let browser set content-type for FormData
+                });
+            }
 
             if (res.ok) {
                 setMessage({ type: 'success', text: 'Backup restored successfully! Please review settings.' });
                 setShowRestoreModal(false);
                 setSelectedFile(null);
+                setSelectedLocalBackup(null);
             } else {
                 setMessage({ type: 'error', text: 'Failed to restore backup' });
             }
@@ -657,6 +667,7 @@ const BackupRestore = () => {
                                 <th>Filename</th>
                                 <th>Date</th>
                                 <th>Size</th>
+                                <th className="actions-cell">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -665,6 +676,18 @@ const BackupRestore = () => {
                                     <td>{backup.filename}</td>
                                     <td>{new Date(backup.timestamp).toLocaleString()}</td>
                                     <td>{(backup.size / 1024).toFixed(1)} KB</td>
+                                    <td className="actions-cell">
+                                        <button
+                                            className="btn-action restore-btn"
+                                            onClick={() => {
+                                                setSelectedLocalBackup(backup);
+                                                setShowRestoreModal(true);
+                                            }}
+                                            title="Restore this backup"
+                                        >
+                                            <RotateCcw size={14} />
+                                        </button>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -675,11 +698,12 @@ const BackupRestore = () => {
             <ConfirmModal
                 isOpen={showRestoreModal}
                 title="Restore Backup"
-                message={`Are you sure you want to restore from ${selectedFile?.name}? This will create a pre-restore backup automatically.`}
+                message={`Are you sure you want to restore from ${selectedLocalBackup ? selectedLocalBackup.filename : selectedFile?.name}? This will create a pre-restore backup automatically.`}
                 onConfirm={handleRestoreBackup}
                 onCancel={() => {
                     setShowRestoreModal(false);
                     setSelectedFile(null);
+                    setSelectedLocalBackup(null);
                 }}
                 confirmText="Restore"
                 danger={true}

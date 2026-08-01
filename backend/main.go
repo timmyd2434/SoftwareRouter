@@ -795,6 +795,55 @@ func main() {
 		})
 	})))
 
+	mux.HandleFunc("POST /api/backup/restore-local", authMiddleware(csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Filename string `json:"filename"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request", http.StatusBadRequest)
+			return
+		}
+
+		if req.Filename == "" {
+			http.Error(w, "Filename is required", http.StatusBadRequest)
+			return
+		}
+
+		// Prevent path traversal
+		safeName := filepath.Base(req.Filename)
+		if safeName == "." || safeName == "/" {
+			http.Error(w, "Invalid filename", http.StatusBadRequest)
+			return
+		}
+
+		backupFilePath := filepath.Join(backupDir, safeName)
+		// Read backup file
+		// #nosec G304: path is constructed from safe inputs
+		backupData, err := os.ReadFile(backupFilePath)
+		if err != nil {
+			log.Printf("ERROR: Failed to read local backup file: %v", err)
+			respondSystemError(w, ErrSystemRestoreFailed, "Failed to read backup file", err)
+			return
+		}
+
+		// Restore system
+		if err := restoreBackup(backupData); err != nil {
+			logAuditEvent(getUsernameFromToken(r), "backup.restore_local", "system",
+				fmt.Sprintf("{\"filename\":\"%s\",\"error\":\"%s\"}", safeName, err.Error()), getClientIP(r), false)
+			respondSystemError(w, ErrSystemRestoreFailed, "Failed to restore backup", err)
+			return
+		}
+
+		logAuditEvent(getUsernameFromToken(r), "backup.restore_local", "system",
+			fmt.Sprintf("{\"filename\":\"%s\",\"status\":\"success\"}", safeName), getClientIP(r), true)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":  "success",
+			"message": "System restored from local backup successfully.",
+		})
+	})))
+
 	mux.HandleFunc("GET /api/backup/list", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		backups, err := listBackups()
 		if err != nil {
