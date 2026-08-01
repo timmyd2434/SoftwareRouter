@@ -38,14 +38,20 @@ func verifySecureToken(token string) bool {
 		return false
 	}
 
-	parts := strings.Split(strings.TrimPrefix(token, "Bearer sr-"), "-")
-	if len(parts) != 3 {
+	tokenValue := strings.TrimPrefix(token, "Bearer sr-")
+	// Find the last two dashes which separate username from timestamp and signature
+	lastDash := strings.LastIndex(tokenValue, "-")
+	if lastDash == -1 {
+		return false
+	}
+	secondLastDash := strings.LastIndex(tokenValue[:lastDash], "-")
+	if secondLastDash == -1 {
 		return false
 	}
 
-	username := parts[0]
-	timestampStr := parts[1]
-	providedSignature := parts[2]
+	username := tokenValue[:secondLastDash]
+	timestampStr := tokenValue[secondLastDash+1 : lastDash]
+	providedSignature := tokenValue[lastDash+1:]
 
 	// Re-generate signature to verify using HMAC-SHA256
 	payload := fmt.Sprintf("%s:%s", username, timestampStr)
@@ -84,25 +90,24 @@ func getUsernameFromToken(r *http.Request) string {
 	token := r.Header.Get("Authorization")
 
 	// Extract username from token (token format: "Bearer sr-username-timestamp-signature")
-	if !strings.HasPrefix(token, "Bearer ") {
+	if !strings.HasPrefix(token, "Bearer sr-") {
 		return "unknown"
 	}
 
-	tokenValue := strings.TrimPrefix(token, "Bearer ")
-	// Remove "sr-" prefix
-	if !strings.HasPrefix(tokenValue, "sr-") {
+	tokenValue := strings.TrimPrefix(token, "Bearer sr-")
+
+	// The format is username-timestamp-signature.
+	// Username can contain dashes, so we find the last two dashes.
+	lastDash := strings.LastIndex(tokenValue, "-")
+	if lastDash == -1 {
+		return "unknown"
+	}
+	secondLastDash := strings.LastIndex(tokenValue[:lastDash], "-")
+	if secondLastDash == -1 {
 		return "unknown"
 	}
 
-	tokenValue = strings.TrimPrefix(tokenValue, "sr-")
-	// Split by "-" to get username-timestamp-signature
-	parts := strings.Split(tokenValue, "-")
-	if len(parts) >= 3 {
-		// Username is the first part
-		return parts[0]
-	}
-
-	return "unknown"
+	return tokenValue[:secondLastDash]
 }
 
 // --- Password Management ---

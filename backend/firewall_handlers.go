@@ -184,7 +184,7 @@ func addFirewallRule(w http.ResponseWriter, r *http.Request) {
 
 	// Security: Sanitize firewall rule input to prevent command injection
 	// Block dangerous characters and command sequences
-	dangerousPatterns := []string{";", "|", "&", "$", "`", "$(", "||", "&&", "\n", "\r"}
+	dangerousPatterns := []string{";", "|", "&", "$", "`", "$(", "||", "&&", "\n", "\r", "<", ">", "(", ")", "{", "}"}
 	for _, pattern := range dangerousPatterns {
 		if strings.Contains(rule.Raw, pattern) {
 			http.Error(w, "Invalid characters in firewall rule", http.StatusBadRequest)
