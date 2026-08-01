@@ -85,6 +85,8 @@ func loadNotificationConfig() {
 				Enabled:     false,
 				MinSeverity: "warning",
 				CooldownMin: 5,
+				Email:       EmailConfig{},
+				Webhooks:    []WebhookConfig{},
 			}
 			return
 		}
@@ -98,7 +100,13 @@ func loadNotificationConfig() {
 			Enabled:     false,
 			MinSeverity: "warning",
 			CooldownMin: 5,
+			Email:       EmailConfig{},
+			Webhooks:    []WebhookConfig{},
 		}
+	}
+
+	if notifConfig.Webhooks == nil {
+		notifConfig.Webhooks = []WebhookConfig{}
 	}
 }
 
@@ -498,6 +506,10 @@ func updateNotificationConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	if newCfg.MinSeverity == "" {
 		newCfg.MinSeverity = "warning"
+	}
+
+	if newCfg.Webhooks == nil {
+		newCfg.Webhooks = []WebhookConfig{}
 	}
 
 	// Assign IDs to new webhooks

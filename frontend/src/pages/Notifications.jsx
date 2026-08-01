@@ -34,7 +34,22 @@ const Notifications = () => {
             const res = await authFetch(`${API_BASE_URL}/api/notifications/config`);
             if (res.ok) {
                 const data = await res.json();
-                setConfig(data);
+                setConfig({
+                    enabled: data.enabled ?? false,
+                    min_severity: data.min_severity ?? 'warning',
+                    cooldown_minutes: data.cooldown_minutes ?? 5,
+                    email: {
+                        enabled: data.email?.enabled ?? false,
+                        smtp_server: data.email?.smtp_server ?? '',
+                        smtp_port: data.email?.smtp_port ?? 587,
+                        username: data.email?.username ?? '',
+                        password: data.email?.password ?? '',
+                        from: data.email?.from ?? '',
+                        to: data.email?.to ?? '',
+                        use_tls: data.email?.use_tls ?? true,
+                    },
+                    webhooks: Array.isArray(data.webhooks) ? data.webhooks : [],
+                });
             }
         } catch (err) {
             console.error('Failed to load notification config:', err);
@@ -62,8 +77,8 @@ const Notifications = () => {
         }
     };
 
-    const handleTest = async (channel, webhookId) => {
-        const key = webhookId || channel;
+    const handleTest = async (channel, webhookId, uiKey) => {
+        const key = uiKey || webhookId || channel;
         setTestResults(prev => ({ ...prev, [key]: 'sending' }));
 
         try {
@@ -136,7 +151,7 @@ const Notifications = () => {
             return <button className="btn btn-sm btn-error-state" disabled><AlertCircle size={14} /> Failed</button>;
         }
         return (
-            <button className="btn btn-sm btn-test" onClick={() => handleTest(channel, id)}>
+            <button className="btn btn-sm btn-test" onClick={() => handleTest(channel, id, key)}>
                 <Send size={14} /> Test
             </button>
         );
