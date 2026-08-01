@@ -85,6 +85,13 @@ export const authFetch = async (url, options = {}) => {
         }
     }
 
+    // SECURITY FIX: Server now consumes CSRF tokens on use (single-use).
+    // Clear cached token after every state-changing request so the next
+    // mutation fetches a fresh one instead of replaying the consumed token.
+    if (isStateChanging) {
+        csrfToken = null;
+    }
+
     if (response.status === 401) {
         localStorage.removeItem('sr_token');
         localStorage.removeItem('sr_user');

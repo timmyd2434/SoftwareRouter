@@ -190,24 +190,68 @@ func addFirewallRule(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Invalid characters in firewall rule", http.StatusBadRequest)
 			return
 		}
+		// SECURITY FIX: Also validate the comment field to prevent nft injection
+		if rule.Comment != "" && strings.Contains(rule.Comment, pattern) {
+			http.Error(w, "Invalid characters in firewall rule comment", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// SECURITY FIX: Also block double-quotes in comments to prevent quote-escape injection
+	if strings.Contains(rule.Comment, `"`) {
+		http.Error(w, "Quotes are not allowed in firewall rule comments", http.StatusBadRequest)
+		return
 	}
 
 	// Whitelist allowed nftables keywords
-	allowedKeywords := []string{
-		"tcp", "udp", "icmp", "ip", "ip6", "accept", "drop", "reject", "dport", "sport",
-		"daddr", "saddr", "ct", "state", "established", "related", "new", "invalid",
-		"counter", "packets", "bytes", "limit", "rate", "log", "prefix", "to",
-		"masquerade", "redirect", "dnat", "snat", "oifname", "iifname",
+	allowedKeywords := map[string]bool{
+		"tcp": true, "udp": true, "icmp": true, "ip": true, "ip6": true,
+		"accept": true, "drop": true, "reject": true, "dport": true, "sport": true,
+		"daddr": true, "saddr": true, "ct": true, "state": true,
+		"established": true, "related": true, "new": true, "invalid": true,
+		"counter": true, "packets": true, "bytes": true, "limit": true,
+		"rate": true, "log": true, "prefix": true, "to": true,
+		"masquerade": true, "redirect": true, "dnat": true, "snat": true,
+		"oifname": true, "iifname": true,
 	}
 
-	// Validate that rule contains at least one allowed keyword
-	hasValidKeyword := false
-	ruleLower := strings.ToLower(rule.Raw)
-	for _, keyword := range allowedKeywords {
-		if strings.Contains(ruleLower, keyword) {
-			hasValidKeyword = true
-			break
+	// Helper: check if a token is a numeric value, IP address, or CIDR
+	isNumericOrAddress := func(s string) bool {
+		// Strip surrounding quotes
+		s = strings.Trim(s, `"'`)
+		if s == "" {
+			return true
 		}
+		for _, ch := range s {
+			if !unicode.IsDigit(ch) && ch != '.' && ch != ':' && ch != '/' && ch != '-' && ch != ',' {
+				return false
+			}
+		}
+		return true
+	}
+
+	// SECURITY FIX: Token-based keyword validation instead of substring matching
+	// Split the rule into whitespace-delimited tokens and verify each is either
+	// an allowed keyword or a value (number, IP, CIDR, quoted interface name)
+	ruleTokens := strings.Fields(rule.Raw)
+	hasValidKeyword := false
+	for _, token := range ruleTokens {
+		tokenLower := strings.ToLower(strings.Trim(token, `"'`))
+		if allowedKeywords[tokenLower] {
+			hasValidKeyword = true
+			continue // Known keyword
+		}
+		if isNumericOrAddress(token) {
+			continue // Numeric value, IP, CIDR, port
+		}
+		// Allow interface names (alphanumeric + dot + hyphen + underscore, max 15 chars)
+		ifNamePattern := regexp.MustCompile(`^"?[a-zA-Z0-9][-a-zA-Z0-9._*]{0,14}"?$`)
+		if ifNamePattern.MatchString(token) {
+			continue // Looks like an interface name
+		}
+		// Unknown token — reject
+		http.Error(w, fmt.Sprintf("Unknown keyword in firewall rule: %s", token), http.StatusBadRequest)
+		return
 	}
 	if !hasValidKeyword {
 		http.Error(w, "Firewall rule must contain valid nftables keywords", http.StatusBadRequest)

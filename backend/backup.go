@@ -183,7 +183,17 @@ func restoreBackup(data []byte) error {
 		log.Println("[BACKUP] Restoring configuration files from backup map...")
 		// File-based restore (new robust mechanism)
 		for relPath, content := range snapshot.Files {
-			fullPath := filepath.Join(softrouterConfigDir, relPath)
+			// SECURITY: Prevent path traversal attacks from crafted backup files
+			cleanedRel := filepath.Clean(relPath)
+			fullPath := filepath.Join(softrouterConfigDir, cleanedRel)
+
+			// Verify the resolved path is still within softrouterConfigDir
+			absConfigDir, _ := filepath.Abs(softrouterConfigDir)
+			absFullPath, _ := filepath.Abs(fullPath)
+			if !strings.HasPrefix(absFullPath, absConfigDir+string(os.PathSeparator)) && absFullPath != absConfigDir {
+				log.Printf("SECURITY: Blocked path traversal in backup restore: %s -> %s", relPath, absFullPath)
+				continue
+			}
 
 			// Ensure directory exists
 			if err := os.MkdirAll(filepath.Dir(fullPath), 0750); err != nil {
@@ -195,7 +205,7 @@ func restoreBackup(data []byte) error {
 			if err := os.WriteFile(fullPath, []byte(content), 0600); err != nil {
 				log.Printf("WARNING: Failed to write restored file %s: %v", fullPath, err)
 			} else {
-				log.Printf("[BACKUP] Restored file: %s", relPath)
+				log.Printf("[BACKUP] Restored file: %s", cleanedRel)
 			}
 		}
 	} else {

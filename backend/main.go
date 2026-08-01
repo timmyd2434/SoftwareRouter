@@ -1092,9 +1092,14 @@ func main() {
 			return
 		}
 
-		// #nosec G304 G703: path is validated or constructed from safe internal sources
-		path := filepath.Join(staticDir, r.URL.Path)
-		_, err := os.Stat(path)
+		// SECURITY: Prevent path traversal outside staticDir
+		cleanPath := filepath.Join(staticDir, filepath.Clean(r.URL.Path))
+		if !strings.HasPrefix(cleanPath, staticDir) {
+			http.NotFound(w, r)
+			return
+		}
+
+		_, err := os.Stat(cleanPath)
 		if os.IsNotExist(err) || r.URL.Path == "/" {
 			// Serve index.html for React Router to handle
 			http.ServeFile(w, r, filepath.Join(staticDir, "index.html"))
@@ -1173,7 +1178,7 @@ func main() {
 		Addr:         tlsPort,
 		Handler:      secureHandler,
 		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		WriteTimeout: 120 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
 	log.Fatal(secureServer.ListenAndServeTLS(certFile, keyFile))

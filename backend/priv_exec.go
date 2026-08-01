@@ -5,6 +5,7 @@ import (
 	"log"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -59,6 +60,7 @@ type commandExecutionLog struct {
 }
 
 var recentCommands []commandExecutionLog
+var recentCommandsMu sync.Mutex
 
 // logCommandExecution records command execution for audit trail
 func logCommandExecution(cmd string, args []string, success bool, err error) {
@@ -75,11 +77,13 @@ func logCommandExecution(cmd string, args []string, success bool, err error) {
 		Error:     errMsg,
 	}
 
-	// Keep last 100 commands in memory
+	// SECURITY FIX: Mutex-protect shared slice to prevent data races
+	recentCommandsMu.Lock()
 	recentCommands = append(recentCommands, entry)
 	if len(recentCommands) > 100 {
 		recentCommands = recentCommands[1:]
 	}
+	recentCommandsMu.Unlock()
 
 	// Log to system logger
 	if success {
@@ -210,7 +214,14 @@ func runPrivilegedCombinedOutput(cmd string, args ...string) ([]byte, error) {
 // GetRecentCommandExecutions returns the recent command execution log
 // This is useful for debugging and security auditing
 func GetRecentCommandExecutions() []commandExecutionLog {
-	return recentCommands
+	recentCommandsMu.Lock()
+	defer recentCommandsMu.Unlock()
+	// Return a copy to prevent data races on the returned slice
+	copy := make([]commandExecutionLog, len(recentCommands))
+	for i, cmd := range recentCommands {
+		copy[i] = cmd
+	}
+	return copy
 }
 
 // runPrivilegedWithStdin executes a privileged command with data piped to stdin

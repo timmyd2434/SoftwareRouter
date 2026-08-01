@@ -200,6 +200,9 @@ func validateCSRFToken(token string) bool {
 		return false
 	}
 
+	// SECURITY FIX: Consume token after successful validation to prevent replay
+	csrfTokens.Delete(token)
+
 	return true
 }
 
