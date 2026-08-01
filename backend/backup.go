@@ -35,7 +35,11 @@ type BackupCredentials struct {
 	Password string `json:"password"` // Hashed password
 }
 
-const backupDir = "/var/backups/softrouter"
+var backupDir = "/var/backups/softrouter"
+
+var softrouterConfigDir = "/etc/softrouter"
+
+var isTesting = false
 
 // createBackup generates a complete system backup
 func createBackup() ([]byte, error) {
@@ -57,8 +61,8 @@ func createBackup() ([]byte, error) {
 		Config:    BackupConfig{},
 	}
 
-	// Walk /etc/softrouter recursively to capture all configuration files
-	_ = filepath.Walk("/etc/softrouter", func(path string, info os.FileInfo, err error) error {
+	// Walk softrouterConfigDir recursively to capture all configuration files
+	_ = filepath.Walk(softrouterConfigDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil // Skip files we cannot access
 		}
@@ -66,7 +70,7 @@ func createBackup() ([]byte, error) {
 			return nil
 		}
 
-		relPath, err := filepath.Rel("/etc/softrouter", path)
+		relPath, err := filepath.Rel(softrouterConfigDir, path)
 		if err != nil {
 			return nil
 		}
@@ -179,7 +183,7 @@ func restoreBackup(data []byte) error {
 		log.Println("[BACKUP] Restoring configuration files from backup map...")
 		// File-based restore (new robust mechanism)
 		for relPath, content := range snapshot.Files {
-			fullPath := filepath.Join("/etc/softrouter", relPath)
+			fullPath := filepath.Join(softrouterConfigDir, relPath)
 
 			// Ensure directory exists
 			if err := os.MkdirAll(filepath.Dir(fullPath), 0750); err != nil {
@@ -246,38 +250,40 @@ func restoreBackup(data []byte) error {
 	}
 
 	// Reapply restored configuration to the live system immediately
-	log.Println("[BACKUP] Re-applying restored configurations to the live system...")
-	
-	// 1. Reload main configs
-	loadSystemConfig()
-	loadTokenSecret()
-	
-	// 2. Re-apply custom interfaces (Bonds, VLANs, Bridges, IP configurations)
-	applyInterfacesConfig()
-	
-	// 3. Re-apply WireGuard
-	initWireGuard()
+	if !isTesting {
+		log.Println("[BACKUP] Re-applying restored configurations to the live system...")
 
-	// 4. Re-apply DHCP configurations
-	if store, err := loadDHCPConfig(); err == nil {
-		if err := regenerateDnsmasqDHCPConfig(store); err != nil {
-			log.Printf("WARNING: Failed to apply restored DHCP configurations: %v", err)
+		// 1. Reload main configs
+		loadSystemConfig()
+		loadTokenSecret()
+
+		// 2. Re-apply custom interfaces (Bonds, VLANs, Bridges, IP configurations)
+		applyInterfacesConfig()
+
+		// 3. Re-apply WireGuard
+		initWireGuard()
+
+		// 4. Re-apply DHCP configurations
+		if store, err := loadDHCPConfig(); err == nil {
+			if err := regenerateDnsmasqDHCPConfig(store); err != nil {
+				log.Printf("WARNING: Failed to apply restored DHCP configurations: %v", err)
+			}
 		}
-	}
 
-	// 5. Re-apply Port Forwarding and Firewall Manager
-	loadPortForwardingRules()
-	InitFirewallManager()
-	if firewallManager != nil {
-		firewallManager.ApplyFirewallRules(true)
-	}
+		// 5. Re-apply Port Forwarding and Firewall Manager
+		loadPortForwardingRules()
+		InitFirewallManager()
+		if firewallManager != nil {
+			firewallManager.ApplyFirewallRules(true)
+		}
 
-	// 6. Re-apply routes, multi-WAN, scheduler, notifications
-	initRoutes()
-	initWANManager()
-	initDynamicRouting()
-	initScheduler()
-	initNotifications()
+		// 6. Re-apply routes, multi-WAN, scheduler, notifications
+		initRoutes()
+		initWANManager()
+		initDynamicRouting()
+		initScheduler()
+		initNotifications()
+	}
 
 	log.Printf("System restored from backup successfully (timestamp: %s)", snapshot.Timestamp.Format(time.RFC3339))
 	return nil
