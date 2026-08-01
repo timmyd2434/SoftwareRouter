@@ -138,6 +138,17 @@ sed -i 's/ospfd=no/ospfd=yes/' /etc/frr/daemons
 systemctl enable frr
 systemctl restart frr
 
+# Configure automatic restart for dnsmasq (DHCP server resilience)
+echo -e "${CYAN}Configuring systemd auto-restart for dnsmasq...${NC}"
+mkdir -p /etc/systemd/system/dnsmasq.service.d
+cat > /etc/systemd/system/dnsmasq.service.d/restart.conf <<'EOF'
+[Service]
+Restart=on-failure
+RestartSec=5s
+EOF
+systemctl daemon-reload
+systemctl restart dnsmasq
+
 # Install Node.js LTS if not present
 if ! command -v node &> /dev/null; then
     echo -e "${CYAN}Installing Node.js...${NC}"
