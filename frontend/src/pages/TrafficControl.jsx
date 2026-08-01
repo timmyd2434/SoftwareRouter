@@ -164,56 +164,58 @@ const TrafficControl = () => {
                                 )}
                             </div>
 
-                            <div className="form-group">
-                                <label>Queue Discipline</label>
-                                <select
-                                    className="form-input"
-                                    value={editConfig.mode}
-                                    onChange={(e) => setEditConfig({ ...editConfig, mode: e.target.value })}
-                                >
-                                    <option value="cake">CAKE (Recommended Smart Queue)</option>
-                                    <option value="htb">Legacy Rate Limit (HTB)</option>
-                                </select>
-                                <small className="text-muted">
-                                    CAKE automatically manages bufferbloat and fairness.
-                                </small>
-                            </div>
-
-                            <div className="form-row">
+                            <div className="panel-body">
                                 <div className="form-group">
-                                    <label>Upload Limit (Egress)</label>
-                                    <input
-                                        type="text"
+                                    <label>Queue Discipline</label>
+                                    <select
                                         className="form-input"
-                                        placeholder="e.g. 100mbit"
-                                        value={editConfig.upload}
-                                        onChange={(e) => setEditConfig({ ...editConfig, upload: e.target.value })}
-                                    />
-                                    <small className="text-muted">Required for CAKE to work</small>
+                                        value={editConfig.mode}
+                                        onChange={(e) => setEditConfig({ ...editConfig, mode: e.target.value })}
+                                    >
+                                        <option value="cake">CAKE (Recommended Smart Queue)</option>
+                                        <option value="htb">Legacy Rate Limit (HTB)</option>
+                                    </select>
+                                    <small className="text-muted">
+                                        CAKE automatically manages bufferbloat and fairness.
+                                    </small>
                                 </div>
-                                <div className="form-group">
-                                    <label>Download Limit (Ingress)</label>
-                                    <input
-                                        type="text"
-                                        className="form-input"
-                                        placeholder="Optional (e.g. 500mbit)"
-                                        value={editConfig.download}
-                                        onChange={(e) => setEditConfig({ ...editConfig, download: e.target.value })}
-                                    />
-                                    <small className="text-muted">Requires IFB module</small>
-                                </div>
-                            </div>
 
-                            <div className="form-group">
-                                <label>Link Overhead (Bytes)</label>
-                                <input
-                                    type="number"
-                                    className="form-input"
-                                    placeholder="0"
-                                    value={editConfig.overhead}
-                                    onChange={(e) => setEditConfig({ ...editConfig, overhead: parseInt(e.target.value) || 0 })}
-                                />
-                                <small className="text-muted">Use 18 for Ethernet, 44 for ATM/DSL</small>
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label>Upload Limit (Egress)</label>
+                                        <input
+                                            type="text"
+                                            className="form-input"
+                                            placeholder="e.g. 100mbit"
+                                            value={editConfig.upload}
+                                            onChange={(e) => setEditConfig({ ...editConfig, upload: e.target.value })}
+                                        />
+                                        <small className="text-muted">Required for CAKE to work</small>
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Download Limit (Ingress)</label>
+                                        <input
+                                            type="text"
+                                            className="form-input"
+                                            placeholder="Optional (e.g. 500mbit)"
+                                            value={editConfig.download}
+                                            onChange={(e) => setEditConfig({ ...editConfig, download: e.target.value })}
+                                        />
+                                        <small className="text-muted">Requires IFB module</small>
+                                    </div>
+                                </div>
+
+                                <div className="form-group">
+                                    <label>Link Overhead (Bytes)</label>
+                                    <input
+                                        type="number"
+                                        className="form-input"
+                                        placeholder="0"
+                                        value={editConfig.overhead}
+                                        onChange={(e) => setEditConfig({ ...editConfig, overhead: parseInt(e.target.value) || 0 })}
+                                    />
+                                    <small className="text-muted">Use 18 for Ethernet, 44 for ATM/DSL</small>
+                                </div>
                             </div>
 
                             <div className="panel-footer">
