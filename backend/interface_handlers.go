@@ -257,6 +257,12 @@ func createVLAN(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Persist VLAN configuration
+	persistVLAN(vlanInterface, SavedVLAN{
+		ParentInterface: req.ParentInterface,
+		VLANId:          req.VLANId,
+	})
+
 	// Bring the VLAN interface up
 	if output, err := runPrivilegedCombinedOutput("ip", "link", "set", "dev", vlanInterface, "up"); err != nil {
 		fmt.Printf("Warning: Failed to bring up VLAN interface: %s\n", string(output))
@@ -279,22 +285,30 @@ func deleteVLAN(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Safety check: only allow deletion of VLAN interfaces (contain a dot)
-	if !strings.Contains(interfaceName, ".") || !isValidInterfaceName(interfaceName) {
-		http.Error(w, "Invalid VLAN interface name", http.StatusBadRequest)
+	// Validate interface name to prevent command injection
+	if !isValidInterfaceName(interfaceName) {
+		http.Error(w, "Invalid interface name format", http.StatusBadRequest)
+		return
+	}
+
+	// Verify it's actually a VLAN interface (by check for dot notation, e.g. eth0.10)
+	if !strings.Contains(interfaceName, ".") {
+		http.Error(w, "Not a VLAN interface (must contain dot)", http.StatusBadRequest)
 		return
 	}
 
 	fmt.Printf("Deleting VLAN: %s\n", interfaceName)
 
+	// Delete VLAN interface using ip link
 	if output, err := runPrivilegedCombinedOutput("ip", "link", "delete", interfaceName); err != nil {
-		errMsg := fmt.Sprintf("Failed to delete VLAN: %s\nOutput: %s", err.Error(), string(output))
-		fmt.Printf("ERROR: %s\n", errMsg)
-		respondSystemError(w, ErrInterfaceConfigFailed, "Failed to add IP address", fmt.Errorf("%s", errMsg))
+		errMsg := fmt.Sprintf("Failed to delete VLAN: %v, output: %s", err, string(output))
+		log.Printf("ERROR: %s", errMsg)
+		respondSystemError(w, ErrInterfaceDeleteFailed, "Failed to delete VLAN", fmt.Errorf("%s", errMsg))
 		return
 	}
 
-	fmt.Printf("VLAN %s deleted successfully\n", interfaceName)
+	// Remove from persistence
+	removePersistedVLAN(interfaceName)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
@@ -341,6 +355,14 @@ func configureIP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("ERROR: %s", errMsg)
 		respondSystemError(w, ErrInterfaceConfigFailed, "Failed to assign IP", fmt.Errorf("%s", errMsg))
 		return
+	}
+
+	// Persist the configuration changes
+	savedIP := SavedIP{InterfaceName: req.InterfaceName, IPAddress: req.IPAddress}
+	if req.Action == "add" {
+		persistIP(savedIP)
+	} else {
+		removePersistedIP(savedIP)
 	}
 
 	fmt.Printf("IP address %s %sed successfully on %s\n", req.IPAddress, req.Action, req.InterfaceName)
@@ -407,6 +429,14 @@ func configureIPv6(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("ERROR: %s\n", errMsg)
 		respondSystemError(w, ErrInterfaceConfigFailed, "Failed to update IP", fmt.Errorf("%s", errMsg))
 		return
+	}
+
+	// Persist the configuration changes
+	savedIP := SavedIP{InterfaceName: req.InterfaceName, IPAddress: req.IPAddress}
+	if req.Action == "add" {
+		persistIP(savedIP)
+	} else {
+		removePersistedIP(savedIP)
 	}
 
 	fmt.Printf("IPv6 address %s %sed successfully on %s\n", req.IPAddress, req.Action, req.InterfaceName)

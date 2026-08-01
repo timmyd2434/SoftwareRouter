@@ -57,8 +57,11 @@ export const authFetch = async (url, options = {}) => {
     let headers = {
         ...options.headers,
         'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
     };
+
+    if (!(options.body instanceof FormData)) {
+        headers['Content-Type'] = 'application/json';
+    }
 
     // Add CSRF token for state-changing operations
     const isStateChanging = options.method && ['POST', 'PUT', 'DELETE'].includes(options.method.toUpperCase());

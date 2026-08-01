@@ -8,15 +8,17 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
 // BackupSnapshot represents a complete system backup
 type BackupSnapshot struct {
-	Version   string       `json:"version"`
-	Timestamp time.Time    `json:"timestamp"`
-	Hostname  string       `json:"hostname"`
-	Config    BackupConfig `json:"config"`
+	Version   string            `json:"version"`
+	Timestamp time.Time         `json:"timestamp"`
+	Hostname  string            `json:"hostname"`
+	Files     map[string]string `json:"files,omitempty"` // file relPath -> raw content
+	Config    BackupConfig      `json:"config"`
 }
 
 type BackupConfig struct {
@@ -51,27 +53,55 @@ func createBackup() ([]byte, error) {
 		Version:   "0.12",
 		Timestamp: time.Now(),
 		Hostname:  hostname,
+		Files:     make(map[string]string),
 		Config:    BackupConfig{},
 	}
 
-	// System configuration
+	// Walk /etc/softrouter recursively to capture all configuration files
+	_ = filepath.Walk("/etc/softrouter", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // Skip files we cannot access
+		}
+		if info.IsDir() {
+			return nil
+		}
+
+		relPath, err := filepath.Rel("/etc/softrouter", path)
+		if err != nil {
+			return nil
+		}
+
+		// Skip backup files (e.g. *.bak_...) to keep backup size small and avoid loops
+		if strings.Contains(relPath, ".bak") {
+			return nil
+		}
+
+		// Read file contents
+		data, err := os.ReadFile(path)
+		if err == nil {
+			snapshot.Files[relPath] = string(data)
+		}
+		return nil
+	})
+
+	// System configuration (legacy fallback fields)
 	configLock.RLock()
 	snapshot.Config.SystemConfig = config
 	configLock.RUnlock()
 
-	// Credentials
+	// Credentials (legacy fallback fields)
 	creds := loadCredentials()
 	snapshot.Config.Credentials = BackupCredentials{
 		Username: creds.Username,
 		Password: creds.Password,
 	}
 
-	// Interface metadata
+	// Interface metadata (legacy fallback fields)
 	if metadata, err := loadInterfaceMetadata(); err == nil {
 		snapshot.Config.InterfaceMetadata = metadata.Metadata
 	}
 
-	// DHCP configuration
+	// DHCP configuration (legacy fallback fields)
 	if dhcpData, err := os.ReadFile(dhcpConfigPath); err == nil {
 		var dhcpConfig interface{}
 		if err := json.Unmarshal(dhcpData, &dhcpConfig); err == nil {
@@ -79,13 +109,13 @@ func createBackup() ([]byte, error) {
 		}
 	}
 
-	// Firewall rules (basic snapshot - just store rule descriptions)
+	// Firewall rules (legacy fallback fields)
 	snapshot.Config.FirewallRules = []string{
 		"# Firewall rules snapshot",
 		"# Note: Firewall rules should be manually reviewed after restore",
 	}
 
-	// Port forwarding rules
+	// Port forwarding rules (legacy fallback fields)
 	loadPortForwardingRules()
 	pfStoreLock.RLock()
 	snapshot.Config.PortForwardingRules = pfStore.Rules
@@ -145,55 +175,111 @@ func restoreBackup(data []byte) error {
 		log.Printf("WARNING: Failed to create pre-restore backup: %v", err)
 	}
 
-	// Restore system configuration
-	configLock.Lock()
-	config = snapshot.Config.SystemConfig
-	if err := saveConfigLocked(); err != nil {
+	if len(snapshot.Files) > 0 {
+		log.Println("[BACKUP] Restoring configuration files from backup map...")
+		// File-based restore (new robust mechanism)
+		for relPath, content := range snapshot.Files {
+			fullPath := filepath.Join("/etc/softrouter", relPath)
+
+			// Ensure directory exists
+			if err := os.MkdirAll(filepath.Dir(fullPath), 0750); err != nil {
+				log.Printf("WARNING: Failed to create directory for %s: %v", fullPath, err)
+				continue
+			}
+
+			// Write configuration file
+			if err := os.WriteFile(fullPath, []byte(content), 0600); err != nil {
+				log.Printf("WARNING: Failed to write restored file %s: %v", fullPath, err)
+			} else {
+				log.Printf("[BACKUP] Restored file: %s", relPath)
+			}
+		}
+	} else {
+		log.Println("[BACKUP] Restoring configuration from legacy fallback fields...")
+		// Fallback restore from individual fields for old backups
+		// Restore system configuration
+		configLock.Lock()
+		config = snapshot.Config.SystemConfig
+		if err := saveConfigLocked(); err != nil {
+			configLock.Unlock()
+			return fmt.Errorf("failed to restore config: %w", err)
+		}
 		configLock.Unlock()
-		return fmt.Errorf("failed to restore config: %w", err)
-	}
-	configLock.Unlock()
 
-	// Restore credentials
-	creds := UserCredentials{
-		Username: snapshot.Config.Credentials.Username,
-		Password: snapshot.Config.Credentials.Password,
-	}
-	if err := saveCredentials(creds); err != nil {
-		return fmt.Errorf("failed to restore credentials: %w", err)
-	}
-
-	// Restore interface metadata
-	if len(snapshot.Config.InterfaceMetadata) > 0 {
-		metadata := &InterfaceMetadataStore{
-			Metadata: snapshot.Config.InterfaceMetadata,
+		// Restore credentials
+		creds := UserCredentials{
+			Username: snapshot.Config.Credentials.Username,
+			Password: snapshot.Config.Credentials.Password,
 		}
-		if err := saveInterfaceMetadata(metadata); err != nil {
-			log.Printf("WARNING: Failed to restore interface metadata: %v", err)
+		if err := saveCredentials(creds); err != nil {
+			return fmt.Errorf("failed to restore credentials: %w", err)
 		}
-	}
 
-	// Restore DHCP configuration
-	if snapshot.Config.DHCPConfig != nil {
-		dhcpJSON, _ := json.MarshalIndent(snapshot.Config.DHCPConfig, "", "  ")
-		if err := os.WriteFile(dhcpConfigPath, dhcpJSON, 0600); err != nil {
-			log.Printf("WARNING: Failed to restore DHCP config: %v", err)
+		// Restore interface metadata
+		if len(snapshot.Config.InterfaceMetadata) > 0 {
+			metadata := &InterfaceMetadataStore{
+				Metadata: snapshot.Config.InterfaceMetadata,
+			}
+			if err := saveInterfaceMetadata(metadata); err != nil {
+				log.Printf("WARNING: Failed to restore interface metadata: %v", err)
+			}
 		}
-	}
 
-	// Restore port forwarding rules
-	if len(snapshot.Config.PortForwardingRules) > 0 {
-		pfStoreLock.Lock()
-		pfStore.Rules = snapshot.Config.PortForwardingRules
-		pfStoreLock.Unlock()
+		// Restore DHCP configuration
+		if snapshot.Config.DHCPConfig != nil {
+			dhcpJSON, _ := json.MarshalIndent(snapshot.Config.DHCPConfig, "", "  ")
+			if err := os.WriteFile(dhcpConfigPath, dhcpJSON, 0600); err != nil {
+				log.Printf("WARNING: Failed to restore DHCP config: %v", err)
+			}
+		}
 
-		if err := savePortForwardingRules(); err != nil {
-			log.Printf("WARNING: Failed to restore port forwarding: %v", err)
+		// Restore port forwarding rules
+		if len(snapshot.Config.PortForwardingRules) > 0 {
+			pfStoreLock.Lock()
+			pfStore.Rules = snapshot.Config.PortForwardingRules
+			pfStoreLock.Unlock()
+
+			if err := savePortForwardingRules(); err != nil {
+				log.Printf("WARNING: Failed to restore port forwarding: %v", err)
+			}
 		}
 	}
 
-	log.Printf("System restored from backup (timestamp: %s)", snapshot.Timestamp.Format(time.RFC3339))
+	// Reapply restored configuration to the live system immediately
+	log.Println("[BACKUP] Re-applying restored configurations to the live system...")
+	
+	// 1. Reload main configs
+	loadSystemConfig()
+	loadTokenSecret()
+	
+	// 2. Re-apply custom interfaces (Bonds, VLANs, Bridges, IP configurations)
+	applyInterfacesConfig()
+	
+	// 3. Re-apply WireGuard
+	initWireGuard()
 
+	// 4. Re-apply DHCP configurations
+	if store, err := loadDHCPConfig(); err == nil {
+		if err := regenerateDnsmasqDHCPConfig(store); err != nil {
+			log.Printf("WARNING: Failed to apply restored DHCP configurations: %v", err)
+		}
+	}
+
+	// 5. Re-apply Port Forwarding and Firewall Manager
+	loadPortForwardingRules()
+	InitFirewallManager()
+	if firewallManager != nil {
+		firewallManager.ApplyFirewallRules(true)
+	}
+
+	// 6. Re-apply routes, multi-WAN, scheduler, notifications
+	initRoutes()
+	initWANManager()
+	initDynamicRouting()
+	initScheduler()
+	initNotifications()
+
+	log.Printf("System restored from backup successfully (timestamp: %s)", snapshot.Timestamp.Format(time.RFC3339))
 	return nil
 }
 

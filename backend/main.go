@@ -556,6 +556,7 @@ func maskPassword(password string) string {
 func main() {
 	loadSystemConfig()
 	loadTokenSecret()
+	applyInterfacesConfig() // Restore custom interfaces (Bonds, VLANs, Bridges, IP configuration)
 	initWireGuard()
 	// initFirewall() // Deprecated by FirewallManager
 	InitQoS() // 4. Initialize Networking

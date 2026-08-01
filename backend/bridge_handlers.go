@@ -246,6 +246,13 @@ func createBridge(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Persist the bridge
+	persistBridge(req.Name, SavedBridge{
+		Name:    req.Name,
+		Members: req.Members,
+		STP:     req.STP,
+	})
+
 	fmt.Printf("Bridge %s created successfully with %d members\n", req.Name, len(req.Members))
 
 	w.Header().Set("Content-Type", "application/json")
@@ -297,6 +304,9 @@ func deleteBridge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Remove bridge from persistence
+	removePersistedBridge(bridgeName)
+
 	fmt.Printf("Bridge %s deleted successfully\n", bridgeName)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -337,6 +347,11 @@ func addBridgeMember(w http.ResponseWriter, r *http.Request) {
 	if _, err := runPrivilegedCombinedOutput("ip", "link", "set", req.Member, "master", req.BridgeName); err != nil {
 		respondSystemError(w, ErrInterfaceConfigFailed, "Failed to add member to bridge", err)
 		return
+	}
+
+	// Update persistence
+	if members, err := getBridgeMembers(req.BridgeName); err == nil {
+		updatePersistedBridgeMembers(req.BridgeName, members)
 	}
 
 	fmt.Printf("Member %s added to bridge %s successfully\n", req.Member, req.BridgeName)
@@ -393,6 +408,11 @@ func removeBridgeMember(w http.ResponseWriter, r *http.Request) {
 	if _, err := runPrivilegedCombinedOutput("ip", "link", "set", req.Member, "nomaster"); err != nil {
 		respondSystemError(w, ErrInterfaceConfigFailed, "Failed to remove member from bridge", err)
 		return
+	}
+
+	// Update persistence
+	if members, err := getBridgeMembers(req.BridgeName); err == nil {
+		updatePersistedBridgeMembers(req.BridgeName, members)
 	}
 
 	fmt.Printf("Member %s removed from bridge %s successfully\n", req.Member, req.BridgeName)

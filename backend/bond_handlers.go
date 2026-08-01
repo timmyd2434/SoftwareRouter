@@ -418,6 +418,14 @@ func createBond(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Persist the bond
+	persistBond(req.Name, SavedBond{
+		Name:    req.Name,
+		Members: req.Members,
+		Mode:    req.Mode,
+		MIIMon:  req.MIIMon,
+	})
+
 	fmt.Printf("Bond %s created successfully with %d members (mode: %s, miimon: %dms)\n",
 		req.Name, len(req.Members), req.Mode, req.MIIMon)
 
@@ -469,6 +477,9 @@ func deleteBond(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Remove bond from persistence
+	removePersistedBond(bondName)
+
 	fmt.Printf("Bond %s deleted successfully\n", bondName)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -517,6 +528,11 @@ func addBondMember(w http.ResponseWriter, r *http.Request) {
 	// Bring member up
 	if _, err := runPrivilegedCombinedOutput("ip", "link", "set", req.Member, "up"); err != nil {
 		fmt.Printf("Warning: Failed to bring up member %s: %v\n", req.Member, err)
+	}
+
+	// Update persistence
+	if members, err := getBondMembers(req.BondName); err == nil {
+		updatePersistedBondMembers(req.BondName, members)
 	}
 
 	fmt.Printf("Member %s added to bond %s successfully\n", req.Member, req.BondName)
@@ -573,6 +589,11 @@ func removeBondMember(w http.ResponseWriter, r *http.Request) {
 	if _, err := runPrivilegedCombinedOutput("ip", "link", "set", req.Member, "nomaster"); err != nil {
 		respondSystemError(w, ErrInterfaceConfigFailed, "Failed to remove member from bond", err)
 		return
+	}
+
+	// Update persistence
+	if members, err := getBondMembers(req.BondName); err == nil {
+		updatePersistedBondMembers(req.BondName, members)
 	}
 
 	fmt.Printf("Member %s removed from bond %s successfully\n", req.Member, req.BondName)
