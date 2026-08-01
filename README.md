@@ -51,6 +51,12 @@ A modern, high-performance web-based router management interface built with **Re
   - **WAN**: Blocked by default. Optionally enable access via custom, obscure ports (e.g., 980/9443).
 - **Port Forwarding**: Robust implementation with Hairpin NAT support, integrated directly into the NFTables pipeline.
 
+### 🔧 Resilience & High Availability (Latest Updates)
+- **Interface Persistence**: Dynamic configurations of VLANs, Bridges, Bonds, and IP allocations automatically persist across system reboots.
+- **Local Restore**: Directly trigger restorations from backups stored on the local router disk via the settings dashboard.
+- **Resilient DHCP**: Automated systemd restart configurations for the DHCP server (dnsmasq) to ensure network recovery.
+- **Diagnostics Integration**: Built-in support for `traceroute` and `speedtest-cli` network diagnostics tools.
+
 ---
 
 ## 🚀 Installation & Deployment
