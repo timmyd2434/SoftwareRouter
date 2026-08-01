@@ -197,6 +197,7 @@ func addFirewallRule(w http.ResponseWriter, r *http.Request) {
 		"tcp", "udp", "icmp", "ip", "ip6", "accept", "drop", "reject", "dport", "sport",
 		"daddr", "saddr", "ct", "state", "established", "related", "new", "invalid",
 		"counter", "packets", "bytes", "limit", "rate", "log", "prefix", "to",
+		"masquerade", "redirect", "dnat", "snat", "oifname", "iifname",
 	}
 
 	// Validate that rule contains at least one allowed keyword
