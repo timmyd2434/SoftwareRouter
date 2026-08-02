@@ -1,28 +1,28 @@
-# SoftRouter - Web-Based Software Router 🛡️🚀
+# SoftRouter - Web-Based Software Router
 
 A modern, high-performance web-based router management interface built with **React** (frontend) and **Go** (backend). Designed to turn any Debian or Ubuntu server into a powerful, security-hardened network appliance.
 
-## 🌟 Key Features
+## Key Features
 
-### 🛡️ Integrated Security Stack
+### Integrated Security Stack
 - **IDS/IPS (Suricata)**: Real-time network intrusion detection and prevention.
 - **Threat Intelligence (CrowdSec)**: Community-driven IP reputation and automated blocking.
 - **Firewall (NFTables)**: Full GUI for managing kernel-level network filtering with human-readable parsing.
 - **Access Control**: Zero Trust architecture with strict localhost binding and WAN/LAN zone management.
 - **Ad-Blocking**: Native support and management for **AdGuard Home** and **Pi-hole**.
 
-### 🌐 Network & Interfaces
+### Network & Interfaces
 - **VLAN Management**: Create and manage 802.1Q VLANs on physical interfaces.
 - **L3 Configuration**: Dynamic IP/CIDR assignment and interface state (Up/Down) control.
 - **Smart Labeling**: Organize ports as WAN, LAN, DMZ, or Trunk with custom descriptions.
 - **Live Monitoring**: Real-time traffic stats, interface status, and connection tracking.
 
-### ⚙️ System Management
+### System Management
 - **Service Governance**: Unified dashboard to Start/Stop/Restart critical services (dnsmasq, WireGuard, OpenVPN, etc.).
 - **Credential Security**: SHA-256 password hashing and secure token-based session management.
 - **Appliance Deployment**: Single-script installation that converts a fresh OS into a router in minutes.
 
-### 🔒 Phase 2 Security Features (NEW)
+### Phase 2 Security Features
 - **Audit Logging**: Comprehensive audit trail for all security-sensitive operations
   - JSON line format with automatic daily rotation
   - Filter by date, action, user via web UI
@@ -44,14 +44,14 @@ A modern, high-performance web-based router management interface built with **Re
   - Separate user-facing vs internal error messages
   - Structured logging with error codes
 
-### 🔒 Access Control & Security (Latest)
+### Access Control & Security
 - **Secure Binding**: WebUI binds strictly to localhost (`127.0.0.1`), preventing accidental exposure.
 - **Zone-Based Firewall**:
   - **LAN**: Trusted access via secure DNAT proxies.
   - **WAN**: Blocked by default. Optionally enable access via custom, obscure ports (e.g., 980/9443).
 - **Port Forwarding**: Robust implementation with Hairpin NAT support, integrated directly into the NFTables pipeline.
 
-### 🔧 Resilience & High Availability (Latest Updates)
+### Resilience & High Availability
 - **Interface Persistence**: Dynamic configurations of VLANs, Bridges, Bonds, and IP allocations automatically persist across system reboots.
 - **Local Restore**: Directly trigger restorations from backups stored on the local router disk via the settings dashboard.
 - **Resilient DHCP**: Automated systemd restart configurations for the DHCP server (dnsmasq) to ensure network recovery.
@@ -59,7 +59,7 @@ A modern, high-performance web-based router management interface built with **Re
 
 ---
 
-## 🚀 Installation & Deployment
+## Installation & Deployment
 
 ### Master Installation (Recommended)
 SoftRouter is optimized for headless servers. Run the comprehensive installer to set up the entire stack:
@@ -106,7 +106,7 @@ Access the **Audit Logs** page to:
 
 ---
 
-## 💡 Professional Tips & Config
+## Tips & Config
 
 ### AdGuard Home DNS Analytics
 The DNS Analytics page integrates with AdGuard Home to display:
@@ -175,17 +175,17 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 - `backend/`: Go API server (Port 80). Handles kernel interactions (IP, NFT, systemd).
 - `frontend/`: React + Vite SPA. Modern, glassmorphism-based UI.
 - `install.sh`: All-in-one installation script for full appliance deployment.
 - `/etc/softrouter/`: Secure persistent storage for credentials and configuration.
 
-## 🛠️ Development
+## Development
 To run in development mode with live-reloading:
 1.  **Backend**: `cd backend && sudo go run main.go`
 2.  **Frontend**: `cd frontend && npm install && npm run dev -- --host`
 
 ---
 
-Built with ❤️ for secure, open-source networking.
+Built with design of secure, open-source networking with a simplistic WebUI instead of command line programming. 
