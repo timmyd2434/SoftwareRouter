@@ -365,11 +365,27 @@ func validateWebhookURL(rawURL string) error {
 	}
 
 	// Parse to extract hostname
-	parsed, err := net.LookupHost(extractHost(rawURL))
-	if err != nil {
-		// Can't resolve — allow it (may be valid external host not reachable at config time)
-		log.Printf("[NOTIFY] Could not resolve webhook host, allowing: %v", err)
+	host := extractHost(rawURL)
+	if host == "" {
+		return fmt.Errorf("invalid host in URL")
+	}
+
+	// If host is directly an IP, validate it
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+			return fmt.Errorf("webhook URL targets private/local address %s — not allowed (SSRF protection)", host)
+		}
 		return nil
+	}
+
+	// Host is a domain name, resolve it
+	parsed, err := net.LookupHost(host)
+	if err != nil {
+		return fmt.Errorf("failed to resolve webhook host %s: %w", host, err)
+	}
+
+	if len(parsed) == 0 {
+		return fmt.Errorf("no IP addresses resolved for host %s", host)
 	}
 
 	// Block private/loopback IPs
@@ -378,7 +394,7 @@ func validateWebhookURL(rawURL string) error {
 		if parsedIP == nil {
 			continue
 		}
-		if parsedIP.IsLoopback() || parsedIP.IsPrivate() || parsedIP.IsLinkLocalUnicast() {
+		if parsedIP.IsLoopback() || parsedIP.IsPrivate() || parsedIP.IsLinkLocalUnicast() || parsedIP.IsLinkLocalMulticast() || parsedIP.IsUnspecified() {
 			return fmt.Errorf("webhook URL resolves to private/local address %s — not allowed (SSRF protection)", ip)
 		}
 	}

@@ -7,16 +7,21 @@ import (
 	"time"
 )
 
-// RateLimiter implements a token bucket rate limiter
+type ipLimiter struct {
+	tokens     float64
+	lastRefill time.Time
+}
+
+// RateLimiter implements a constant-space token bucket rate limiter
 type RateLimiter struct {
-	requests map[string][]time.Time
+	limiters map[string]*ipLimiter
 	mu       sync.Mutex
 }
 
 // NewRateLimiter creates a new rate limiter
 func NewRateLimiter() *RateLimiter {
 	rl := &RateLimiter{
-		requests: make(map[string][]time.Time),
+		limiters: make(map[string]*ipLimiter),
 	}
 
 	// Start cleanup goroutine
@@ -31,30 +36,34 @@ func (rl *RateLimiter) Allow(ip string, limit int, window time.Duration) bool {
 	defer rl.mu.Unlock()
 
 	now := time.Now()
-	cutoff := now.Add(-window)
-
-	// Get existing requests for this IP
-	requests := rl.requests[ip]
-
-	// Filter out old requests
-	validRequests := []time.Time{}
-	for _, t := range requests {
-		if t.After(cutoff) {
-			validRequests = append(validRequests, t)
+	lim, exists := rl.limiters[ip]
+	if !exists {
+		// Initialize bucket fully populated
+		lim = &ipLimiter{
+			tokens:     float64(limit),
+			lastRefill: now,
 		}
+		rl.limiters[ip] = lim
 	}
 
-	// Check if limit exceeded
-	if len(validRequests) >= limit {
-		rl.requests[ip] = validRequests
-		return false
+	// Calculate refill based on elapsed time since last refill
+	elapsed := now.Sub(lim.lastRefill)
+	refill := float64(elapsed) * (float64(limit) / float64(window))
+	
+	newTokens := lim.tokens + refill
+	if newTokens > float64(limit) {
+		newTokens = float64(limit)
 	}
 
-	// Add current request
-	validRequests = append(validRequests, now)
-	rl.requests[ip] = validRequests
+	lim.lastRefill = now
 
-	return true
+	if newTokens >= 1.0 {
+		lim.tokens = newTokens - 1.0
+		return true
+	}
+
+	lim.tokens = newTokens
+	return false
 }
 
 // GetRemaining returns how many requests are remaining for an IP
@@ -63,20 +72,24 @@ func (rl *RateLimiter) GetRemaining(ip string, limit int, window time.Duration) 
 	defer rl.mu.Unlock()
 
 	now := time.Now()
-	cutoff := now.Add(-window)
-
-	requests := rl.requests[ip]
-	validRequests := []time.Time{}
-
-	for _, t := range requests {
-		if t.After(cutoff) {
-			validRequests = append(validRequests, t)
-		}
+	lim, exists := rl.limiters[ip]
+	if !exists {
+		return limit
 	}
 
-	remaining := limit - len(validRequests)
+	elapsed := now.Sub(lim.lastRefill)
+	refill := float64(elapsed) * (float64(limit) / float64(window))
+	newTokens := lim.tokens + refill
+	if newTokens > float64(limit) {
+		newTokens = float64(limit)
+	}
+
+	remaining := int(newTokens)
 	if remaining < 0 {
 		return 0
+	}
+	if remaining > limit {
+		return limit
 	}
 	return remaining
 }
@@ -90,16 +103,10 @@ func (rl *RateLimiter) cleanup() {
 		rl.mu.Lock()
 		now := time.Now()
 
-		for ip, requests := range rl.requests {
-			// Remove IPs with no requests in the last hour
-			if len(requests) == 0 {
-				delete(rl.requests, ip)
-				continue
-			}
-
-			lastRequest := requests[len(requests)-1]
-			if now.Sub(lastRequest) > time.Hour {
-				delete(rl.requests, ip)
+		for ip, lim := range rl.limiters {
+			// Remove IPs with no activity in the last hour
+			if now.Sub(lim.lastRefill) > time.Hour {
+				delete(rl.limiters, ip)
 			}
 		}
 

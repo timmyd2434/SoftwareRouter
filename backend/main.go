@@ -78,6 +78,7 @@ type Config struct {
 	IPSEnabled           bool     `json:"ips_enabled"`
 	BlockedAppCategories []string `json:"blocked_app_categories"`
 	TrustProxies         bool     `json:"trust_proxies"`
+	TrustedProxies       []string `json:"trusted_proxies"`
 }
 
 type WebAccessConfig struct {
@@ -332,9 +333,13 @@ func enableCORS(next http.Handler) http.Handler {
 		allowedOrigins := config.CORS.AllowedOrigins
 		configLock.RUnlock()
 
-		// Default to localhost for development if not configured
+		// Default to empty (same-origin only) in production, but localhost:5173 in testing/dev
 		if len(allowedOrigins) == 0 {
-			allowedOrigins = []string{"http://localhost:5173"}
+			if isTesting || os.Getenv("ENV") == "development" {
+				allowedOrigins = []string{"http://localhost:5173"}
+			} else {
+				allowedOrigins = []string{}
+			}
 		}
 
 		origin := r.Header.Get("Origin")
@@ -407,23 +412,46 @@ func maxBodyMiddleware(next http.Handler, maxBytes int64) http.Handler {
 func getClientIP(r *http.Request) string {
 	configLock.RLock()
 	trust := config.TrustProxies
+	trustedProxies := config.TrustedProxies
 	configLock.RUnlock()
 
+	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+
 	if trust {
-		// Check X-Forwarded-For header first (if behind proxy)
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			ips := strings.Split(xff, ",")
-			return strings.TrimSpace(ips[0])
+		isTrusted := false
+		for _, proxy := range trustedProxies {
+			if proxy == ip {
+				isTrusted = true
+				break
+			}
+			if _, subnet, err := net.ParseCIDR(proxy); err == nil {
+				parsedIP := net.ParseIP(ip)
+				if parsedIP != nil && subnet.Contains(parsedIP) {
+					isTrusted = true
+					break
+				}
+			}
 		}
 
-		// Check X-Real-IP header
-		if xri := r.Header.Get("X-Real-IP"); xri != "" {
-			return xri
+		// Also default to trust loopback proxies
+		if ip == "127.0.0.1" || ip == "::1" {
+			isTrusted = true
+		}
+
+		if isTrusted {
+			// Check X-Forwarded-For header first (if behind proxy)
+			if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+				ips := strings.Split(xff, ",")
+				return strings.TrimSpace(ips[0])
+			}
+
+			// Check X-Real-IP header
+			if xri := r.Header.Get("X-Real-IP"); xri != "" {
+				return xri
+			}
 		}
 	}
 
-	// Fall back to RemoteAddr
-	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 	return ip
 }
 
@@ -732,7 +760,13 @@ func main() {
 
 	// Backup & Restore
 	mux.HandleFunc("GET /api/backup/create", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		backupData, err := createBackup()
+		password := r.URL.Query().Get("password")
+		if password == "" {
+			http.Error(w, "Password parameter required to create encrypted backup", http.StatusBadRequest)
+			return
+		}
+
+		backupData, err := createBackup(password)
 		if err != nil {
 			logAuditEvent(getUsernameFromToken(r), "backup.create", "system",
 				fmt.Sprintf("{\"error\":\"%s\"}", err.Error()), getClientIP(r), false)
@@ -743,19 +777,20 @@ func main() {
 		logAuditEvent(getUsernameFromToken(r), "backup.create", "system",
 			"{\"status\":\"success\"}", getClientIP(r), true)
 
-		// Send backup as downloadable file
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"softrouter-backup-%s.json\"",
+		// Send backup as downloadable encrypted file
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"softrouter-backup-%s.enc\"",
 			time.Now().Format("2006-01-02-150405")))
 		w.Write(backupData)
 	}))
 
 	mux.HandleFunc("POST /api/backup/restore", authMiddleware(csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, 10<<20) // 10 MB limit for backup file
-		// Read multipart form file or JSON body
 		var backupData []byte
+		var password string
 
-		if err := r.ParseMultipartForm(10 << 20); err == nil { // 10 MB max
+		// Try parsing as multipart form first (standard file upload)
+		if err := r.ParseMultipartForm(10 << 20); err == nil {
 			file, _, err := r.FormFile("file")
 			if err == nil {
 				defer file.Close()
@@ -765,11 +800,33 @@ func main() {
 					return
 				}
 			}
+			password = r.FormValue("password")
 		}
 
-		// Fallback to JSON body if no file upload
+		// Fallback to query parameters if form didn't provide them
+		if password == "" {
+			password = r.URL.Query().Get("password")
+		}
+
+		// Fallback to JSON body if not multipart
 		if len(backupData) == 0 {
-			backupData, _ = io.ReadAll(r.Body)
+			// Read raw body if we couldn't parse multipart
+			bodyBytes, err := io.ReadAll(r.Body)
+			if err == nil && len(bodyBytes) > 0 {
+				var req struct {
+					Data     []byte `json:"data"`
+					Password string `json:"password"`
+				}
+				if err := json.Unmarshal(bodyBytes, &req); err == nil {
+					backupData = req.Data
+					if password == "" {
+						password = req.Password
+					}
+				} else {
+					// Assume body is raw backup bytes
+					backupData = bodyBytes
+				}
+			}
 		}
 
 		if len(backupData) == 0 {
@@ -777,8 +834,13 @@ func main() {
 			return
 		}
 
+		if password == "" {
+			http.Error(w, "Password is required to restore an encrypted backup", http.StatusBadRequest)
+			return
+		}
+
 		// Restore system
-		if err := restoreBackup(backupData); err != nil {
+		if err := restoreBackup(backupData, password); err != nil {
 			logAuditEvent(getUsernameFromToken(r), "backup.restore", "system",
 				fmt.Sprintf("{\"error\":\"%s\"}", err.Error()), getClientIP(r), false)
 			respondSystemError(w, ErrSystemRestoreFailed, "Failed to restore backup", err)
@@ -798,6 +860,7 @@ func main() {
 	mux.HandleFunc("POST /api/backup/restore-local", authMiddleware(csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Filename string `json:"filename"`
+			Password string `json:"password"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "Invalid request", http.StatusBadRequest)
@@ -806,6 +869,11 @@ func main() {
 
 		if req.Filename == "" {
 			http.Error(w, "Filename is required", http.StatusBadRequest)
+			return
+		}
+
+		if req.Password == "" {
+			http.Error(w, "Password is required for local restore", http.StatusBadRequest)
 			return
 		}
 
@@ -827,7 +895,7 @@ func main() {
 		}
 
 		// Restore system
-		if err := restoreBackup(backupData); err != nil {
+		if err := restoreBackup(backupData, req.Password); err != nil {
 			logAuditEvent(getUsernameFromToken(r), "backup.restore_local", "system",
 				fmt.Sprintf("{\"filename\":\"%s\",\"error\":\"%s\"}", safeName, err.Error()), getClientIP(r), false)
 			respondSystemError(w, ErrSystemRestoreFailed, "Failed to restore backup", err)

@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
+	"flag"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -148,6 +151,22 @@ func validateCommand(cmd string, args []string) error {
 	return nil
 }
 
+func getCommandContext(cmd string) (context.Context, context.CancelFunc) {
+	timeout := 30 * time.Second
+	if cmd == "speedtest-cli" || cmd == "suricata-update" || cmd == "curl" {
+		timeout = 5 * time.Minute
+	}
+	return context.WithTimeout(context.Background(), timeout)
+}
+
+func getExecCommand(ctx context.Context, cmd string, args ...string) *exec.Cmd {
+	if os.Getuid() != 0 && flag.Lookup("test.v") == nil {
+		return exec.CommandContext(ctx, "sudo", append([]string{cmd}, args...)...)
+	}
+	return exec.CommandContext(ctx, cmd, args...)
+}
+
+
 // runPrivileged executes a privileged command with full security controls
 // This is for commands where we expect success and don't need output
 func runPrivileged(cmd string, args ...string) error {
@@ -156,8 +175,11 @@ func runPrivileged(cmd string, args ...string) error {
 		return err
 	}
 
+	ctx, cancel := getCommandContext(cmd)
+	defer cancel()
+
 	// #nosec G204 G702: cmd and args are strictly validated by validateCommand
-	execCmd := exec.Command(cmd, args...)
+	execCmd := getExecCommand(ctx, cmd, args...)
 	err := execCmd.Run()
 
 	logCommandExecution(cmd, args, err == nil, err)
@@ -177,8 +199,11 @@ func runPrivilegedOutput(cmd string, args ...string) ([]byte, error) {
 		return nil, err
 	}
 
+	ctx, cancel := getCommandContext(cmd)
+	defer cancel()
+
 	// #nosec G204 G702: cmd and args are strictly validated by validateCommand
-	execCmd := exec.Command(cmd, args...)
+	execCmd := getExecCommand(ctx, cmd, args...)
 	output, err := execCmd.Output()
 
 	logCommandExecution(cmd, args, err == nil, err)
@@ -198,8 +223,11 @@ func runPrivilegedCombinedOutput(cmd string, args ...string) ([]byte, error) {
 		return nil, err
 	}
 
+	ctx, cancel := getCommandContext(cmd)
+	defer cancel()
+
 	// #nosec G204 G702: cmd and args are strictly validated by validateCommand
-	execCmd := exec.Command(cmd, args...)
+	execCmd := getExecCommand(ctx, cmd, args...)
 	output, err := execCmd.CombinedOutput()
 
 	logCommandExecution(cmd, args, err == nil, err)
@@ -232,8 +260,11 @@ func runPrivilegedWithStdin(stdinData []byte, cmd string, args ...string) ([]byt
 		return nil, err
 	}
 
+	ctx, cancel := getCommandContext(cmd)
+	defer cancel()
+
 	// #nosec G204 G702: cmd and args are strictly validated by validateCommand
-	execCmd := exec.Command(cmd, args...)
+	execCmd := getExecCommand(ctx, cmd, args...)
 	execCmd.Stdin = strings.NewReader(string(stdinData))
 	output, err := execCmd.CombinedOutput()
 
@@ -260,8 +291,11 @@ func runPrivilegedInDir(dir string, cmd string, args ...string) error {
 		return err
 	}
 
+	ctx, cancel := getCommandContext(cmd)
+	defer cancel()
+
 	// #nosec G204 G702: cmd and args are strictly validated by validateCommand
-	execCmd := exec.Command(cmd, args...)
+	execCmd := getExecCommand(ctx, cmd, args...)
 	execCmd.Dir = dir
 	err := execCmd.Run()
 
@@ -282,8 +316,11 @@ func runPrivilegedInDirCombinedOutput(dir string, cmd string, args ...string) ([
 		return nil, err
 	}
 
+	ctx, cancel := getCommandContext(cmd)
+	defer cancel()
+
 	// #nosec G204 G702: cmd and args are strictly validated by validateCommand
-	execCmd := exec.Command(cmd, args...)
+	execCmd := getExecCommand(ctx, cmd, args...)
 	execCmd.Dir = dir
 	output, err := execCmd.CombinedOutput()
 
@@ -304,8 +341,11 @@ func runPrivilegedWithStdinInDir(dir string, stdinData []byte, cmd string, args 
 		return nil, err
 	}
 
+	ctx, cancel := getCommandContext(cmd)
+	defer cancel()
+
 	// #nosec G204 G702: cmd and args are strictly validated by validateCommand
-	execCmd := exec.Command(cmd, args...)
+	execCmd := getExecCommand(ctx, cmd, args...)
 	execCmd.Dir = dir
 	execCmd.Stdin = strings.NewReader(string(stdinData))
 	output, err := execCmd.CombinedOutput()

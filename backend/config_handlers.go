@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -14,7 +17,93 @@ import (
 
 // --- Config Storage ---
 
-// --- Config Storage ---
+func ValidateConfig(cfg Config) error {
+	// 1. Validate ProtectedSubnet
+	if cfg.ProtectedSubnet != "" {
+		_, _, err := net.ParseCIDR(cfg.ProtectedSubnet)
+		if err != nil {
+			return fmt.Errorf("invalid protected subnet CIDR: %w", err)
+		}
+	}
+
+	// 2. Validate AdGuard URL
+	if cfg.AdGuard.URL != "" {
+		u, err := url.Parse(cfg.AdGuard.URL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+			return fmt.Errorf("invalid AdGuard URL (must be a valid http or https URL)")
+		}
+	}
+
+	// 3. Validate TLS Paths
+	if cfg.TLS.Enabled {
+		if !isSafePath(cfg.TLS.CertFile) || !isSafePath(cfg.TLS.KeyFile) {
+			return fmt.Errorf("invalid TLS certificate or key file path (must be absolute paths under /etc/softrouter)")
+		}
+	}
+
+	// 4. Validate Cloudflare Token
+	if cfg.CloudflareToken != "" {
+		if !isValidCloudflareToken(cfg.CloudflareToken) {
+			return fmt.Errorf("invalid Cloudflare token format")
+		}
+	}
+
+	// 5. Validate WAN Ports
+	if cfg.WebAccess.AllowWAN {
+		pHTTP := cfg.WebAccess.WANPortHTTP
+		pHTTPS := cfg.WebAccess.WANPortHTTPS
+		if pHTTP < 1 || pHTTP > 65535 || pHTTPS < 1 || pHTTPS > 65535 {
+			return fmt.Errorf("invalid WAN ports (must be between 1 and 65535)")
+		}
+		if pHTTP == pHTTPS {
+			return fmt.Errorf("WAN HTTP and HTTPS ports must be different")
+		}
+		blockedPorts := map[int]bool{
+			22:    true, // SSH
+			53:    true, // DNS
+			1194:  true, // OpenVPN
+			51820: true, // WireGuard
+		}
+		if blockedPorts[pHTTP] || blockedPorts[pHTTPS] {
+			return fmt.Errorf("WAN port conflicts with a system service port (22, 53, 1194, 51820)")
+		}
+	}
+
+	// 6. Validate Trusted Proxies
+	for _, proxy := range cfg.TrustedProxies {
+		if net.ParseIP(proxy) == nil {
+			_, _, err := net.ParseCIDR(proxy)
+			if err != nil {
+				return fmt.Errorf("invalid trusted proxy IP or CIDR: %s", proxy)
+			}
+		}
+	}
+
+	return nil
+}
+
+func isSafePath(path string) bool {
+	if path == "" {
+		return true
+	}
+	cleaned := filepath.Clean(path)
+	if !filepath.IsAbs(cleaned) {
+		return false
+	}
+	return strings.HasPrefix(cleaned, "/etc/softrouter")
+}
+
+func isValidCloudflareToken(token string) bool {
+	if len(token) > 256 {
+		return false
+	}
+	for _, char := range token {
+		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '-' || char == '_' || char == '=') {
+			return false
+		}
+	}
+	return true
+}
 
 func loadConfig() Config {
 	defaultCfg := Config{
@@ -66,12 +155,10 @@ func loadConfig() Config {
 }
 
 func saveConfig(cfg Config) error {
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return err
-	}
-	// Use 0600 permissions (owner read/write only)
-	return os.WriteFile(configFilePath, data, 0600)
+	configLock.Lock()
+	defer configLock.Unlock()
+	config = cfg
+	return saveConfigLocked()
 }
 
 // --- HTTP Handlers ---
@@ -205,6 +292,7 @@ DNSOverTLS=%s
 
 	tmpFile := "/tmp/softrouter-dns-privacy.conf"
 	os.WriteFile(tmpFile, []byte(confStr), 0600)
+	defer os.Remove(tmpFile)
 	
 	runPrivileged("cp", tmpFile, dropInDir+"/softrouter-dns-privacy.conf")
 	runPrivileged("systemctl", "restart", "systemd-resolved")
@@ -216,6 +304,11 @@ func updateConfig(w http.ResponseWriter, r *http.Request) {
 	var cfg Config
 	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	if err := ValidateConfig(cfg); err != nil {
+		http.Error(w, fmt.Sprintf("Validation failed: %v", err), http.StatusBadRequest)
 		return
 	}
 
@@ -377,6 +470,14 @@ func updateSettings(w http.ResponseWriter, r *http.Request) {
 	// Don't update password if it's the masked value
 	if newConfig.AdGuard.Password == maskPassword(config.AdGuard.Password) {
 		newConfig.AdGuard.Password = config.AdGuard.Password
+	}
+
+	// Validate before saving
+	if err := ValidateConfig(newConfig); err != nil {
+		logAuditEvent(getUsernameFromToken(r), "settings.update", "config",
+			fmt.Sprintf("{\"error\":\"validation failed: %s\"}", err.Error()), getClientIP(r), false)
+		http.Error(w, fmt.Sprintf("Validation failed: %v", err), http.StatusBadRequest)
+		return
 	}
 
 	// Update config

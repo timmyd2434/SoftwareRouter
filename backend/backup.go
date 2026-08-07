@@ -3,16 +3,24 @@ package main
 import (
 	"archive/tar"
 	"compress/gzip"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/pbkdf2"
 )
 
-// BackupSnapshot represents a complete system backup
+// BackupSnapshot represents a complete system backup (before encryption)
 type BackupSnapshot struct {
 	Version   string            `json:"version"`
 	Timestamp time.Time         `json:"timestamp"`
@@ -36,13 +44,90 @@ type BackupCredentials struct {
 }
 
 var backupDir = "/var/backups/softrouter"
-
 var softrouterConfigDir = "/etc/softrouter"
-
 var isTesting = false
 
-// createBackup generates a complete system backup
-func createBackup() ([]byte, error) {
+const backupMagic = "SRBKP01" // Magic header to identify encrypted backup
+
+// deriveKey derives a 32-byte key from the password and salt using PBKDF2-SHA256
+func deriveKey(password string, salt []byte) []byte {
+	return pbkdf2.Key([]byte(password), salt, 4096, 32, sha256.New)
+}
+
+// encryptBackup encrypts data using AES-256-GCM
+func encryptBackup(data []byte, password string) ([]byte, error) {
+	salt := make([]byte, 16)
+	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
+		return nil, fmt.Errorf("failed to generate random salt: %w", err)
+	}
+
+	key := deriveKey(password, salt)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cipher block: %w", err)
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GCM mode: %w", err)
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, fmt.Errorf("failed to generate nonce: %w", err)
+	}
+
+	ciphertext := gcm.Seal(nil, nonce, data, nil)
+
+	// Format: magic + salt + nonce + ciphertext
+	payload := []byte(backupMagic)
+	payload = append(payload, salt...)
+	payload = append(payload, nonce...)
+	payload = append(payload, ciphertext...)
+
+	return payload, nil
+}
+
+// decryptBackup decrypts GCM data with the password
+func decryptBackup(data []byte, password string) ([]byte, error) {
+	magicLen := len(backupMagic)
+	if len(data) < magicLen+16+12 {
+		return nil, fmt.Errorf("invalid or corrupted backup file format")
+	}
+
+	if string(data[:magicLen]) != backupMagic {
+		return nil, fmt.Errorf("not a valid encrypted backup file")
+	}
+
+	salt := data[magicLen : magicLen+16]
+	nonce := data[magicLen+16 : magicLen+16+12]
+	ciphertext := data[magicLen+16+12:]
+
+	key := deriveKey(password, salt)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cipher block: %w", err)
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GCM mode: %w", err)
+	}
+
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt backup: incorrect password or corrupted file")
+	}
+
+	return plaintext, nil
+}
+
+// createBackup generates a complete system backup and encrypts it
+func createBackup(password string) ([]byte, error) {
+	if password == "" {
+		return nil, fmt.Errorf("password is required to create an encrypted backup")
+	}
+
 	// Create backup directory if it doesn't exist
 	if err := os.MkdirAll(backupDir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create backup directory: %w", err)
@@ -131,22 +216,35 @@ func createBackup() ([]byte, error) {
 		return nil, fmt.Errorf("failed to marshal backup: %w", err)
 	}
 
-	// Save backup to file with timestamp
-	backupFilename := fmt.Sprintf("backup-%s.json", time.Now().Format("2006-01-02-150405"))
-	backupPath := filepath.Join(backupDir, backupFilename)
-
-	if err := os.WriteFile(backupPath, backupJSON, 0600); err != nil {
-		return nil, fmt.Errorf("failed to save backup file: %w", err)
+	// Encrypt the JSON data
+	encryptedData, err := encryptBackup(backupJSON, password)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt backup data: %w", err)
 	}
 
-	return backupJSON, nil
+	// Save backup to file with metadata encoded in filename
+	// Format: backup-<hostname>-v<version>-<unix_timestamp>.enc
+	unixTime := snapshot.Timestamp.Unix()
+	backupFilename := fmt.Sprintf("backup-%s-v%s-%d.enc", hostname, snapshot.Version, unixTime)
+	backupPath := filepath.Join(backupDir, backupFilename)
+
+	if err := os.WriteFile(backupPath, encryptedData, 0600); err != nil {
+		return nil, fmt.Errorf("failed to save encrypted backup file: %w", err)
+	}
+
+	return encryptedData, nil
 }
 
-// validateBackup checks if a backup is valid and compatible
-func validateBackup(data []byte) error {
+// validateBackup decrypts and validates the backup metadata
+func validateBackup(data []byte, password string) error {
+	decrypted, err := decryptBackup(data, password)
+	if err != nil {
+		return err
+	}
+
 	var snapshot BackupSnapshot
-	if err := json.Unmarshal(data, &snapshot); err != nil {
-		return fmt.Errorf("invalid backup format: %w", err)
+	if err := json.Unmarshal(decrypted, &snapshot); err != nil {
+		return fmt.Errorf("invalid decrypted backup format: %w", err)
 	}
 
 	// Check version compatibility
@@ -162,26 +260,31 @@ func validateBackup(data []byte) error {
 	return nil
 }
 
-// restoreBackup restores system from a backup
-func restoreBackup(data []byte) error {
-	// Validate first
-	if err := validateBackup(data); err != nil {
+// restoreBackup restores system from an encrypted backup
+func restoreBackup(data []byte, password string) error {
+	// Validate first (includes decryption test)
+	if err := validateBackup(data, password); err != nil {
 		return fmt.Errorf("backup validation failed: %w", err)
 	}
 
-	var snapshot BackupSnapshot
-	if err := json.Unmarshal(data, &snapshot); err != nil {
+	decrypted, err := decryptBackup(data, password)
+	if err != nil {
 		return err
 	}
 
-	// Create backup of current state before restore
-	if _, err := createBackup(); err != nil {
+	var snapshot BackupSnapshot
+	if err := json.Unmarshal(decrypted, &snapshot); err != nil {
+		return err
+	}
+
+	// Create encrypted backup of current state before restore using the same password
+	if _, err := createBackup(password); err != nil {
 		log.Printf("WARNING: Failed to create pre-restore backup: %v", err)
 	}
 
 	if len(snapshot.Files) > 0 {
 		log.Println("[BACKUP] Restoring configuration files from backup map...")
-		// File-based restore (new robust mechanism)
+		// File-based restore
 		for relPath, content := range snapshot.Files {
 			// SECURITY: Prevent path traversal attacks from crafted backup files
 			cleanedRel := filepath.Clean(relPath)
@@ -299,7 +402,7 @@ func restoreBackup(data []byte) error {
 	return nil
 }
 
-// listBackups returns available backups
+// listBackups returns available backups by parsing their metadata from filename
 func listBackups() ([]map[string]interface{}, error) {
 	files, err := os.ReadDir(backupDir)
 	if err != nil {
@@ -311,7 +414,7 @@ func listBackups() ([]map[string]interface{}, error) {
 
 	backups := []map[string]interface{}{}
 	for _, file := range files {
-		if file.IsDir() || filepath.Ext(file.Name()) != ".json" {
+		if file.IsDir() || filepath.Ext(file.Name()) != ".enc" {
 			continue
 		}
 
@@ -320,24 +423,35 @@ func listBackups() ([]map[string]interface{}, error) {
 			continue
 		}
 
-		// Try to read backup metadata
-		backupPath := filepath.Join(backupDir, file.Name())
-		// #nosec G304 G703: path is validated or constructed from safe internal sources
-		data, err := os.ReadFile(backupPath)
+		name := file.Name()
+		// Reconstruct metadata from filename
+		// Expected format: backup-<hostname>-v<version>-<unix_timestamp>.enc
+		nameWithoutExt := strings.TrimSuffix(name, ".enc")
+		parts := strings.Split(nameWithoutExt, "-")
+		if len(parts) < 4 {
+			continue
+		}
+
+		// Parse timestamp from last part
+		unixStr := parts[len(parts)-1]
+		unixTime, err := strconv.ParseInt(unixStr, 10, 64)
 		if err != nil {
 			continue
 		}
+		timestamp := time.Unix(unixTime, 0)
 
-		var snapshot BackupSnapshot
-		if err := json.Unmarshal(data, &snapshot); err != nil {
-			continue
-		}
+		// Parse version from second to last part
+		versionWithV := parts[len(parts)-2]
+		version := strings.TrimPrefix(versionWithV, "v")
+
+		// Reconstruct hostname from everything in between "backup" and version
+		hostname := strings.Join(parts[1:len(parts)-2], "-")
 
 		backups = append(backups, map[string]interface{}{
-			"filename":  file.Name(),
-			"timestamp": snapshot.Timestamp,
-			"version":   snapshot.Version,
-			"hostname":  snapshot.Hostname,
+			"filename":  name,
+			"timestamp": timestamp,
+			"version":   version,
+			"hostname":  hostname,
 			"size":      info.Size(),
 		})
 	}
@@ -345,9 +459,9 @@ func listBackups() ([]map[string]interface{}, error) {
 	return backups, nil
 }
 
-// Helper function to create compressed backup
-func createCompressedBackup() (string, error) {
-	backupJSON, err := createBackup()
+// Helper function to create compressed backup (encrypted)
+func createCompressedBackup(password string) (string, error) {
+	encryptedJSON, err := createBackup(password)
 	if err != nil {
 		return "", err
 	}
@@ -355,7 +469,6 @@ func createCompressedBackup() (string, error) {
 	filename := fmt.Sprintf("backup-%s.tar.gz", time.Now().Format("2006-01-02-150405"))
 	filepath := filepath.Join(backupDir, filename)
 
-	// #nosec G304 G703: path is validated or constructed from safe internal sources
 	file, err := os.Create(filepath)
 	if err != nil {
 		return "", err
@@ -370,16 +483,16 @@ func createCompressedBackup() (string, error) {
 
 	// Add backup JSON to tar
 	header := &tar.Header{
-		Name: "backup.json",
+		Name: "backup.enc",
 		Mode: 0600,
-		Size: int64(len(backupJSON)),
+		Size: int64(len(encryptedJSON)),
 	}
 
 	if err := tarWriter.WriteHeader(header); err != nil {
 		return "", err
 	}
 
-	if _, err := tarWriter.Write(backupJSON); err != nil {
+	if _, err := tarWriter.Write(encryptedJSON); err != nil {
 		return "", err
 	}
 

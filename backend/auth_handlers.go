@@ -34,11 +34,15 @@ func generateSecureToken(username string) string {
 }
 
 func verifySecureToken(token string) bool {
-	if !strings.HasPrefix(token, "Bearer sr-") {
-		return false
+	var tokenValue string
+	if strings.HasPrefix(token, "Bearer sr-") {
+		tokenValue = strings.TrimPrefix(token, "Bearer sr-")
+	} else if strings.HasPrefix(token, "sr-") {
+		tokenValue = strings.TrimPrefix(token, "sr-")
+	} else {
+		tokenValue = token
 	}
 
-	tokenValue := strings.TrimPrefix(token, "Bearer sr-")
 	// Find the last two dashes which separate username from timestamp and signature
 	lastDash := strings.LastIndex(tokenValue, "-")
 	if lastDash == -1 {
@@ -87,27 +91,36 @@ func verifySecureToken(token string) bool {
 
 // getUsernameFromToken extracts username from the Bearer token
 func getUsernameFromToken(r *http.Request) string {
-	token := r.Header.Get("Authorization")
+	var tokenValue string
+	cookie, err := r.Cookie("session_token")
+	if err == nil {
+		tokenValue = cookie.Value
+	} else {
+		token := r.Header.Get("Authorization")
+		if strings.HasPrefix(token, "Bearer ") {
+			tokenValue = strings.TrimPrefix(token, "Bearer ")
+		}
+	}
 
-	// Extract username from token (token format: "Bearer sr-username-timestamp-signature")
-	if !strings.HasPrefix(token, "Bearer sr-") {
+	if tokenValue == "" {
 		return "unknown"
 	}
 
-	tokenValue := strings.TrimPrefix(token, "Bearer sr-")
+	// Format is expected to be sr-username-timestamp-signature
+	cleanToken := strings.TrimPrefix(tokenValue, "sr-")
 
 	// The format is username-timestamp-signature.
 	// Username can contain dashes, so we find the last two dashes.
-	lastDash := strings.LastIndex(tokenValue, "-")
+	lastDash := strings.LastIndex(cleanToken, "-")
 	if lastDash == -1 {
 		return "unknown"
 	}
-	secondLastDash := strings.LastIndex(tokenValue[:lastDash], "-")
+	secondLastDash := strings.LastIndex(cleanToken[:lastDash], "-")
 	if secondLastDash == -1 {
 		return "unknown"
 	}
 
-	return tokenValue[:secondLastDash]
+	return cleanToken[:secondLastDash]
 }
 
 // --- Password Management ---
@@ -242,14 +255,22 @@ func csrfMiddleware(next http.HandlerFunc) http.HandlerFunc {
 // Simple token based auth middleware
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		token := r.Header.Get("Authorization")
+		var tokenValue string
+		cookie, err := r.Cookie("session_token")
+		if err == nil {
+			tokenValue = cookie.Value
+		} else {
+			token := r.Header.Get("Authorization")
+			if strings.HasPrefix(token, "Bearer ") {
+				tokenValue = strings.TrimPrefix(token, "Bearer ")
+			}
+		}
 
-		if token == "" || !verifySecureToken(token) {
+		if tokenValue == "" || !verifySecureToken(tokenValue) {
 			http.Error(w, "Unauthorized: Invalid or missing token", http.StatusUnauthorized)
 			return
 		}
 
-		tokenValue := strings.TrimPrefix(token, "Bearer ")
 		if !sessionStore.ValidateSession(tokenValue) {
 			http.Error(w, "Unauthorized: Session expired or logged out", http.StatusUnauthorized)
 			return
@@ -314,6 +335,17 @@ func login(w http.ResponseWriter, r *http.Request) {
 		sessionStore.AddSession(tokenValue, req.Username, ip, userAgent)
 		log.Printf("Session created for user %s (IP: %s, token: %s...)", req.Username, ip, tokenValue[:20])
 
+		// Set HttpOnly secure SameSite=Strict cookie
+		http.SetCookie(w, &http.Cookie{
+			Name:     "session_token",
+			Value:    tokenValue,
+			Path:     "/",
+			MaxAge:   7 * 24 * 60 * 60, // 7 days
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteStrictMode,
+		})
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
 			"token":   tokenValue,
@@ -358,11 +390,32 @@ func logout(w http.ResponseWriter, r *http.Request) {
 	// Extract username from token for logging
 	username := getUsernameFromToken(r)
 
-	token := r.Header.Get("Authorization")
-	if token != "" {
-		tokenValue := strings.TrimPrefix(token, "Bearer ")
+	// Get token value from cookie first, fallback to header
+	var tokenValue string
+	cookie, err := r.Cookie("session_token")
+	if err == nil {
+		tokenValue = cookie.Value
+	} else {
+		token := r.Header.Get("Authorization")
+		if strings.HasPrefix(token, "Bearer ") {
+			tokenValue = strings.TrimPrefix(token, "Bearer ")
+		}
+	}
+
+	if tokenValue != "" {
 		sessionStore.DeleteSession(tokenValue)
 	}
+
+	// Clear session cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session_token",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+	})
 
 	logAuditEvent(username, "logout", "success",
 		fmt.Sprintf("{\"ip\":\"%s\"}", ip), ip, true)
