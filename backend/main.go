@@ -226,22 +226,7 @@ type VPNClientConfig struct {
 	IPAddress  string `json:"ip_address"`
 }
 
-// AppConfig handles persistent settings for advanced modules
-type AppConfig struct {
-	CloudflareToken string          `json:"cf_token"`
-	ProtectedSubnet string          `json:"protected_subnet"`
-	AdBlocker       string          `json:"ad_blocker"` // "none", "adguard", "pihole"
-	OpenVPNPort     int             `json:"openvpn_port"`
-	WebAccess       WebAccessConfig `json:"web_access"`
-	VPNServer       struct {
-		Endpoint     string `json:"endpoint"`      // Empty = auto-detect, or IP/hostname
-		EndpointType string `json:"endpoint_type"` // "auto", "ip", "hostname"
-		Port         int    `json:"port"`
-		Protocol     string `json:"protocol"`
-	} `json:"vpn_server"`
-	IPSEnabled           bool     `json:"ips_enabled"`
-	BlockedAppCategories []string `json:"blocked_app_categories"`
-}
+
 
 // DHCPConfig represents DHCP configuration for a single interface
 type DHCPConfig struct {
@@ -586,10 +571,7 @@ func main() {
 	loadTokenSecret()
 	applyInterfacesConfig() // Restore custom interfaces (Bonds, VLANs, Bridges, IP configuration)
 	initWireGuard()
-	// initFirewall() // Deprecated by FirewallManager
 	InitQoS() // 4. Initialize Networking
-	// initFirewall() // Deprecated by FirewallManager
-	// initPortForwarding() // Deprecated by FirewallManager
 
 	InitFirewallManager()
 	// Apply rules initially — skip watchdog since there's no user to confirm at boot

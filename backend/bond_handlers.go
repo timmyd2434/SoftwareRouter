@@ -438,8 +438,8 @@ func createBond(w http.ResponseWriter, r *http.Request) {
 
 func deleteBond(w http.ResponseWriter, r *http.Request) {
 	bondName := r.URL.Query().Get("name")
-	if bondName == "" {
-		http.Error(w, "Missing bond name parameter", http.StatusBadRequest)
+	if bondName == "" || !isValidInterfaceName(bondName) {
+		http.Error(w, "Invalid or missing bond name parameter", http.StatusBadRequest)
 		return
 	}
 

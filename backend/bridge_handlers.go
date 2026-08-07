@@ -264,8 +264,8 @@ func createBridge(w http.ResponseWriter, r *http.Request) {
 
 func deleteBridge(w http.ResponseWriter, r *http.Request) {
 	bridgeName := r.URL.Query().Get("name")
-	if bridgeName == "" {
-		http.Error(w, "Missing bridge name parameter", http.StatusBadRequest)
+	if bridgeName == "" || !isValidInterfaceName(bridgeName) {
+		http.Error(w, "Invalid or missing bridge name parameter", http.StatusBadRequest)
 		return
 	}
 

@@ -196,8 +196,15 @@ func applyCloudflareConfig(cfg Config) error {
 	// First, try to uninstall existing service to ensure clean state
 	runPrivileged("cloudflared", "service", "uninstall")
 
-	// Install service
-	err = runPrivileged("cloudflared", "service", "install", cfg.CloudflareToken)
+	// Write token to temp file with strict permissions (0600) to avoid process table exposure
+	tokenFile := "/etc/softrouter/.cloudflare-token"
+	if err := os.WriteFile(tokenFile, []byte(cfg.CloudflareToken), 0600); err != nil {
+		return fmt.Errorf("failed to write token file: %w", err)
+	}
+	defer os.Remove(tokenFile)
+
+	// Install service safely using token from file
+	err = runPrivileged("bash", "-c", fmt.Sprintf("cloudflared service install $(cat %s)", tokenFile))
 	if err != nil {
 		return fmt.Errorf("failed to install cloudflared service: %v", err)
 	}

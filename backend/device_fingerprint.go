@@ -117,6 +117,8 @@ func saveDeviceMetas() {
 	os.WriteFile(deviceMetaFile, data, 0600)
 }
 
+const maxDeviceMetas = 10000
+
 func updateDeviceMetaHandler(w http.ResponseWriter, r *http.Request) {
 	var meta DeviceMeta
 	if err := json.NewDecoder(r.Body).Decode(&meta); err != nil {
@@ -127,6 +129,11 @@ func updateDeviceMetaHandler(w http.ResponseWriter, r *http.Request) {
 	meta.MAC = strings.ToUpper(meta.MAC)
 
 	deviceMetaMu.Lock()
+	if _, exists := deviceMetas[meta.MAC]; !exists && len(deviceMetas) >= maxDeviceMetas {
+		deviceMetaMu.Unlock()
+		respondWithError(w, ErrGenericInvalidRequest, "Maximum device metadata entries reached", http.StatusBadRequest, nil)
+		return
+	}
 	deviceMetas[meta.MAC] = meta
 	deviceMetaMu.Unlock()
 
