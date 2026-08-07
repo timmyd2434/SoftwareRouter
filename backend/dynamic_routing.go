@@ -196,6 +196,9 @@ func validateDynamicRoutingConfig(cfg DynamicRoutingConfig) error {
 				if _, err := fmt.Sscanf(netCfg.Area, "%d", &areaInt); err != nil || areaInt < 0 {
 					return fmt.Errorf("invalid OSPF area: %s", netCfg.Area)
 				}
+				if fmt.Sprintf("%d", areaInt) != netCfg.Area {
+					return fmt.Errorf("invalid OSPF area: %s", netCfg.Area)
+				}
 			}
 		}
 	}

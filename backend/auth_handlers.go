@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -204,19 +203,15 @@ func validateCSRFToken(token string) bool {
 		return false
 	}
 
-	val, ok := csrfTokens.Load(token)
-	if !ok {
+	val, loaded := csrfTokens.LoadAndDelete(token)
+	if !loaded {
 		return false
 	}
 
 	expiry, ok := val.(time.Time)
 	if !ok || time.Now().After(expiry) {
-		csrfTokens.Delete(token)
 		return false
 	}
-
-	// SECURITY FIX: Consume token after successful validation to prevent replay
-	csrfTokens.Delete(token)
 
 	return true
 }
@@ -294,7 +289,7 @@ func login(w http.ResponseWriter, r *http.Request) {
 	storedCreds := loadCredentials()
 
 	// Check Rate Limit
-	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	ip := getClientIP(r)
 	loginMu.Lock()
 	if banTime, banned := loginBanUntil[ip]; banned {
 		if time.Now().Before(banTime) {
@@ -344,7 +339,7 @@ func login(w http.ResponseWriter, r *http.Request) {
 			Path:     "/",
 			MaxAge:   7 * 24 * 60 * 60, // 7 days
 			HttpOnly: true,
-			Secure:   true,
+			Secure:   r.TLS != nil,
 			SameSite: http.SameSiteStrictMode,
 		})
 
@@ -387,7 +382,7 @@ func login(w http.ResponseWriter, r *http.Request) {
 // Client-side logout - server remains stateless
 func logout(w http.ResponseWriter, r *http.Request) {
 	// Extract IP for audit logging
-	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	ip := getClientIP(r)
 
 	// Extract username from token for logging
 	username := getUsernameFromToken(r)
@@ -415,7 +410,7 @@ func logout(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   r.TLS != nil,
 		SameSite: http.SameSiteStrictMode,
 	})
 
@@ -434,6 +429,21 @@ func updateCredentials(w http.ResponseWriter, r *http.Request) {
 	var req UpdateCredsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	if len(req.NewUsername) < 1 || len(req.NewUsername) > 128 {
+		http.Error(w, "Invalid username length", http.StatusBadRequest)
+		return
+	}
+	for _, c := range req.NewUsername {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-') {
+			http.Error(w, "Invalid username format", http.StatusBadRequest)
+			return
+		}
+	}
+	if len(req.NewPassword) < 8 || len(req.NewPassword) > 128 {
+		http.Error(w, "Invalid password length", http.StatusBadRequest)
 		return
 	}
 

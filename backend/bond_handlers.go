@@ -502,6 +502,11 @@ func addBondMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !isValidInterfaceName(req.BondName) || !isValidInterfaceName(req.Member) {
+		http.Error(w, "Invalid interface name", http.StatusBadRequest)
+		return
+	}
+
 	// Validate bond exists
 	if !isBondInterface(req.BondName) {
 		http.Error(w, fmt.Sprintf("%s is not a bond interface", req.BondName), http.StatusBadRequest)
@@ -554,6 +559,11 @@ func removeBondMember(w http.ResponseWriter, r *http.Request) {
 	// Validate inputs
 	if req.BondName == "" || req.Member == "" {
 		http.Error(w, "Bond name and member interface required", http.StatusBadRequest)
+		return
+	}
+
+	if !isValidInterfaceName(req.BondName) || !isValidInterfaceName(req.Member) {
+		http.Error(w, "Invalid interface name", http.StatusBadRequest)
 		return
 	}
 

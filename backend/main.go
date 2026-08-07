@@ -427,6 +427,28 @@ func getClientIP(r *http.Request) string {
 			// Check X-Forwarded-For header first (if behind proxy)
 			if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 				ips := strings.Split(xff, ",")
+				for i := len(ips) - 1; i >= 0; i-- {
+					candidate := strings.TrimSpace(ips[i])
+					cTrusted := false
+					for _, proxy := range trustedProxies {
+						if proxy == candidate {
+							cTrusted = true
+							break
+						}
+						if _, subnet, err := net.ParseCIDR(proxy); err == nil {
+							if parsedIP := net.ParseIP(candidate); parsedIP != nil && subnet.Contains(parsedIP) {
+								cTrusted = true
+								break
+							}
+						}
+					}
+					if candidate == "127.0.0.1" || candidate == "::1" {
+						cTrusted = true
+					}
+					if !cTrusted {
+						return candidate
+					}
+				}
 				return strings.TrimSpace(ips[0])
 			}
 

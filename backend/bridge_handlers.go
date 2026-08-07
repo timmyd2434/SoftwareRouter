@@ -329,6 +329,11 @@ func addBridgeMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !isValidInterfaceName(req.BridgeName) || !isValidInterfaceName(req.Member) {
+		http.Error(w, "Invalid interface name", http.StatusBadRequest)
+		return
+	}
+
 	// Validate bridge exists
 	if !isBridgeInterface(req.BridgeName) {
 		http.Error(w, fmt.Sprintf("%s is not a bridge interface", req.BridgeName), http.StatusBadRequest)
@@ -373,6 +378,11 @@ func removeBridgeMember(w http.ResponseWriter, r *http.Request) {
 	// Validate inputs
 	if req.BridgeName == "" || req.Member == "" {
 		http.Error(w, "Bridge name and member interface required", http.StatusBadRequest)
+		return
+	}
+
+	if !isValidInterfaceName(req.BridgeName) || !isValidInterfaceName(req.Member) {
+		http.Error(w, "Invalid interface name", http.StatusBadRequest)
 		return
 	}
 

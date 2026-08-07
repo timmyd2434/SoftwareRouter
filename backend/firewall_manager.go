@@ -116,7 +116,9 @@ func (fm *FirewallManager) ApplyFirewallRules(skipWatchdog bool) error {
 	if _, err := tmpfile.WriteString(ruleset); err != nil {
 		return fmt.Errorf("Failed to write ruleset: %v", err)
 	}
-	tmpfile.Close()
+	if err := tmpfile.Close(); err != nil {
+		return fmt.Errorf("Failed to close temp file: %v", err)
+	}
 
 	// Validate with nft -c (check mode)
 	fmt.Println("Validating ruleset syntax...")
@@ -141,8 +143,10 @@ func (fm *FirewallManager) ApplyFirewallRules(skipWatchdog bool) error {
 		// Rollback if we have a snapshot
 		if snapshot != nil {
 			fmt.Println("Attempting rollback...")
-			rollbackFile, _ := os.CreateTemp("", "softrouter-rollback-*.nft")
-			if rollbackFile != nil {
+			rollbackFile, err := os.CreateTemp("", "softrouter-rollback-*.nft")
+			if err != nil {
+				fmt.Printf("ERROR: Failed to create rollback temp file: %v\n", err)
+			} else if rollbackFile != nil {
 				if _, err := rollbackFile.Write(snapshot); err != nil {
 					fmt.Printf("ERROR: Failed to write rollback file: %v\n", err)
 				}

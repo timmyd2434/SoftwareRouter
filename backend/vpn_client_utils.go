@@ -171,8 +171,12 @@ func uploadVPNClientConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	username := r.FormValue("username")
-	password := r.FormValue("password")
+	username := strings.ReplaceAll(strings.ReplaceAll(r.FormValue("username"), "\n", ""), "\r", "")
+	password := strings.ReplaceAll(strings.ReplaceAll(r.FormValue("password"), "\n", ""), "\r", "")
+	if username == "" || password == "" {
+		http.Error(w, "Username and password are required", http.StatusBadRequest)
+		return
+	}
 	file, _, err := r.FormFile("config")
 	if err != nil {
 		http.Error(w, "Config file required", http.StatusBadRequest)

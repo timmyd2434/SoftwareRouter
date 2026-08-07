@@ -139,7 +139,12 @@ func applyUPnPConfig(cfg UPnPConfig) error {
 	}
 
 	// Write config to temp file then privileged-copy to final location
-	tmpPath := "/tmp/miniupnpd.conf"
+	tmpFile, err := os.CreateTemp("", "miniupnpd-*.conf")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmpFile.Name()
+	tmpFile.Close()
 	err = os.WriteFile(tmpPath, []byte(confStr), 0600)
 	if err == nil {
 		defer os.Remove(tmpPath)
