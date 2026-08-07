@@ -63,6 +63,8 @@ func verifySecureToken(token string) bool {
 	mac.Write([]byte(payload))
 	expectedSignature := hex.EncodeToString(mac.Sum(nil))
 
+	const tokenExpirySeconds = int64(7 * 24 * 60 * 60) // 7 days in seconds
+
 	// Parse and validate timestamp for expiration
 	timestamp, err := strconv.ParseInt(timestampStr, 10, 64)
 	if err != nil {
@@ -73,7 +75,7 @@ func verifySecureToken(token string) bool {
 	// Check token expiration - 7 days for home router use
 	// (compromise between security and convenience for always-on home device)
 	tokenAge := time.Now().Unix() - timestamp
-	maxAge := int64(7 * 24 * 60 * 60) // 7 days in seconds
+	maxAge := tokenExpirySeconds
 
 	if tokenAge > maxAge {
 		log.Printf("SECURITY: Token expired (age: %d seconds, max: %d)", tokenAge, maxAge)

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -173,10 +174,66 @@ func getDynamicRouting(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, data)
 }
 
+func validateDynamicRoutingConfig(cfg DynamicRoutingConfig) error {
+	// Validate OSPF
+	if cfg.OSPF.Enabled {
+		if cfg.OSPF.RouterID != "" && net.ParseIP(cfg.OSPF.RouterID) == nil {
+			return fmt.Errorf("invalid OSPF router ID: %s", cfg.OSPF.RouterID)
+		}
+		allowedRedist := map[string]bool{"connected": true, "kernel": true, "static": true, "bgp": true, "ospf": true}
+		for _, r := range cfg.OSPF.Redistribute {
+			if !allowedRedist[r] {
+				return fmt.Errorf("invalid OSPF redistribute option: %s", r)
+			}
+		}
+		for _, netCfg := range cfg.OSPF.Networks {
+			if _, _, err := net.ParseCIDR(netCfg.Network); err != nil {
+				return fmt.Errorf("invalid OSPF network CIDR: %s", netCfg.Network)
+			}
+			if netCfg.Area != "" && net.ParseIP(netCfg.Area) == nil {
+				// Check if integer area
+				var areaInt int
+				if _, err := fmt.Sscanf(netCfg.Area, "%d", &areaInt); err != nil || areaInt < 0 {
+					return fmt.Errorf("invalid OSPF area: %s", netCfg.Area)
+				}
+			}
+		}
+	}
+
+	// Validate BGP
+	if cfg.BGP.Enabled {
+		if cfg.BGP.ASN < 1 || cfg.BGP.ASN > 4294967294 {
+			return fmt.Errorf("invalid BGP ASN: %d", cfg.BGP.ASN)
+		}
+		if cfg.BGP.RouterID != "" && net.ParseIP(cfg.BGP.RouterID) == nil {
+			return fmt.Errorf("invalid BGP router ID: %s", cfg.BGP.RouterID)
+		}
+		for _, neighbor := range cfg.BGP.Neighbors {
+			if net.ParseIP(neighbor.IP) == nil {
+				return fmt.Errorf("invalid BGP neighbor IP: %s", neighbor.IP)
+			}
+			if neighbor.RemoteASN < 1 || neighbor.RemoteASN > 4294967294 {
+				return fmt.Errorf("invalid BGP neighbor remote ASN: %d", neighbor.RemoteASN)
+			}
+		}
+		for _, netStr := range cfg.BGP.Networks {
+			if _, _, err := net.ParseCIDR(netStr); err != nil {
+				return fmt.Errorf("invalid BGP network CIDR: %s", netStr)
+			}
+		}
+	}
+	return nil
+}
+
 func updateDynamicRouting(w http.ResponseWriter, r *http.Request) {
 	var req DynamicRoutingConfig
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	if err := validateDynamicRoutingConfig(req); err != nil {
+		http.Error(w, fmt.Sprintf("Validation failed: %v", err), http.StatusBadRequest)
 		return
 	}
 
