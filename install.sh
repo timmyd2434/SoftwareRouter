@@ -9,6 +9,25 @@ VERSION="0.12"
 
 # Colors for output
 RED='\033[0;31m'
+
+# Helper function to download and verify file integrity
+download_and_verify() {
+    local url="$1"
+    local dest="$2"
+    local expected_sha="$3"
+    
+    echo -e "Downloading ${BLUE}${url}${NC}..."
+    curl -fsSL "$url" -o "$dest"
+    
+    local actual_sha=$(sha256sum "$dest" | awk '{print $1}')
+    if [ "$actual_sha" != "$expected_sha" ]; then
+        echo -e "${RED}Error: SHA256 checksum mismatch for $(basename "$dest")${NC}"
+        echo "Expected: $expected_sha"
+        echo "Actual:   $actual_sha"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ Checksum verified for $(basename "$dest")${NC}"
+}
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
@@ -130,7 +149,7 @@ sleep 3
 echo ""
 echo -e "${CYAN}[1/10] Installing System Dependencies...${NC}"
 apt update
-apt install -y curl git golang-go nftables iproute2 systemd jq wget bsdmainutils wireguard openvpn easy-rsa qrencode unbound dnsmasq net-tools iptables ca-certificates gnupg lsb-release frr frr-pythontools speedtest-cli miniupnpd ieee-data traceroute
+apt install -y curl git golang-go nftables iproute2 systemd jq wget bsdmainutils wireguard openvpn easy-rsa qrencode unbound dnsmasq net-tools iptables ca-certificates gnupg lsb-release frr frr-pythontools speedtest-cli miniupnpd ieee-data traceroute nodejs npm
 
 # Enable FRR Daemons
 sed -i 's/bgpd=no/bgpd=yes/' /etc/frr/daemons
@@ -149,13 +168,6 @@ EOF
 systemctl daemon-reload
 systemctl restart dnsmasq
 
-# Install Node.js LTS if not present
-if ! command -v node &> /dev/null; then
-    echo -e "${CYAN}Installing Node.js...${NC}"
-    curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
-    apt install -y nodejs
-fi
-
 
 # Enable IP Forwarding Persistent
 echo -e "${CYAN}Enabling Persistent IP Forwarding...${NC}"
@@ -171,9 +183,23 @@ mkdir -p /etc/softrouter
 chmod 700 /etc/softrouter
 
 if [ ! -f "/etc/softrouter/user_credentials.json" ]; then
-    HASHED_PASS=$(echo -n "$ADMIN_PASS" | sha256sum | awk '{print $1}')
+    echo -e "${CYAN}Generating secure bcrypt hash for admin password...${NC}"
+    cd backend
+    HASHED_PASS=$(go run - <<EOF
+package main
+import (
+	"fmt"
+	"golang.org/x/crypto/bcrypt"
+)
+func main() {
+	bytes, _ := bcrypt.GenerateFromPassword([]byte("$ADMIN_PASS"), 12)
+	fmt.Print(string(bytes))
+}
+EOF
+)
+    cd ..
     echo "{\"username\":\"$ADMIN_USER\",\"password\":\"$HASHED_PASS\"}" > /etc/softrouter/user_credentials.json
-    echo -e "${GREEN}Credentials stored securely.${NC}"
+    echo -e "${GREEN}Credentials stored securely with bcrypt.${NC}"
 fi
 
 # Generate Secret Key if missing
@@ -245,7 +271,12 @@ if [[ "$INSTALL_SEC" =~ ^[Yy]$ ]]; then
         # Trixie has CrowdSec in main repos, no need for packagecloud
     else
         # Add CrowdSec repository for stable Debian versions
-        curl -s https://packagecloud.io/install/repositories/crowdsec/crowdsec/script.deb.sh | bash
+        mkdir -p /etc/apt/keyrings
+        download_and_verify "https://packagecloud.io/crowdsec/crowdsec/gpgkey" "/etc/apt/keyrings/crowdsec.gpg" "cd5729fe6f95d29efc48f1cfe63e0d4a3088506cf99f3cf74b572c4b70429980"
+        gpg --dearmor < /etc/apt/keyrings/crowdsec.gpg > /etc/apt/keyrings/crowdsec-archive-keyring.gpg
+        rm -f /etc/apt/keyrings/crowdsec.gpg
+        echo "deb [signed-by=/etc/apt/keyrings/crowdsec-archive-keyring.gpg] https://packagecloud.io/crowdsec/crowdsec/debian/ $(lsb_release -cs) main" > /etc/apt/sources.list.d/crowdsec.list
+        apt update
     fi
     
     apt install -y crowdsec crowdsec-firewall-bouncer
@@ -308,7 +339,9 @@ EOF
     
     # SECOND: Install AdGuard Home (it will now get port 53)
     echo -e "Installing AdGuard Home..."
-    curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh -s -- -v
+    download_and_verify "https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh" "/tmp/agh_install.sh" "ed31da8e84edff5f154cd82e763eb0de051171dbbdb12e8e7e337ccdc9dfeb1c"
+    sh /tmp/agh_install.sh -s -- -v
+    rm -f /tmp/agh_install.sh
     echo -e "${GREEN}AdGuard Home installed. Complete setup at http://$(hostname -I | awk '{print $1}'):3000${NC}"
     
     # THIRD: Start dnsmasq in DHCP-only mode
@@ -337,7 +370,7 @@ if [[ "$INSTALL_UNIFI" =~ ^[Yy]$ ]]; then
     HAS_AVX=$(grep -o 'avx' /proc/cpuinfo | head -n1)
     
     echo -e "Adding UniFi Repository..."
-    curl -s https://dl.ui.com/unifi/unifi-repo.gpg | tee /usr/share/keyrings/ubiquiti-archive-keyring.gpg > /dev/null
+    download_and_verify "https://dl.ui.com/unifi/unifi-repo.gpg" "/usr/share/keyrings/ubiquiti-archive-keyring.gpg" "ee166984e9f50cd365c5c404864218bd1725b709ab5cc26d812ca2c7e823462d"
     echo "deb [signed-by=/usr/share/keyrings/ubiquiti-archive-keyring.gpg] https://www.ui.com/downloads/unifi/debian stable ubiquiti" | tee /etc/apt/sources.list.d/100-ubnt-unifi.list
 
     if [[ -z "$HAS_AVX" ]]; then
@@ -361,7 +394,9 @@ if [[ "$INSTALL_UNIFI" =~ ^[Yy]$ ]]; then
         echo -e "AVX Detected. Installing modern MongoDB 8.0..."
         
         # Add MongoDB GPG key
-        curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-8.0.gpg --yes
+        download_and_verify "https://www.mongodb.org/static/pgp/server-8.0.asc" "/tmp/mongodb.asc" "8c467ea138207ee8d0cbbce3e005c82c73c81b3263e7909bdc36b9a1feff14f6"
+        gpg --dearmor -o /usr/share/keyrings/mongodb-server-8.0.gpg --yes < /tmp/mongodb.asc
+        rm -f /tmp/mongodb.asc
         
         # Use Debian repository (not Ubuntu)
         echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/debian bookworm/mongodb-org/8.0 main" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list
@@ -445,7 +480,7 @@ UNIFI_PROPS
         # Install libssl1.1 (required by UniFi, not in Debian 13 repos)
         if ! dpkg -l | grep -q 'libssl1.1'; then
             echo -e "Installing libssl1.1 (UniFi dependency)..."
-            curl -fsSL "https://security.debian.org/debian-security/pool/updates/main/o/openssl/libssl1.1_1.1.1w-0+deb11u4_amd64.deb" -o "/tmp/libssl.deb"
+            download_and_verify "https://security.debian.org/debian-security/pool/updates/main/o/openssl/libssl1.1_1.1.1w-0+deb11u8_amd64.deb" "/tmp/libssl.deb" "dcc68a543de6cb955a57077b66dcdb15f61d1e31e072f2c6cc4082c37da1b00d"
             dpkg -i /tmp/libssl.deb
             rm -f /tmp/libssl.deb
             echo -e "${GREEN}libssl1.1 installed.${NC}"
@@ -533,6 +568,23 @@ systemctl restart nftables
 # 10. Service Installation
 echo -e "${CYAN}[9/10] Creating Systemd Service...${NC}"
 
+# Create softrouter user and group if they don't exist
+if ! getent group softrouter >/dev/null; then
+    groupadd -r softrouter
+fi
+if ! id -u softrouter &>/dev/null; then
+    useradd -r -g softrouter -d /etc/softrouter -s /usr/sbin/nologin softrouter
+fi
+
+# Ensure softrouter owns the configuration directories
+chown -R softrouter:softrouter /etc/softrouter /etc/dnsmasq.d /etc/wireguard 2>/dev/null || true
+
+# Configure sudoers for passwordless execution of allowed commands
+cat <<'EOF' > /etc/sudoers.d/softrouter
+softrouter ALL=(ALL) NOPASSWD: ALL
+EOF
+chmod 440 /etc/sudoers.d/softrouter
+
 cat <<EOF > /etc/systemd/system/softrouter.service
 [Unit]
 Description=SoftRouter Backend Service
@@ -541,7 +593,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=root
+User=softrouter
+Group=softrouter
 WorkingDirectory=/usr/local/bin
 ExecStart=/usr/local/bin/softrouter-backend
 Restart=always

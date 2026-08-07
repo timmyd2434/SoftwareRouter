@@ -38,14 +38,17 @@ func installDeadManSwitch() error {
 
 table inet deadman {
 	chain input {
-		type filter hook input priority -200; policy accept;
+		type filter hook input priority -200; policy drop;
 		
-		# Accept SSH unconditionally
+		# Accept loopback traffic
+		iif lo accept
+		
+		# Accept SSH
 		tcp dport 22 accept comment "Dead-man switch: SSH"
 		
-		# Accept WebUI on localhost
-		iif lo tcp dport 8080 accept comment "Dead-man switch: WebUI redirect"
-		iif lo tcp dport 443 accept comment "Dead-man switch: WebUI HTTPS"
+		# Accept WebUI
+		tcp dport 8080 accept comment "Dead-man switch: WebUI redirect"
+		tcp dport 443 accept comment "Dead-man switch: WebUI HTTPS"
 		
 		# Accept established connections
 		ct state established,related accept

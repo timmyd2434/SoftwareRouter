@@ -110,13 +110,8 @@ func (fm *FirewallManager) ApplyFirewallRules(skipWatchdog bool) error {
 	if err != nil {
 		return fmt.Errorf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpfile.Name())
-	tmpPath := tmpfile.Name() // Store the path before closing
-	defer func() {            // Only delete on success or if validation passes
-		if err == nil {
-			os.Remove(tmpPath)
-		}
-	}()
+	tmpPath := tmpfile.Name()
+	defer os.Remove(tmpPath)
 
 	if _, err := tmpfile.WriteString(ruleset); err != nil {
 		return fmt.Errorf("Failed to write ruleset: %v", err)
@@ -128,15 +123,9 @@ func (fm *FirewallManager) ApplyFirewallRules(skipWatchdog bool) error {
 	validateOutput, validateErr := runPrivilegedCombinedOutput("nft", "-c", "-f", tmpPath)
 
 	if validateErr != nil {
-		// KEEP the file for debugging and log detailed error
-		log.Printf("NFTables validation FAILED - preserving file: %s", tmpPath)
+		log.Printf("NFTables validation FAILED - invalid ruleset:\n%s", ruleset)
 		log.Printf("NFT validation error output:\n%s", string(validateOutput))
-		// Attempt to get a more detailed error from nft if the combined output wasn't enough
-		if err := runPrivileged("nft", "-c", "-f", tmpPath); err != nil {
-			log.Printf("Detailed NFT error: %v", err)
-		}
-		// Return error but continue to start server
-		return fmt.Errorf("nftables validation failed - check %s for details: %v", tmpPath, validateErr)
+		return fmt.Errorf("nftables validation failed: %v", validateErr)
 	}
 
 	// 8. Install dead-man switch (emergency access protection)
@@ -367,6 +356,10 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 	// Port Forwarding Rules
 	for _, rule := range pfRules {
 		if !rule.Enabled {
+			continue
+		}
+		if err := validatePortForwardingRuleFields(rule); err != nil {
+			log.Printf("WARNING: Skipping invalid port forwarding rule: %v", err)
 			continue
 		}
 		proto := rule.Protocol

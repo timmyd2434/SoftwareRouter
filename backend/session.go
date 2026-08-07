@@ -34,6 +34,43 @@ func (ss *SessionStore) AddSession(token, username, ipAddress, userAgent string)
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 
+	// Enforce session cap per user (max 50)
+	userSessions := []*Session{}
+	for _, s := range ss.sessions {
+		if s.Username == username {
+			userSessions = append(userSessions, s)
+		}
+	}
+
+	const maxSessionsPerUser = 50
+	if len(userSessions) >= maxSessionsPerUser {
+		var oldest *Session
+		for _, s := range userSessions {
+			if oldest == nil || s.CreatedAt.Before(oldest.CreatedAt) {
+				oldest = s
+			}
+		}
+		if oldest != nil {
+			delete(ss.sessions, oldest.Token)
+			log.Printf("Session limit reached for user %s. Evicted oldest session", username)
+		}
+	}
+
+	// Enforce global session limit (max 1000)
+	const maxGlobalSessions = 1000
+	if len(ss.sessions) >= maxGlobalSessions {
+		var oldest *Session
+		for _, s := range ss.sessions {
+			if oldest == nil || s.CreatedAt.Before(oldest.CreatedAt) {
+				oldest = s
+			}
+		}
+		if oldest != nil {
+			delete(ss.sessions, oldest.Token)
+			log.Printf("Global session limit reached. Evicted oldest session of user %s", oldest.Username)
+		}
+	}
+
 	now := time.Now()
 	session := &Session{
 		Token:     token,

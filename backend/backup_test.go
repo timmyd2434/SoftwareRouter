@@ -53,16 +53,20 @@ func TestBackupAndRestore(t *testing.T) {
 			t.Fatalf("Failed to write mock file %s: %v", relPath, err)
 		}
 	}
-
 	// 3. Trigger backup
-	backupData, err := createBackup()
+	backupData, err := createBackup("testpassword123")
 	if err != nil {
 		t.Fatalf("createBackup failed: %v", err)
 	}
 
 	// 4. Validate backup contents
+	decryptedBytes, err := decryptBackup(backupData, "testpassword123")
+	if err != nil {
+		t.Fatalf("decryptBackup failed: %v", err)
+	}
+
 	var snapshot BackupSnapshot
-	if err := json.Unmarshal(backupData, &snapshot); err != nil {
+	if err := json.Unmarshal(decryptedBytes, &snapshot); err != nil {
 		t.Fatalf("Failed to unmarshal backup JSON: %v", err)
 	}
 
@@ -106,11 +110,10 @@ func TestBackupAndRestore(t *testing.T) {
 	// 6. Restore from backup
 	// Temporarily bypass real service reload routines since they require running commands/systems
 	// We just want to test file restoration logic
-	err = restoreBackup(backupData)
+	err = restoreBackup(backupData, "testpassword123")
 	if err != nil {
 		t.Fatalf("restoreBackup failed: %v", err)
 	}
-
 	// 7. Verify all files are restored with exact contents
 	for relPath, expectedContent := range filesToCreate {
 		if relPath == "should_skip.bak" {
