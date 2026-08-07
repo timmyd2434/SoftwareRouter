@@ -153,6 +153,14 @@ func validateAlias(alias FirewallAlias) error {
 		return err
 	}
 
+	// Validate description
+	if alias.Description != "" {
+		match, _ := regexp.MatchString(`^[a-zA-Z0-9 _\-.,()]{0,128}$`, alias.Description)
+		if !match {
+			return fmt.Errorf("invalid alias description")
+		}
+	}
+
 	// Validate type
 	validTypes := map[string]bool{"ip": true, "network": true, "port": true}
 	if !validTypes[alias.Type] {

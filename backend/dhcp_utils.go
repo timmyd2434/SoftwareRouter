@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -445,6 +446,23 @@ func addStaticLease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if match, _ := regexp.MatchString(`^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$`, req.MAC); !match {
+		http.Error(w, "Invalid MAC address", http.StatusBadRequest)
+		return
+	}
+
+	if net.ParseIP(req.IP) == nil {
+		http.Error(w, "Invalid IP address", http.StatusBadRequest)
+		return
+	}
+
+	if req.Hostname != "" {
+		if match, _ := regexp.MatchString(`^[a-zA-Z0-9_-]{1,63}$`, req.Hostname); !match {
+			http.Error(w, "Invalid hostname", http.StatusBadRequest)
+			return
+		}
+	}
+
 	store, err := loadDHCPConfig()
 	if err != nil {
 		http.Error(w, "Failed to load config", http.StatusInternalServerError)
@@ -536,6 +554,28 @@ func setDHCPConfig(w http.ResponseWriter, r *http.Request) {
 	// Validate interface name
 	if !isValidInterfaceName(req.InterfaceName) {
 		http.Error(w, "Invalid interface name", http.StatusBadRequest)
+		return
+	}
+
+	// Validate LeaseTime and IPv6 fields
+	if req.Config.LeaseTime != "" {
+		if match, _ := regexp.MatchString(`^[0-9]+[hmd]$`, req.Config.LeaseTime); !match {
+			respondInvalidRequest(w, "Invalid LeaseTime")
+			return
+		}
+	}
+	if req.Config.LeaseTimeIPv6 != "" {
+		if match, _ := regexp.MatchString(`^[0-9]+[hmd]$`, req.Config.LeaseTimeIPv6); !match {
+			respondInvalidRequest(w, "Invalid LeaseTimeIPv6")
+			return
+		}
+	}
+	if req.Config.StartIPv6 != "" && net.ParseIP(req.Config.StartIPv6) == nil {
+		respondInvalidRequest(w, "Invalid StartIPv6")
+		return
+	}
+	if req.Config.EndIPv6 != "" && net.ParseIP(req.Config.EndIPv6) == nil {
+		respondInvalidRequest(w, "Invalid EndIPv6")
 		return
 	}
 

@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 )
@@ -127,6 +128,10 @@ func updateDeviceMetaHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	meta.MAC = strings.ToUpper(meta.MAC)
+	if !regexp.MustCompile(`^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$`).MatchString(meta.MAC) {
+		respondWithError(w, ErrGenericInvalidRequest, "Invalid MAC format", http.StatusBadRequest, nil)
+		return
+	}
 
 	deviceMetaMu.Lock()
 	if _, exists := deviceMetas[meta.MAC]; !exists && len(deviceMetas) >= maxDeviceMetas {
@@ -137,7 +142,7 @@ func updateDeviceMetaHandler(w http.ResponseWriter, r *http.Request) {
 	deviceMetas[meta.MAC] = meta
 	deviceMetaMu.Unlock()
 
-	go saveDeviceMetas()
+	saveDeviceMetas()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})

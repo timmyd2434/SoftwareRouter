@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/smtp"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -337,7 +338,18 @@ func sendWebhookNotification(event NotificationEvent, wh WebhookConfig) error {
 	}
 
 	// Create HTTP client with timeout
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if err := validateWebhookURL(req.URL.String()); err != nil {
+				return fmt.Errorf("redirect blocked: %w", err)
+			}
+			if len(via) >= 3 {
+				return fmt.Errorf("too many redirects")
+			}
+			return nil
+		},
+	}
 
 	resp, err := client.Post(wh.URL, "application/json", bytes.NewReader(payload))
 	if err != nil {
@@ -402,20 +414,11 @@ func validateWebhookURL(rawURL string) error {
 }
 
 func extractHost(rawURL string) string {
-	// Strip scheme
-	s := rawURL
-	if i := strings.Index(s, "://"); i >= 0 {
-		s = s[i+3:]
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
 	}
-	// Strip path/query
-	if i := strings.IndexAny(s, "/?#"); i >= 0 {
-		s = s[:i]
-	}
-	// Strip port
-	if i := strings.LastIndex(s, ":"); i >= 0 {
-		s = s[:i]
-	}
-	return s
+	return u.Hostname()
 }
 
 func buildDiscordPayload(event NotificationEvent) ([]byte, error) {

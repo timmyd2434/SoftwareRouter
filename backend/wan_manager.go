@@ -3,8 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"sync"
 	"time"
 )
@@ -256,6 +258,38 @@ func updateWANInterfaces(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
+	}
+
+	validMode := false
+	for _, m := range []string{"dhcp", "static", "pppoe", "", "failover", "load_balance"} {
+		if req.Mode == m {
+			validMode = true
+			break
+		}
+	}
+	if !validMode {
+		http.Error(w, "Invalid mode", http.StatusBadRequest)
+		return
+	}
+
+	for _, iface := range req.Interfaces {
+		if !isValidInterfaceName(iface.Interface) {
+			http.Error(w, "Invalid interface name", http.StatusBadRequest)
+			return
+		}
+		if iface.Gateway != "" && net.ParseIP(iface.Gateway) == nil {
+			http.Error(w, "Invalid gateway IP", http.StatusBadRequest)
+			return
+		}
+		if iface.CheckTarget != "" {
+			if net.ParseIP(iface.CheckTarget) == nil {
+				matched, _ := regexp.MatchString(`^[a-zA-Z0-9.-]+$`, iface.CheckTarget)
+				if !matched {
+					http.Error(w, "Invalid check target", http.StatusBadRequest)
+					return
+				}
+			}
+		}
 	}
 
 	wanLock.Lock()

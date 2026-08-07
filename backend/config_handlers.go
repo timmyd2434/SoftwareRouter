@@ -90,7 +90,7 @@ func isSafePath(path string) bool {
 	if !filepath.IsAbs(cleaned) {
 		return false
 	}
-	return strings.HasPrefix(cleaned, "/etc/softrouter")
+	return strings.HasPrefix(cleaned, "/etc/softrouter/") || cleaned == "/etc/softrouter"
 }
 
 func isValidCloudflareToken(token string) bool {
@@ -157,8 +157,13 @@ func loadConfig() Config {
 func saveConfig(cfg Config) error {
 	configLock.Lock()
 	defer configLock.Unlock()
+	oldConfig := config
 	config = cfg
-	return saveConfigLocked()
+	if err := saveConfigLocked(); err != nil {
+		config = oldConfig
+		return err
+	}
+	return nil
 }
 
 // --- HTTP Handlers ---
@@ -298,7 +303,9 @@ DNSOverTLS=%s
 `, dnsServers, mode)
 
 	tmpFile := "/tmp/softrouter-dns-privacy.conf"
-	os.WriteFile(tmpFile, []byte(confStr), 0600)
+	if err := os.WriteFile(tmpFile, []byte(confStr), 0600); err != nil {
+		return err
+	}
 	defer os.Remove(tmpFile)
 	
 	runPrivileged("cp", tmpFile, dropInDir+"/softrouter-dns-privacy.conf")

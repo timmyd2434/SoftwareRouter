@@ -8,7 +8,7 @@ import (
 )
 
 // Validation regex for hostnames/IPs to prevent command injection
-var hostRegex = regexp.MustCompile(`^[a-zA-Z0-9.-]+$`)
+var hostRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9.-]*$`)
 
 type PingRequest struct {
 	Target string `json:"target"`

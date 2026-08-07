@@ -182,6 +182,16 @@ func addFirewallRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate params to prevent nftables argument injection
+	if !regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]*$`).MatchString(rule.Table) {
+		http.Error(w, "Invalid table parameter", http.StatusBadRequest)
+		return
+	}
+	if !regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]*$`).MatchString(rule.Chain) {
+		http.Error(w, "Invalid chain parameter", http.StatusBadRequest)
+		return
+	}
+
 	// Security: Sanitize firewall rule input to prevent command injection
 	// Block dangerous characters and command sequences
 	dangerousPatterns := []string{";", "|", "&", "$", "`", "$(", "||", "&&", "\n", "\r", "<", ">", "(", ")", "{", "}"}

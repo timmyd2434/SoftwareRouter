@@ -256,6 +256,7 @@ func confirmFirewallChanges(w http.ResponseWriter, r *http.Request) {
 	// Cancel the timer
 	watchdogCancelChan <- true
 	close(watchdogCancelChan)
+	watchdogActive = false
 
 	log.Println("[RESILIENCE] Firewall changes confirmed - watchdog cancelled")
 
