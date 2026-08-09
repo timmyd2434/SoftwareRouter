@@ -213,6 +213,11 @@ func startWatchdogTimer(rollbackSnapshot string) error {
 		select {
 		case <-timer.C:
 			// Timer expired - rollback required
+			// Mark inactive BEFORE rollback so concurrent confirm requests fail correctly
+			watchdogMutex.Lock()
+			watchdogActive = false
+			watchdogMutex.Unlock()
+
 			log.Println("[RESILIENCE] ⚠️  WATCHDOG TIMEOUT - Rolling back firewall changes")
 
 			if err := performRollback(rollbackSnapshot); err != nil {
@@ -224,10 +229,6 @@ func startWatchdogTimer(rollbackSnapshot string) error {
 			} else {
 				log.Println("[RESILIENCE] ✓ Rollback completed successfully")
 			}
-
-			watchdogMutex.Lock()
-			watchdogActive = false
-			watchdogMutex.Unlock()
 
 		case <-watchdogCancelChan:
 			// User confirmed - no rollback needed

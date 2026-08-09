@@ -183,6 +183,10 @@ func addFirewallRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate params to prevent nftables argument injection
+	if !regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]*$`).MatchString(rule.Family) {
+		http.Error(w, "Invalid family parameter", http.StatusBadRequest)
+		return
+	}
 	if !regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]*$`).MatchString(rule.Table) {
 		http.Error(w, "Invalid table parameter", http.StatusBadRequest)
 		return

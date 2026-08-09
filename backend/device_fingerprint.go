@@ -15,6 +15,7 @@ var (
 	ouiData    = make(map[string]string)
 	ouiDataMu  sync.RWMutex
 	ouiEnabled bool
+	macFormatRe = regexp.MustCompile(`^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$`)
 )
 
 // initDeviceFingerprint loads the OUI database asynchronously so it doesn't block startup
@@ -107,15 +108,14 @@ func loadDeviceMetas() {
 }
 
 func saveDeviceMetas() {
-	deviceMetaMu.RLock()
+	deviceMetaMu.Lock()
 	var metas []DeviceMeta
 	for _, m := range deviceMetas {
 		metas = append(metas, m)
 	}
-	deviceMetaMu.RUnlock()
-
 	data, _ := json.MarshalIndent(metas, "", "  ")
 	os.WriteFile(deviceMetaFile, data, 0600)
+	deviceMetaMu.Unlock()
 }
 
 const maxDeviceMetas = 10000
@@ -128,7 +128,7 @@ func updateDeviceMetaHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	meta.MAC = strings.ToUpper(meta.MAC)
-	if !regexp.MustCompile(`^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$`).MatchString(meta.MAC) {
+	if !macFormatRe.MatchString(meta.MAC) {
 		respondWithError(w, ErrGenericInvalidRequest, "Invalid MAC format", http.StatusBadRequest, nil)
 		return
 	}
