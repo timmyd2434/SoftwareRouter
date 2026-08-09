@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -337,9 +338,31 @@ func sendWebhookNotification(event NotificationEvent, wh WebhookConfig) error {
 		return fmt.Errorf("failed to build payload: %w", err)
 	}
 
-	// Create HTTP client with timeout
+	// Create HTTP client with timeout and IP pinning (to prevent DNS Rebinding TOCTOU)
+	dialer := &net.Dialer{
+		Timeout: 5 * time.Second,
+	}
+
 	client := &http.Client{
 		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				host, port, err := net.SplitHostPort(addr)
+				if err != nil {
+					return nil, err
+				}
+				// Resolve and validate IP before connecting
+				ips, err := net.LookupIP(host)
+				if err != nil || len(ips) == 0 {
+					return nil, fmt.Errorf("failed to resolve host %s: %w", host, err)
+				}
+				targetIP := ips[0]
+				if targetIP.IsLoopback() || targetIP.IsPrivate() || targetIP.IsLinkLocalUnicast() || targetIP.IsLinkLocalMulticast() || targetIP.IsUnspecified() {
+					return nil, fmt.Errorf("SSRF protection: IP %s blocked", targetIP.String())
+				}
+				return dialer.DialContext(ctx, network, net.JoinHostPort(targetIP.String(), port))
+			},
+		},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if err := validateWebhookURL(req.URL.String()); err != nil {
 				return fmt.Errorf("redirect blocked: %w", err)
