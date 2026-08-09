@@ -627,9 +627,7 @@ func main() {
 	authRead := func(handler http.HandlerFunc) http.HandlerFunc {
 		return rateLimitMiddleware(readLimiter, 60, time.Minute)(authMiddleware(handler))
 	}
-	// Suppress unused warnings until all routes are migrated
-	_ = authWrite
-	_ = authRead
+
 
 	cleanupCSRFTokens()   // Start CSRF token cleanup
 	startSessionCleanup() // Start session cleanup
@@ -654,10 +652,10 @@ func main() {
 	}))
 
 	// Protected Endpoints
-	mux.HandleFunc("GET /api/status", authMiddleware(getSystemStatus))
+	mux.HandleFunc("GET /api/status", authRead(getSystemStatus))
 	// Configuration
-	mux.HandleFunc("GET /api/config", authMiddleware(getConfig))
-	mux.HandleFunc("POST /api/config", authMiddleware(csrfMiddleware(updateConfig)))
+	mux.HandleFunc("GET /api/config", authRead(getConfig))
+	mux.HandleFunc("POST /api/config", authWrite(updateConfig))
 
 	// System Setup Wizard
 	mux.HandleFunc("GET /api/system/needs-setup", func(w http.ResponseWriter, r *http.Request) {
@@ -1200,11 +1198,14 @@ func main() {
 		log.Fatalf("CRITICAL: Failed to ensure TLS certificates: %v", err)
 	}
 
-	// Add HSTS and security headers
+	// Add HSTS, CSP, and security headers
 	secureHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none';")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
 		handler.ServeHTTP(w, r)
 	})
 
