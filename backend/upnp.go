@@ -145,9 +145,10 @@ func applyUPnPConfig(cfg UPnPConfig) error {
 	}
 	tmpPath := tmpFile.Name()
 	tmpFile.Close()
+	defer os.Remove(tmpPath)
+
 	err = os.WriteFile(tmpPath, []byte(confStr), 0600)
 	if err == nil {
-		defer os.Remove(tmpPath)
 		runPrivileged("cp", tmpPath, miniupnpdConf)
 	}
 
