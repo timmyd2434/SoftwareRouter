@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Shield, Plus, RefreshCw, X, Trash2 } from 'lucide-react';
+import { Shield, Plus, RefreshCw, X, Trash2, ShieldOff, Sparkles } from 'lucide-react';
 import './Firewall.css';
 import { API_ENDPOINTS, authFetch } from '../apiConfig';
 
@@ -9,6 +9,10 @@ const Firewall = () => {
     const [errorHeader, setErrorHeader] = useState(null);
     const [showModal, setShowModal] = useState(false);
     const [duplicateDetected, setDuplicateDetected] = useState(false);
+    const [firewallEnabled, setFirewallEnabled] = useState(true);
+    const [togglingFirewall, setTogglingFirewall] = useState(false);
+    const [cleanupResult, setCleanupResult] = useState(null);
+    const [cleaningUp, setCleaningUp] = useState(false);
 
     // State for editing
     const [isEditing, setIsEditing] = useState(false);
@@ -487,7 +491,71 @@ const Firewall = () => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         fetchRules();
         fetchAliases();
+        fetchFirewallStatus();
     }, []);
+
+    const fetchFirewallStatus = async () => {
+        try {
+            const res = await authFetch(API_ENDPOINTS.FIREWALL_STATUS);
+            if (res.ok) {
+                const data = await res.json();
+                setFirewallEnabled(data.enabled !== false);
+            }
+        } catch (err) {
+            console.error('Failed to fetch firewall status:', err);
+        }
+    };
+
+    const handleToggleFirewall = async () => {
+        const newState = !firewallEnabled;
+        const action = newState ? 'enable' : 'disable';
+        if (!confirm(`Are you sure you want to ${action} the firewall? ${!newState ? 'All traffic will be allowed through without filtering.' : 'Full firewall rules will be re-applied.'}`))
+            return;
+
+        setTogglingFirewall(true);
+        try {
+            const res = await authFetch(API_ENDPOINTS.FIREWALL_TOGGLE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: newState })
+            });
+            if (res.ok) {
+                setFirewallEnabled(newState);
+                fetchRules();
+            } else {
+                alert('Failed to toggle firewall');
+            }
+        } catch (err) {
+            console.error('Toggle firewall error:', err);
+            alert('Network error toggling firewall');
+        } finally {
+            setTogglingFirewall(false);
+        }
+    };
+
+    const handleCleanup = async () => {
+        if (!confirm('This will remove exact duplicate rules and rules referencing interfaces that no longer exist. Continue?'))
+            return;
+
+        setCleaningUp(true);
+        try {
+            const res = await authFetch(API_ENDPOINTS.FIREWALL_CLEANUP, {
+                method: 'POST'
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setCleanupResult(data);
+                fetchRules();
+            } else {
+                alert('Cleanup failed');
+            }
+        } catch (err) {
+            console.error('Cleanup error:', err);
+            alert('Network error during cleanup');
+        } finally {
+            setCleaningUp(false);
+        }
+    };
 
     return (
         <div className="firewall-container">
@@ -518,6 +586,17 @@ const Firewall = () => {
                 </div>
             )}
 
+            {/* Firewall Status Banner */}
+            {!firewallEnabled && (
+                <div className="firewall-disabled-banner">
+                    <ShieldOff size={22} />
+                    <div>
+                        <strong>Firewall is DISABLED</strong>
+                        <span>All traffic is being passed through without filtering. Enable the firewall to restore protection.</span>
+                    </div>
+                </div>
+            )}
+
             <div className="fw-header">
 
                 <div className="fw-title">
@@ -528,6 +607,24 @@ const Firewall = () => {
                     </div>
                 </div>
                 <div className="header-actions">
+                    <label className="fw-toggle" title={firewallEnabled ? 'Disable Firewall' : 'Enable Firewall'}>
+                        <input
+                            type="checkbox"
+                            checked={firewallEnabled}
+                            onChange={handleToggleFirewall}
+                            disabled={togglingFirewall}
+                        />
+                        <span className="fw-toggle-slider"></span>
+                        <span className="fw-toggle-label">{firewallEnabled ? 'Enabled' : 'Disabled'}</span>
+                    </label>
+                    <button
+                        className="icon-btn cleanup-btn"
+                        onClick={handleCleanup}
+                        disabled={cleaningUp}
+                        title="Remove duplicate & stale rules"
+                    >
+                        <Sparkles size={20} className={cleaningUp ? 'spin' : ''} />
+                    </button>
                     <button className="icon-btn" onClick={fetchRules} title="Refresh Rules">
                         <RefreshCw size={20} className={loading ? "spin" : ""} />
                     </button>
@@ -881,6 +978,52 @@ const Firewall = () => {
                             <button className="primary-btn" onClick={handleSaveAlias}>
                                 {editingAlias ? 'SAVE CHANGES' : 'CREATE ALIAS'}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Cleanup Results Modal */}
+            {cleanupResult && (
+                <div className="modal-overlay">
+                    <div className="modal-content" style={{ width: '480px' }}>
+                        <div className="modal-header">
+                            <h3>Cleanup Results</h3>
+                            <button className="close-btn" onClick={() => setCleanupResult(null)}>
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="cleanup-stats">
+                                <div className="cleanup-stat">
+                                    <span className="stat-value">{cleanupResult.duplicates_removed || 0}</span>
+                                    <span className="stat-label">Duplicate rules removed</span>
+                                </div>
+                                <div className="cleanup-stat">
+                                    <span className="stat-value">{cleanupResult.stale_removed || 0}</span>
+                                    <span className="stat-label">Stale rules removed</span>
+                                </div>
+                            </div>
+                            {cleanupResult.details && cleanupResult.details.length > 0 && (
+                                <div className="cleanup-details">
+                                    <h4>Details</h4>
+                                    <div className="cleanup-detail-list">
+                                        {cleanupResult.details.map((d, i) => (
+                                            <div key={i} className="cleanup-detail-item">
+                                                <span className={`detail-badge ${d.reason}`}>{d.reason}</span>
+                                                <span className="monospace">{d.table}/{d.chain} handle {d.handle}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            {(cleanupResult.duplicates_removed === 0 && cleanupResult.stale_removed === 0) && (
+                                <p style={{ textAlign: 'center', color: 'var(--text-muted)', marginTop: '12px' }}>
+                                    ✓ No duplicate or stale rules found. Firewall is clean!
+                                </p>
+                            )}
+                        </div>
+                        <div className="modal-footer">
+                            <button className="primary-btn" onClick={() => setCleanupResult(null)}>Close</button>
                         </div>
                     </div>
                 </div>

@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"net"
 	"strings"
 	"unicode"
 )
@@ -375,4 +376,119 @@ func deleteFirewallRule(w http.ResponseWriter, r *http.Request) {
 		fmt.Sprintf("{\"handle\":\"%s\"}", handle), getClientIP(r), true)
 
 	w.WriteHeader(http.StatusOK)
+}
+
+func cleanupFirewallRules(w http.ResponseWriter, r *http.Request) {
+	// 1. Get live ruleset via nft -j list ruleset
+	out, err := runPrivilegedCombinedOutput("nft", "-j", "list", "ruleset")
+	if err != nil {
+		respondFirewallError(w, ErrFirewallListFailed, "Failed to get ruleset", err)
+		return
+	}
+
+	var root NftablesRoot
+	if err := json.Unmarshal(out, &root); err != nil {
+		respondFirewallError(w, ErrFirewallListFailed, "Failed to parse ruleset", err)
+		return
+	}
+
+	// 2. Get list of active system interfaces using net.Interfaces()
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		respondSystemError(w, ErrGenericInternalError, "Failed to get interfaces", err)
+		return
+	}
+
+	// 3. Build a map of interface names that actually exist
+	activeIfaces := make(map[string]bool)
+	for _, iface := range interfaces {
+		activeIfaces[iface.Name] = true
+	}
+
+	duplicatesRemoved := 0
+	staleRemoved := 0
+	var details []string
+
+	// Map to track duplicates: key is fmt.Sprintf("%s/%s/%s/%s", family, table, chain, normalizedExpr)
+	// Value is the lowest handle we've seen.
+	seenRules := make(map[string]float64)
+
+	for _, item := range root.Nftables {
+		ruleInfo, ok := item["rule"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		family, _ := ruleInfo["family"].(string)
+		table, _ := ruleInfo["table"].(string)
+		chain, _ := ruleInfo["chain"].(string)
+		handle, _ := ruleInfo["handle"].(float64)
+		exprList, _ := ruleInfo["expr"].([]interface{})
+
+		// Create raw expression
+		var rawParts []string
+		for _, expr := range exprList {
+			exprBytes, _ := json.Marshal(expr)
+			rawParts = append(rawParts, string(exprBytes))
+		}
+		rawExpr := strings.Join(rawParts, " ")
+		normalized := normaliseRule(rawExpr)
+
+		// 6. For stale rules: check if rule expressions contain iifname "X" or oifname "X" where X doesn't exist
+		isStale := false
+		
+		// Regex to find iifname "X" or oifname "X"
+		iifnameRe := regexp.MustCompile(`(?:iifname|oifname)\s+"([^"]+)"`)
+		matches := iifnameRe.FindAllStringSubmatch(rawExpr, -1)
+		
+		for _, match := range matches {
+			if len(match) > 1 {
+				ifaceName := match[1]
+				if !activeIfaces[ifaceName] {
+					isStale = true
+					break
+				}
+			}
+		}
+
+		if isStale {
+			// Mark for deletion
+			if _, err := runPrivilegedCombinedOutput("nft", "delete", "rule", family, table, chain, "handle", fmt.Sprintf("%.0f", handle)); err == nil {
+				staleRemoved++
+				details = append(details, fmt.Sprintf("Stale: deleted handle %.0f in %s/%s/%s", handle, family, table, chain))
+			} else {
+				log.Printf("Failed to delete stale rule: handle %.0f", handle)
+			}
+			continue
+		}
+
+		// 5. For exact duplicates: keep the first (lowest handle), mark remaining handles for deletion
+		ruleKey := fmt.Sprintf("%s/%s/%s/%s", family, table, chain, normalized)
+		if existingHandle, exists := seenRules[ruleKey]; exists {
+			// It's a duplicate. We keep the existing (since we process in order of handles typically, or we should just keep the first we see)
+			if handle < existingHandle {
+				// The new one is lower handle, so delete the existing one and keep the new one.
+				if _, err := runPrivilegedCombinedOutput("nft", "delete", "rule", family, table, chain, "handle", fmt.Sprintf("%.0f", existingHandle)); err == nil {
+					duplicatesRemoved++
+					details = append(details, fmt.Sprintf("Duplicate: deleted handle %.0f in %s/%s/%s", existingHandle, family, table, chain))
+				}
+				seenRules[ruleKey] = handle
+			} else {
+				// Delete the current handle
+				if _, err := runPrivilegedCombinedOutput("nft", "delete", "rule", family, table, chain, "handle", fmt.Sprintf("%.0f", handle)); err == nil {
+					duplicatesRemoved++
+					details = append(details, fmt.Sprintf("Duplicate: deleted handle %.0f in %s/%s/%s", handle, family, table, chain))
+				}
+			}
+		} else {
+			seenRules[ruleKey] = handle
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"duplicates_removed": duplicatesRemoved,
+		"stale_removed":      staleRemoved,
+		"details":            details,
+	})
 }

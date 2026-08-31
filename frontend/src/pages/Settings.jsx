@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Shield, Cloud, Terminal, Save, Lock, User, CheckCircle, AlertCircle, Loader2, Globe, RotateCcw } from 'lucide-react';
+import { Settings as SettingsIcon, Shield, Cloud, Terminal, Save, Lock, User, CheckCircle, AlertCircle, Loader2, Globe, RotateCcw, Trash2 } from 'lucide-react';
 import { API_ENDPOINTS, authFetch } from '../apiConfig';
 import ConfirmModal from '../components/ConfirmModal';
 import './Settings.css';
@@ -628,6 +628,24 @@ const BackupRestore = () => {
         }
     };
 
+    const handleDeleteBackup = async (filename) => {
+        if (!confirm(`Delete backup "${filename}"? This cannot be undone.`)) return;
+        try {
+            setMessage({ type: '', text: '' });
+            const res = await authFetch(`${API_ENDPOINTS.BACKUP_DELETE}?filename=${encodeURIComponent(filename)}`, {
+                method: 'DELETE'
+            });
+            if (res.ok) {
+                setMessage({ type: 'success', text: 'Backup deleted successfully' });
+                fetchBackups();
+            } else {
+                setMessage({ type: 'error', text: 'Failed to delete backup' });
+            }
+        } catch {
+            setMessage({ type: 'error', text: 'Network error' });
+        }
+    };
+
     return (
         <div className="backup-section">
             {message.text && (
@@ -686,6 +704,14 @@ const BackupRestore = () => {
                                             title="Restore this backup"
                                         >
                                             <RotateCcw size={14} />
+                                        </button>
+                                        <button
+                                            className="btn-action"
+                                            onClick={() => handleDeleteBackup(backup.filename)}
+                                            title="Delete this backup"
+                                            style={{ color: 'var(--danger, #ef4444)' }}
+                                        >
+                                            <Trash2 size={14} />
                                         </button>
                                     </td>
                                 </tr>

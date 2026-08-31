@@ -13,6 +13,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -497,4 +498,23 @@ func createCompressedBackup(password string) (string, error) {
 	}
 
 	return filepath, nil
+}
+
+// deleteBackupFile deletes a specific backup file
+func deleteBackupFile(filename string) error {
+	matched, _ := regexp.MatchString(`^backup-[\w.-]+\.enc$`, filename)
+	if !matched {
+		return fmt.Errorf("invalid backup filename format")
+	}
+	
+	safeName := filepath.Base(filename)
+	fullPath := filepath.Join(backupDir, safeName)
+	
+	if err := os.Remove(fullPath); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("backup file not found")
+		}
+		return fmt.Errorf("failed to delete backup: %w", err)
+	}
+	return nil
 }

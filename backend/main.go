@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -76,6 +77,7 @@ type Config struct {
 		Protocol     string `json:"protocol"`
 	} `json:"vpn_server"`
 	IPSEnabled           bool     `json:"ips_enabled"`
+	FirewallEnabled      bool     `json:"firewall_enabled"`
 	BlockedAppCategories []string `json:"blocked_app_categories"`
 	TrustProxies         bool     `json:"trust_proxies"`
 	TrustedProxies       []string `json:"trusted_proxies"`
@@ -926,6 +928,24 @@ func main() {
 		json.NewEncoder(w).Encode(backups)
 	}))
 
+	mux.HandleFunc("DELETE /api/backup/delete", authMiddleware(csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		filename := r.URL.Query().Get("filename")
+		if filename == "" {
+			respondInvalidRequest(w, "filename query parameter is required")
+			return
+		}
+
+		if err := deleteBackupFile(filename); err != nil {
+			log.Printf("[ERROR] Failed to delete backup %s: %v", filename, err)
+			respondSystemError(w, ErrGenericInternalError, "Failed to delete backup", err)
+			return
+		}
+
+		logAuditEvent(getUsernameFromToken(r), "backup.delete", filename, "Deleted backup file", getClientIP(r), true)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{"success": true})
+	})))
+
 	// Session Management
 	mux.HandleFunc("GET /api/sessions", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		username := getUsernameFromToken(r)
@@ -1022,7 +1042,48 @@ func main() {
 	mux.HandleFunc("GET /api/firewall", authMiddleware(getFirewallRules))
 	mux.HandleFunc("POST /api/firewall", authMiddleware(csrfMiddleware(addFirewallRule)))
 	mux.HandleFunc("DELETE /api/firewall", authMiddleware(csrfMiddleware(deleteFirewallRule)))
-	mux.HandleFunc("POST /api/firewall/confirm", authMiddleware(csrfMiddleware(confirmFirewallChanges))) // Watchdog confirmation
+	mux.HandleFunc("POST /api/firewall/confirm", authMiddleware(csrfMiddleware(confirmFirewallChanges)))
+	mux.HandleFunc("POST /api/firewall/cleanup", authMiddleware(csrfMiddleware(cleanupFirewallRules)))
+
+	mux.HandleFunc("GET /api/firewall/status", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		configLock.RLock()
+		enabled := config.FirewallEnabled
+		configLock.RUnlock()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{"enabled": enabled})
+	}))
+
+	mux.HandleFunc("POST /api/firewall/toggle", authMiddleware(csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Enabled bool `json:"enabled"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondInvalidRequest(w, "Invalid request body")
+			return
+		}
+
+		configLock.Lock()
+		config.FirewallEnabled = req.Enabled
+		if err := saveConfigLocked(); err != nil {
+			configLock.Unlock()
+			respondSystemError(w, ErrGenericInternalError, "Failed to save config", err)
+			return
+		}
+		configLock.Unlock()
+
+		if req.Enabled {
+			if firewallManager != nil {
+				firewallManager.ApplyFirewallRules(true)
+			}
+			logAuditEvent(getUsernameFromToken(r), "firewall.toggle", "firewall", "Enabled firewall", getClientIP(r), true)
+		} else {
+			exec.Command("nft", "flush", "ruleset").Run()
+			logAuditEvent(getUsernameFromToken(r), "firewall.toggle", "firewall", "Disabled firewall", getClientIP(r), true)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{"success": true, "enabled": req.Enabled})
+	}))) // Watchdog confirmation
 	mux.HandleFunc("GET /api/firewall/aliases", authMiddleware(handleFirewallAliases))
 	mux.HandleFunc("POST /api/firewall/aliases", authMiddleware(csrfMiddleware(handleFirewallAliases)))
 	mux.HandleFunc("PUT /api/firewall/aliases", authMiddleware(csrfMiddleware(handleFirewallAliases)))
