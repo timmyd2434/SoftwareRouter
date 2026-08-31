@@ -8,11 +8,31 @@ echo ""
 
 # Parse arguments
 FORCE_UPDATE=false
-if [ "$1" == "--force" ] || [ "$1" == "-f" ]; then
-    FORCE_UPDATE=true
-    echo "ℹ️  Force mode enabled - will rebuild even if up to date"
-    echo ""
-fi
+TARGET_BRANCH=""
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --force|-f)
+            FORCE_UPDATE=true
+            echo "ℹ️  Force mode enabled - will rebuild even if up to date"
+            shift
+            ;;
+        --branch|-b)
+            TARGET_BRANCH="$2"
+            if [ -z "$TARGET_BRANCH" ]; then
+                echo "Error: --branch requires an argument (main or Dev)"
+                exit 1
+            fi
+            echo "ℹ️  Target branch: $TARGET_BRANCH"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: sudo ./update.sh [--branch main|Dev] [--force]"
+            exit 1
+            ;;
+    esac
+done
+echo ""
 
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then 
@@ -75,6 +95,18 @@ else
     CURRENT_BRANCH=$(git branch --show-current)
 fi
 echo "  Current branch: $CURRENT_BRANCH"
+
+# Switch branch if requested
+if [ -n "$TARGET_BRANCH" ] && [ "$TARGET_BRANCH" != "$CURRENT_BRANCH" ]; then
+    echo "  🔀 Switching from $CURRENT_BRANCH to $TARGET_BRANCH..."
+    if [ -n "$SUDO_USER" ]; then
+        sudo -u "$SUDO_USER" git checkout "$TARGET_BRANCH"
+    else
+        git checkout "$TARGET_BRANCH"
+    fi
+    CURRENT_BRANCH="$TARGET_BRANCH"
+    echo "  ✓ Now on branch: $CURRENT_BRANCH"
+fi
 
 # Check if there are updates
 if git diff --quiet HEAD origin/$CURRENT_BRANCH; then

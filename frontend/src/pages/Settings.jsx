@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Shield, Cloud, Terminal, Save, Lock, User, CheckCircle, AlertCircle, Loader2, Globe, RotateCcw, Trash2 } from 'lucide-react';
+import { Settings as SettingsIcon, Shield, Cloud, Terminal, Save, Lock, User, CheckCircle, AlertCircle, Loader2, Globe, RotateCcw, Trash2, Download, GitBranch, RefreshCw } from 'lucide-react';
 import { API_ENDPOINTS, authFetch } from '../apiConfig';
 import ConfirmModal from '../components/ConfirmModal';
 import './Settings.css';
@@ -522,6 +522,15 @@ const Settings = () => {
                     <BackupRestore />
                 </div>
 
+                {/* System Update */}
+                <div className="settings-card glass-panel">
+                    <div className="card-header">
+                        <Download size={20} className="header-icon" />
+                        <h3>Software Update</h3>
+                    </div>
+                    <SystemUpdate />
+                </div>
+
                 {/* Session Management */}
                 <div className="settings-card glass-panel">
                     <div className="card-header">
@@ -852,6 +861,156 @@ const SessionManagement = () => {
                 }}
                 confirmText="Revoke"
                 danger={true}
+            />
+        </div>
+    );
+};
+
+// System Update Component
+const SystemUpdate = () => {
+    const [selectedBranch, setSelectedBranch] = useState('Dev');
+    const [status, setStatus] = useState(null);
+    const [checking, setChecking] = useState(false);
+    const [updating, setUpdating] = useState(false);
+    const [showUpdateModal, setShowUpdateModal] = useState(false);
+    const [message, setMessage] = useState({ type: '', text: '' });
+
+    const fetchStatus = async (branch = selectedBranch) => {
+        try {
+            setChecking(true);
+            setMessage({ type: '', text: '' });
+            const res = await authFetch(`${API_ENDPOINTS.UPDATE_STATUS}?branch=${branch}`);
+            if (res.ok) {
+                const data = await res.json();
+                setStatus(data);
+            } else {
+                setMessage({ type: 'error', text: 'Failed to fetch update status' });
+            }
+        } catch (err) {
+            console.error('Error fetching update status:', err);
+            setMessage({ type: 'error', text: 'Network error checking update status' });
+        } finally {
+            setChecking(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchStatus(selectedBranch);
+    }, [selectedBranch]);
+
+    const handleApplyUpdate = async () => {
+        try {
+            setUpdating(true);
+            setShowUpdateModal(false);
+            setMessage({ type: 'info', text: 'Initiating system update... The service will restart.' });
+
+            const res = await authFetch(API_ENDPOINTS.UPDATE_APPLY, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ branch: selectedBranch, force: false })
+            });
+
+            if (res.ok) {
+                setMessage({ type: 'success', text: 'Update process started! The web interface will refresh once complete.' });
+            } else {
+                setMessage({ type: 'error', text: 'Failed to trigger update process' });
+                setUpdating(false);
+            }
+        } catch (err) {
+            console.error('Error applying update:', err);
+            setMessage({ type: 'error', text: 'Network error triggering update' });
+            setUpdating(false);
+        }
+    };
+
+    return (
+        <div className="update-section">
+            {message.text && (
+                <div className={`alert ${message.type}`}>
+                    {message.type === 'success' ? <CheckCircle size={16} /> : message.type === 'error' ? <AlertCircle size={16} /> : <Loader2 size={16} className="spin" />}
+                    {message.text}
+                </div>
+            )}
+
+            <div className="update-branch-selector">
+                <label className="input-label">Target Branch</label>
+                <div className="branch-options">
+                    <button
+                        type="button"
+                        className={`branch-btn ${selectedBranch === 'main' ? 'active' : ''}`}
+                        onClick={() => setSelectedBranch('main')}
+                    >
+                        <GitBranch size={16} />
+                        Main (Stable)
+                    </button>
+                    <button
+                        type="button"
+                        className={`branch-btn ${selectedBranch === 'Dev' ? 'active' : ''}`}
+                        onClick={() => setSelectedBranch('Dev')}
+                    >
+                        <GitBranch size={16} />
+                        Dev (Development)
+                    </button>
+                </div>
+            </div>
+
+            {status && (
+                <div className="update-status-info">
+                    <div className="status-row">
+                        <span>Current Branch:</span>
+                        <strong>{status.current_branch}</strong>
+                    </div>
+                    <div className="status-row">
+                        <span>Installed Commit:</span>
+                        <code className="commit-hash">{status.current_commit}</code>
+                    </div>
+                    <div className="status-row">
+                        <span>Latest Commit on {selectedBranch}:</span>
+                        <code className="commit-hash">{status.latest_commit}</code>
+                    </div>
+                    <div className="status-row">
+                        <span>Status:</span>
+                        {status.update_available ? (
+                            <span className="badge badge-warning">{status.behind_count} commit(s) behind</span>
+                        ) : (
+                            <span className="badge badge-success">Up to date</span>
+                        )}
+                    </div>
+                    {status.last_checked && (
+                        <span className="hint">Last checked: {new Date(status.last_checked).toLocaleTimeString()}</span>
+                    )}
+                </div>
+            )}
+
+            <div className="update-actions">
+                <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => fetchStatus(selectedBranch)}
+                    disabled={checking || updating}
+                >
+                    <RefreshCw size={16} className={checking ? 'spin' : ''} />
+                    Check for Updates
+                </button>
+                <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={() => setShowUpdateModal(true)}
+                    disabled={checking || updating || (status && !status.update_available)}
+                >
+                    {updating ? <Loader2 size={16} className="spin" /> : <Download size={16} />}
+                    Update Software
+                </button>
+            </div>
+
+            <ConfirmModal
+                isOpen={showUpdateModal}
+                title={`Update SoftRouter (${selectedBranch} branch)`}
+                message={`Are you sure you want to update SoftRouter using branch "${selectedBranch}"? The system will back up configs, pull the latest code, rebuild the application, and restart services.`}
+                onConfirm={handleApplyUpdate}
+                onCancel={() => setShowUpdateModal(false)}
+                confirmText="Update Now"
+                danger={false}
             />
         </div>
     );

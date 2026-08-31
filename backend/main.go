@@ -946,6 +946,10 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]bool{"success": true})
 	})))
 
+	// System Update
+	mux.HandleFunc("GET /api/system/update/status", authMiddleware(getUpdateStatus))
+	mux.HandleFunc("POST /api/system/update/apply", authMiddleware(csrfMiddleware(applyUpdate)))
+
 	// Session Management
 	mux.HandleFunc("GET /api/sessions", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		username := getUsernameFromToken(r)

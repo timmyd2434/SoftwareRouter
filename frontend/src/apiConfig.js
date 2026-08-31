@@ -120,6 +120,8 @@ export const API_ENDPOINTS = {
     FIREWALL_TOGGLE: `${API_BASE_URL}/api/firewall/toggle`,
     FIREWALL_CLEANUP: `${API_BASE_URL}/api/firewall/cleanup`,
     BACKUP_DELETE: `${API_BASE_URL}/api/backup/delete`,
+    UPDATE_STATUS: `${API_BASE_URL}/api/system/update/status`,
+    UPDATE_APPLY: `${API_BASE_URL}/api/system/update/apply`,
     SERVICES: `${API_BASE_URL}/api/services`,
     SERVICES_CONTROL: `${API_BASE_URL}/api/services/control`,
     WOL_WAKE: `${API_BASE_URL}/api/wol/wake`,
