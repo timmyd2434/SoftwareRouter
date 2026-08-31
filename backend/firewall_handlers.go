@@ -378,6 +378,100 @@ func deleteFirewallRule(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+type CleanupDetail struct {
+	Reason string `json:"reason"` // "stale" or "duplicate"
+	Table  string `json:"table"`
+	Chain  string `json:"chain"`
+	Handle int    `json:"handle"`
+}
+
+// extractReferencedInterfaces extracts all interface names referenced in rule expressions
+func extractReferencedInterfaces(exprList []interface{}) []string {
+	var ifaces []string
+	seen := make(map[string]bool)
+
+	addIfaces := func(names ...string) {
+		for _, name := range names {
+			name = strings.Trim(name, `"' `)
+			if name != "" && !seen[name] {
+				seen[name] = true
+				ifaces = append(ifaces, name)
+			}
+		}
+	}
+
+	// Structural AST traversal
+	for _, item := range exprList {
+		exprMap, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		if match, ok := exprMap["match"].(map[string]interface{}); ok {
+			var isIfaceMatch bool
+			if leftMap, ok := match["left"].(map[string]interface{}); ok {
+				if metaMap, ok := leftMap["meta"].(map[string]interface{}); ok {
+					if key, ok := metaMap["key"].(string); ok {
+						if key == "iifname" || key == "oifname" || key == "iif" || key == "oif" {
+							isIfaceMatch = true
+						}
+					}
+				}
+			}
+
+			if isIfaceMatch {
+				switch rightVal := match["right"].(type) {
+				case string:
+					addIfaces(rightVal)
+				case []interface{}:
+					for _, elem := range rightVal {
+						if s, ok := elem.(string); ok {
+							addIfaces(s)
+						}
+					}
+				case map[string]interface{}:
+					if setArr, ok := rightVal["set"].([]interface{}); ok {
+						for _, elem := range setArr {
+							if s, ok := elem.(string); ok {
+								addIfaces(s)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Fallback regex scanning over JSON string and raw text
+	rawBytes, _ := json.Marshal(exprList)
+	rawStr := string(rawBytes)
+
+	// JSON pattern: "key":"iifname" ... "right":"br1"
+	reJSON1 := regexp.MustCompile(`"(?:iifname|oifname|iif|oif)"[^}]*?"right"\s*:\s*"([^"]+)"`)
+	for _, m := range reJSON1.FindAllStringSubmatch(rawStr, -1) {
+		if len(m) > 1 {
+			addIfaces(m[1])
+		}
+	}
+
+	reJSON2 := regexp.MustCompile(`"key"\s*:\s*"(?:iifname|oifname|iif|oif)"[^}]*?"right"\s*:\s*"([^"]+)"`)
+	for _, m := range reJSON2.FindAllStringSubmatch(rawStr, -1) {
+		if len(m) > 1 {
+			addIfaces(m[1])
+		}
+	}
+
+	// CLI pattern: iifname "br1" or oifname "br1"
+	reCLI := regexp.MustCompile(`(?:iifname|oifname|iif|oif)\s+"?([a-zA-Z0-9_.-]+)"?`)
+	for _, m := range reCLI.FindAllStringSubmatch(rawStr, -1) {
+		if len(m) > 1 {
+			addIfaces(m[1])
+		}
+	}
+
+	return ifaces
+}
+
 func cleanupFirewallRules(w http.ResponseWriter, r *http.Request) {
 	// 1. Get live ruleset via nft -j list ruleset
 	out, err := runPrivilegedCombinedOutput("nft", "-j", "list", "ruleset")
@@ -407,7 +501,7 @@ func cleanupFirewallRules(w http.ResponseWriter, r *http.Request) {
 
 	duplicatesRemoved := 0
 	staleRemoved := 0
-	var details []string
+	var details []CleanupDetail
 
 	// Map to track duplicates: key is fmt.Sprintf("%s/%s/%s/%s", family, table, chain, normalizedExpr)
 	// Value is the lowest handle we've seen.
@@ -420,6 +514,9 @@ func cleanupFirewallRules(w http.ResponseWriter, r *http.Request) {
 		}
 
 		family, _ := ruleInfo["family"].(string)
+		if family == "" {
+			family = "inet"
+		}
 		table, _ := ruleInfo["table"].(string)
 		chain, _ := ruleInfo["chain"].(string)
 		handle, _ := ruleInfo["handle"].(float64)
@@ -434,30 +531,27 @@ func cleanupFirewallRules(w http.ResponseWriter, r *http.Request) {
 		rawExpr := strings.Join(rawParts, " ")
 		normalized := normaliseRule(rawExpr)
 
-		// 6. For stale rules: check if rule expressions contain iifname "X" or oifname "X" where X doesn't exist
+		// 4. Check for stale interface references
+		referencedIfaces := extractReferencedInterfaces(exprList)
 		isStale := false
-		
-		// Regex to find iifname "X" or oifname "X"
-		iifnameRe := regexp.MustCompile(`(?:iifname|oifname)\s+"([^"]+)"`)
-		matches := iifnameRe.FindAllStringSubmatch(rawExpr, -1)
-		
-		for _, match := range matches {
-			if len(match) > 1 {
-				ifaceName := match[1]
-				if !activeIfaces[ifaceName] {
-					isStale = true
-					break
-				}
+		for _, ifaceName := range referencedIfaces {
+			if !activeIfaces[ifaceName] {
+				isStale = true
+				break
 			}
 		}
 
 		if isStale {
-			// Mark for deletion
 			if _, err := runPrivilegedCombinedOutput("nft", "delete", "rule", family, table, chain, "handle", fmt.Sprintf("%.0f", handle)); err == nil {
 				staleRemoved++
-				details = append(details, fmt.Sprintf("Stale: deleted handle %.0f in %s/%s/%s", handle, family, table, chain))
+				details = append(details, CleanupDetail{
+					Reason: "stale",
+					Table:  table,
+					Chain:  chain,
+					Handle: int(handle),
+				})
 			} else {
-				log.Printf("Failed to delete stale rule: handle %.0f", handle)
+				log.Printf("Failed to delete stale rule: handle %.0f in %s/%s/%s", handle, family, table, chain)
 			}
 			continue
 		}
@@ -465,19 +559,28 @@ func cleanupFirewallRules(w http.ResponseWriter, r *http.Request) {
 		// 5. For exact duplicates: keep the first (lowest handle), mark remaining handles for deletion
 		ruleKey := fmt.Sprintf("%s/%s/%s/%s", family, table, chain, normalized)
 		if existingHandle, exists := seenRules[ruleKey]; exists {
-			// It's a duplicate. We keep the existing (since we process in order of handles typically, or we should just keep the first we see)
 			if handle < existingHandle {
-				// The new one is lower handle, so delete the existing one and keep the new one.
+				// Delete previous higher handle
 				if _, err := runPrivilegedCombinedOutput("nft", "delete", "rule", family, table, chain, "handle", fmt.Sprintf("%.0f", existingHandle)); err == nil {
 					duplicatesRemoved++
-					details = append(details, fmt.Sprintf("Duplicate: deleted handle %.0f in %s/%s/%s", existingHandle, family, table, chain))
+					details = append(details, CleanupDetail{
+						Reason: "duplicate",
+						Table:  table,
+						Chain:  chain,
+						Handle: int(existingHandle),
+					})
 				}
 				seenRules[ruleKey] = handle
 			} else {
-				// Delete the current handle
+				// Delete current higher handle
 				if _, err := runPrivilegedCombinedOutput("nft", "delete", "rule", family, table, chain, "handle", fmt.Sprintf("%.0f", handle)); err == nil {
 					duplicatesRemoved++
-					details = append(details, fmt.Sprintf("Duplicate: deleted handle %.0f in %s/%s/%s", handle, family, table, chain))
+					details = append(details, CleanupDetail{
+						Reason: "duplicate",
+						Table:  table,
+						Chain:  chain,
+						Handle: int(handle),
+					})
 				}
 			}
 		} else {
