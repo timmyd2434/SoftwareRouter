@@ -51,6 +51,7 @@ var allowedCommands = map[string]bool{
 	"ss":              true, // Socket statistics (active connections)
 	"netstat":         true, // Network statistics (fallback)
 	"dnsmasq":         true, // DHCP/DNS server (version check)
+	"./update.sh":     true, // System update script
 }
 
 // commandExecutionLog stores recent command executions for debugging
