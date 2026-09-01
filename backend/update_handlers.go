@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -27,7 +28,7 @@ func getUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	
 	if branch == "" {
 		// get current branch
-		cmd := exec.Command("git", "-C", repoDir, "branch", "--show-current")
+		cmd := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "branch", "--show-current")
 		out, err := cmd.Output()
 		if err == nil {
 			branch = strings.TrimSpace(string(out))
@@ -41,30 +42,29 @@ func getUpdateStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch latest
-	fetchCmd := exec.Command("git", "-C", repoDir, "fetch", "origin")
+	// Fetch latest (log error if network fails, but do not fail status endpoint)
+	fetchCmd := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "fetch", "origin")
 	if err := fetchCmd.Run(); err != nil {
-		respondSystemError(w, ErrGenericInternalError, "Failed to fetch updates", err)
-		return
+		log.Printf("[WARN] Failed to fetch git updates from origin: %v", err)
 	}
 
 	// Current branch
-	currBranchCmd := exec.Command("git", "-C", repoDir, "branch", "--show-current")
+	currBranchCmd := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "branch", "--show-current")
 	currBranchOut, _ := currBranchCmd.Output()
 	currentBranch := strings.TrimSpace(string(currBranchOut))
 
 	// Current commit
-	currCommitCmd := exec.Command("git", "-C", repoDir, "rev-parse", "--short", "HEAD")
+	currCommitCmd := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "rev-parse", "--short", "HEAD")
 	currCommitOut, _ := currCommitCmd.Output()
 	currentCommit := strings.TrimSpace(string(currCommitOut))
 
 	// Latest commit
-	latestCommitCmd := exec.Command("git", "-C", repoDir, "rev-parse", "--short", "origin/"+branch)
+	latestCommitCmd := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "rev-parse", "--short", "origin/"+branch)
 	latestCommitOut, _ := latestCommitCmd.Output()
 	latestCommit := strings.TrimSpace(string(latestCommitOut))
 
 	// Behind count
-	behindCmd := exec.Command("git", "-C", repoDir, "rev-list", "--count", "HEAD..origin/"+branch)
+	behindCmd := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "rev-list", "--count", "HEAD..origin/"+branch)
 	behindOut, _ := behindCmd.Output()
 	behindCount, _ := strconv.Atoi(strings.TrimSpace(string(behindOut)))
 
@@ -106,13 +106,18 @@ func applyUpdate(w http.ResponseWriter, r *http.Request) {
 	logAuditEvent(getUsernameFromToken(r), "system.update", "system", fmt.Sprintf("{\"branch\":\"%s\",\"force\":%v}", req.Branch, req.Force), getClientIP(r), true)
 
 	go func() {
-		cmd := exec.Command("sudo", append([]string{"/home/tim/SoftwareRouter/SoftwareRouter/update.sh"}, args...)...)
+		var cmd *exec.Cmd
+		if os.Getuid() == 0 {
+			cmd = exec.Command("/home/tim/SoftwareRouter/SoftwareRouter/update.sh", args...)
+		} else {
+			cmd = exec.Command("sudo", append([]string{"/home/tim/SoftwareRouter/SoftwareRouter/update.sh"}, args...)...)
+		}
 		cmd.Dir = repoDir
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			log.Printf("[ERROR] Update failed: %v\nOutput: %s", err, string(output))
 		} else {
-			log.Printf("[INFO] Update completed successfully")
+			log.Printf("[INFO] Update completed successfully: %s", string(output))
 		}
 	}()
 
