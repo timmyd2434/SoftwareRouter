@@ -544,12 +544,17 @@ const Settings = () => {
     );
 };
 
-// Backup & Restore Component
 const BackupRestore = () => {
     const [backups, setBackups] = useState([]);
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState({ type: '', text: '' });
+    
+    // Modal & Password states
+    const [showCreateModal, setShowCreateModal] = useState(false);
+    const [createPassword, setCreatePassword] = useState('');
+    
     const [showRestoreModal, setShowRestoreModal] = useState(false);
+    const [restorePassword, setRestorePassword] = useState('');
     const [selectedFile, setSelectedFile] = useState(null);
     const [selectedLocalBackup, setSelectedLocalBackup] = useState(null);
 
@@ -569,37 +574,51 @@ const BackupRestore = () => {
         fetchBackups();
     }, []);
 
-    const handleCreateBackup = async () => {
+    const handleCreateBackup = async (e) => {
+        if (e) e.preventDefault();
+        if (!createPassword) {
+            setMessage({ type: 'error', text: 'Encryption password is required to create a backup' });
+            return;
+        }
+
         try {
             setLoading(true);
             setMessage({ type: '', text: '' });
 
-            const res = await authFetch('/api/backup/create');
+            const res = await authFetch(`/api/backup/create?password=${encodeURIComponent(createPassword)}`);
             if (res.ok) {
                 const blob = await res.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `softrouter-backup-${new Date().toISOString().split('T')[0]}.json`;
+                a.download = `softrouter-backup-${new Date().toISOString().split('T')[0]}.enc`;
                 document.body.appendChild(a);
                 a.click();
                 window.URL.revokeObjectURL(url);
                 document.body.removeChild(a);
 
-                setMessage({ type: 'success', text: 'Backup created and downloaded!' });
+                setMessage({ type: 'success', text: 'Encrypted backup created and downloaded!' });
+                setShowCreateModal(false);
+                setCreatePassword('');
                 fetchBackups();
             } else {
-                setMessage({ type: 'error', text: 'Failed to create backup' });
+                const text = await res.text();
+                setMessage({ type: 'error', text: text || 'Failed to create backup' });
             }
         } catch {
-            setMessage({ type: 'error', text: 'Network error' });
+            setMessage({ type: 'error', text: 'Network error creating backup' });
         } finally {
             setLoading(false);
         }
     };
 
-    const handleRestoreBackup = async () => {
+    const handleRestoreBackup = async (e) => {
+        if (e) e.preventDefault();
         if (!selectedFile && !selectedLocalBackup) return;
+        if (!restorePassword) {
+            setMessage({ type: 'error', text: 'Decryption password is required to restore backup' });
+            return;
+        }
 
         try {
             setLoading(true);
@@ -609,29 +628,35 @@ const BackupRestore = () => {
             if (selectedLocalBackup) {
                 res = await authFetch('/api/backup/restore-local', {
                     method: 'POST',
-                    body: JSON.stringify({ filename: selectedLocalBackup.filename })
+                    body: JSON.stringify({
+                        filename: selectedLocalBackup.filename,
+                        password: restorePassword
+                    })
                 });
             } else {
                 const formData = new FormData();
                 formData.append('file', selectedFile);
+                formData.append('password', restorePassword);
 
                 res = await authFetch('/api/backup/restore', {
                     method: 'POST',
                     body: formData,
-                    headers: {} // Let browser set content-type for FormData
+                    headers: {} // Browser sets multipart boundary automatically
                 });
             }
 
             if (res.ok) {
-                setMessage({ type: 'success', text: 'Backup restored successfully! Please review settings.' });
+                setMessage({ type: 'success', text: 'Backup restored successfully! System config reloaded.' });
                 setShowRestoreModal(false);
                 setSelectedFile(null);
                 setSelectedLocalBackup(null);
+                setRestorePassword('');
             } else {
-                setMessage({ type: 'error', text: 'Failed to restore backup' });
+                const text = await res.text();
+                setMessage({ type: 'error', text: text || 'Failed to restore backup' });
             }
         } catch {
-            setMessage({ type: 'error', text: 'Network error' });
+            setMessage({ type: 'error', text: 'Network error restoring backup' });
         } finally {
             setLoading(false);
         }
@@ -665,7 +690,7 @@ const BackupRestore = () => {
             )}
 
             <div className="backup-actions">
-                <button onClick={handleCreateBackup} className="btn-primary" disabled={loading}>
+                <button onClick={() => { setCreatePassword(''); setShowCreateModal(true); }} className="btn-primary" disabled={loading}>
                     {loading ? <Loader2 size={18} className="spin" /> : <Save size={18} />}
                     Create Backup
                 </button>
@@ -673,10 +698,14 @@ const BackupRestore = () => {
                 <label className="btn-secondary file-upload-btn">
                     <input
                         type="file"
-                        accept=".json"
+                        accept=".enc,.json"
                         onChange={(e) => {
-                            setSelectedFile(e.target.files[0]);
-                            setShowRestoreModal(true);
+                            if (e.target.files[0]) {
+                                setSelectedFile(e.target.files[0]);
+                                setSelectedLocalBackup(null);
+                                setRestorePassword('');
+                                setShowRestoreModal(true);
+                            }
                         }}
                         style={{ display: 'none' }}
                     />
@@ -708,6 +737,8 @@ const BackupRestore = () => {
                                             className="btn-action restore-btn"
                                             onClick={() => {
                                                 setSelectedLocalBackup(backup);
+                                                setSelectedFile(null);
+                                                setRestorePassword('');
                                                 setShowRestoreModal(true);
                                             }}
                                             title="Restore this backup"
@@ -730,19 +761,85 @@ const BackupRestore = () => {
                 </div>
             )}
 
-            <ConfirmModal
-                isOpen={showRestoreModal}
-                title="Restore Backup"
-                message={`Are you sure you want to restore from ${selectedLocalBackup ? selectedLocalBackup.filename : selectedFile?.name}? This will create a pre-restore backup automatically.`}
-                onConfirm={handleRestoreBackup}
-                onCancel={() => {
-                    setShowRestoreModal(false);
-                    setSelectedFile(null);
-                    setSelectedLocalBackup(null);
-                }}
-                confirmText="Restore"
-                danger={true}
-            />
+            {/* Create Backup Modal */}
+            {showCreateModal && (
+                <div className="modal-overlay">
+                    <div className="modal-content" style={{ width: '420px' }}>
+                        <div className="modal-header">
+                            <h3>Create Encrypted Backup</h3>
+                            <button className="close-btn" onClick={() => setShowCreateModal(false)}>✕</button>
+                        </div>
+                        <form onSubmit={handleCreateBackup} className="modal-body">
+                            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                Enter a password to encrypt this system backup (AES-256-GCM). You will need this password to restore the backup.
+                            </p>
+                            <div className="form-group">
+                                <label>Encryption Password</label>
+                                <input
+                                    type="password"
+                                    className="form-input"
+                                    placeholder="Enter password"
+                                    value={createPassword}
+                                    onChange={(e) => setCreatePassword(e.target.value)}
+                                    required
+                                    autoFocus
+                                />
+                            </div>
+                            <div className="modal-footer" style={{ marginTop: '1rem' }}>
+                                <button type="button" className="cancel-btn" onClick={() => setShowCreateModal(false)}>Cancel</button>
+                                <button type="submit" className="btn-primary" disabled={loading || !createPassword}>
+                                    {loading ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
+                                    Encrypt & Download
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Restore Backup Modal */}
+            {showRestoreModal && (
+                <div className="modal-overlay">
+                    <div className="modal-content" style={{ width: '420px' }}>
+                        <div className="modal-header">
+                            <h3>Restore Backup</h3>
+                            <button className="close-btn" onClick={() => {
+                                setShowRestoreModal(false);
+                                setSelectedFile(null);
+                                setSelectedLocalBackup(null);
+                            }}>✕</button>
+                        </div>
+                        <form onSubmit={handleRestoreBackup} className="modal-body">
+                            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                Restoring from: <strong>{selectedLocalBackup ? selectedLocalBackup.filename : selectedFile?.name}</strong>
+                            </p>
+                            <div className="form-group">
+                                <label>Decryption Password</label>
+                                <input
+                                    type="password"
+                                    className="form-input"
+                                    placeholder="Enter backup password"
+                                    value={restorePassword}
+                                    onChange={(e) => setRestorePassword(e.target.value)}
+                                    required
+                                    autoFocus
+                                />
+                            </div>
+                            <div className="modal-footer" style={{ marginTop: '1rem' }}>
+                                <button type="button" className="cancel-btn" onClick={() => {
+                                    setShowRestoreModal(false);
+                                    setSelectedFile(null);
+                                    setSelectedLocalBackup(null);
+                                }}>Cancel</button>
+                                <button type="submit" className="btn-primary" style={{ background: 'var(--warning, #d97706)' }} disabled={loading || !restorePassword}>
+                                    {loading ? <Loader2 size={16} className="spin" /> : <RotateCcw size={16} />}
+                                    Confirm Restore
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

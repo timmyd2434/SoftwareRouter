@@ -88,11 +88,11 @@ echo ""
 echo "🔄 Pulling latest changes from Git..."
 # Run git commands as the calling user (not root) to support SSH key passphrases
 if [ -n "$SUDO_USER" ]; then
-    sudo -u "$SUDO_USER" git fetch origin
-    CURRENT_BRANCH=$(sudo -u "$SUDO_USER" git branch --show-current)
+    sudo -u "$SUDO_USER" git -c safe.directory=* fetch origin
+    CURRENT_BRANCH=$(sudo -u "$SUDO_USER" git -c safe.directory=* branch --show-current)
 else
-    git fetch origin
-    CURRENT_BRANCH=$(git branch --show-current)
+    git -c safe.directory=* fetch origin
+    CURRENT_BRANCH=$(git -c safe.directory=* branch --show-current)
 fi
 echo "  Current branch: $CURRENT_BRANCH"
 
@@ -100,16 +100,16 @@ echo "  Current branch: $CURRENT_BRANCH"
 if [ -n "$TARGET_BRANCH" ] && [ "$TARGET_BRANCH" != "$CURRENT_BRANCH" ]; then
     echo "  🔀 Switching from $CURRENT_BRANCH to $TARGET_BRANCH..."
     if [ -n "$SUDO_USER" ]; then
-        sudo -u "$SUDO_USER" git checkout "$TARGET_BRANCH"
+        sudo -u "$SUDO_USER" git -c safe.directory=* checkout "$TARGET_BRANCH"
     else
-        git checkout "$TARGET_BRANCH"
+        git -c safe.directory=* checkout "$TARGET_BRANCH"
     fi
     CURRENT_BRANCH="$TARGET_BRANCH"
     echo "  ✓ Now on branch: $CURRENT_BRANCH"
 fi
 
 # Check if there are updates
-if git diff --quiet HEAD origin/$CURRENT_BRANCH; then
+if git -c safe.directory=* diff --quiet HEAD origin/$CURRENT_BRANCH; then
     if [ "$FORCE_UPDATE" = false ]; then
         echo "  ℹ️  Already up to date!"
         echo ""
@@ -124,9 +124,9 @@ if git diff --quiet HEAD origin/$CURRENT_BRANCH; then
 fi
 
 if [ -n "$SUDO_USER" ]; then
-    sudo -u "$SUDO_USER" git pull origin $CURRENT_BRANCH
+    sudo -u "$SUDO_USER" git -c safe.directory=* pull origin $CURRENT_BRANCH
 else
-    git pull origin $CURRENT_BRANCH
+    git -c safe.directory=* pull origin $CURRENT_BRANCH
 fi
 echo "  ✓ Updated to latest version"
 echo ""
