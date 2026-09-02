@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -27,24 +28,14 @@ func validatePortForwardingRuleFields(rule PortForwardingRule) error {
 		return fmt.Errorf("internal IP cannot be loopback, unspecified, multicast, or link-local address")
 	}
 
-	// Verify IP is on LAN subnet
-	configLock.RLock()
-	subnetStr := config.ProtectedSubnet
-	configLock.RUnlock()
-	if subnetStr != "" {
-		_, subnet, err := net.ParseCIDR(subnetStr)
-		if err == nil && !subnet.Contains(ip) {
-			return fmt.Errorf("internal IP must be on the LAN subnet (%s)", subnetStr)
-		}
-	}
-
-	// 3. Description Validation (strict whitelist to prevent injection)
+	// 3. Description Validation (sanitize dangerous shell metacharacters)
 	if len(rule.Description) > 100 {
 		return fmt.Errorf("description too long (max 100 characters)")
 	}
-	for _, char := range rule.Description {
-		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == ' ' || char == '_' || char == '-') {
-			return fmt.Errorf("description contains invalid characters (only alphanumeric, spaces, underscores, and hyphens allowed)")
+	dangerousChars := []string{";", "|", "&", "$", "`", "\n", "\r", "<", ">", "\""}
+	for _, char := range dangerousChars {
+		if strings.Contains(rule.Description, char) {
+			return fmt.Errorf("description contains invalid characters")
 		}
 	}
 
