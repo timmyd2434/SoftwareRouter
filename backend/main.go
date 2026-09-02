@@ -967,24 +967,27 @@ func main() {
 	}))
 
 	mux.HandleFunc("DELETE /api/sessions", authMiddleware(csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		tokenToRevoke := r.URL.Query().Get("token")
+		sessionID := r.URL.Query().Get("id")
+		if sessionID == "" {
+			sessionID = r.URL.Query().Get("token")
+		}
 		username := getUsernameFromToken(r)
 
-		if tokenToRevoke == "" {
-			http.Error(w, "Token parameter required", http.StatusBadRequest)
+		if sessionID == "" {
+			http.Error(w, "Session ID parameter required", http.StatusBadRequest)
 			return
 		}
 
-		session, exists := sessionStore.GetSession(tokenToRevoke)
-		if !exists || session.Username != username {
-			http.Error(w, "Cannot revoke this session", http.StatusForbidden)
+		deleted := sessionStore.DeleteSessionByID(sessionID, username)
+		if !deleted {
+			http.Error(w, "Cannot revoke this session or session not found", http.StatusForbidden)
 			return
 		}
 
-		sessionStore.DeleteSession(tokenToRevoke)
-		logAuditEvent(username, "session.revoke", "token",
-			fmt.Sprintf("{\"token\":\"%s\"}", tokenToRevoke), getClientIP(r), true)
+		logAuditEvent(username, "session.revoke", "session",
+			fmt.Sprintf("{\"id\":\"%s\"}", sessionID), getClientIP(r), true)
 
+		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 	})))
 
