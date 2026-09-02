@@ -84,12 +84,21 @@ fi
 
 echo ""
 
+# Ensure .git object database permissions allow fetching/unpacking
+if [ -d ".git" ]; then
+    chmod -R u+rw,g+rw .git 2>/dev/null || true
+    if [ -n "$SUDO_USER" ]; then
+        chown -R "$SUDO_USER" .git 2>/dev/null || true
+    fi
+fi
+
 # Pull latest changes from git
 echo "🔄 Pulling latest changes from Git..."
-# Run git commands as the calling user (not root) to support SSH key passphrases
 if [ -n "$SUDO_USER" ]; then
-    sudo -u "$SUDO_USER" git -c safe.directory=* fetch origin
-    CURRENT_BRANCH=$(sudo -u "$SUDO_USER" git -c safe.directory=* branch --show-current)
+    if ! sudo -u "$SUDO_USER" git -c safe.directory=* fetch origin 2>/dev/null; then
+        git -c safe.directory=* fetch origin
+    fi
+    CURRENT_BRANCH=$(sudo -u "$SUDO_USER" git -c safe.directory=* branch --show-current 2>/dev/null || git -c safe.directory=* branch --show-current)
 else
     git -c safe.directory=* fetch origin
     CURRENT_BRANCH=$(git -c safe.directory=* branch --show-current)
@@ -100,7 +109,9 @@ echo "  Current branch: $CURRENT_BRANCH"
 if [ -n "$TARGET_BRANCH" ] && [ "$TARGET_BRANCH" != "$CURRENT_BRANCH" ]; then
     echo "  🔀 Switching from $CURRENT_BRANCH to $TARGET_BRANCH..."
     if [ -n "$SUDO_USER" ]; then
-        sudo -u "$SUDO_USER" git -c safe.directory=* checkout "$TARGET_BRANCH"
+        if ! sudo -u "$SUDO_USER" git -c safe.directory=* checkout "$TARGET_BRANCH" 2>/dev/null; then
+            git -c safe.directory=* checkout "$TARGET_BRANCH"
+        fi
     else
         git -c safe.directory=* checkout "$TARGET_BRANCH"
     fi
@@ -124,7 +135,9 @@ if git -c safe.directory=* diff --quiet HEAD origin/$CURRENT_BRANCH; then
 fi
 
 if [ -n "$SUDO_USER" ]; then
-    sudo -u "$SUDO_USER" git -c safe.directory=* pull origin $CURRENT_BRANCH
+    if ! sudo -u "$SUDO_USER" git -c safe.directory=* pull origin $CURRENT_BRANCH 2>/dev/null; then
+        git -c safe.directory=* pull origin $CURRENT_BRANCH
+    fi
 else
     git -c safe.directory=* pull origin $CURRENT_BRANCH
 fi
