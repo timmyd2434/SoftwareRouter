@@ -131,21 +131,26 @@ func initWireGuard() {
 		fmt.Println("Initializing WireGuard Server Keys...")
 		privKey, err := runPrivilegedOutput("wg", "genkey")
 		if err != nil {
-			log.Fatalf("CRITICAL: WireGuard key generation failed: %v", err)
+			log.Printf("[WARN] WireGuard key generation failed (is wireguard-tools installed?): %v", err)
+			return
 		}
 		if len(strings.TrimSpace(string(privKey))) == 0 {
-			log.Fatalf("CRITICAL: WireGuard generated empty private key")
+			log.Printf("[WARN] WireGuard generated empty private key")
+			return
 		}
 		if err := os.WriteFile(privPath, privKey, 0600); err != nil {
-			log.Fatalf("CRITICAL: Failed to write WireGuard private key: %v", err)
+			log.Printf("[ERROR] Failed to write WireGuard private key: %v", err)
+			return
 		}
 
 		pubKey, err := deriveWireGuardPublicKey(privKey)
 		if err != nil {
-			log.Fatalf("CRITICAL: WireGuard public key derivation failed: %v", err)
+			log.Printf("[ERROR] WireGuard public key derivation failed: %v", err)
+			return
 		}
 		if err := os.WriteFile(pubPath, pubKey, 0600); err != nil {
-			log.Fatalf("CRITICAL: Failed to write WireGuard public key: %v", err)
+			log.Printf("[ERROR] Failed to write WireGuard public key: %v", err)
+			return
 		}
 	}
 
@@ -154,12 +159,14 @@ func initWireGuard() {
 		// #nosec G304 G703: path is validated or constructed from safe internal sources
 		privData, err := os.ReadFile(privPath)
 		if err != nil {
-			log.Fatalf("CRITICAL: Failed to read WireGuard private key for config: %v", err)
+			log.Printf("[ERROR] Failed to read WireGuard private key for config: %v", err)
+			return
 		}
 		baseConf := fmt.Sprintf("[Interface]\nPrivateKey = %s\nAddress = 10.8.0.1/24\nListenPort = 51820\nPostUp = nft add table inet wg-filter; nft add chain inet wg-filter postrouting { type nat hook postrouting priority 100; policy accept; }; nft add rule inet wg-filter postrouting oifname \"*\" masquerade\nPostDown = nft delete table inet wg-filter\n", strings.TrimSpace(string(privData)))
 		// #nosec G304 G703: path is validated or constructed from safe internal sources
 		if err := os.WriteFile(confPath, []byte(baseConf), 0600); err != nil {
-			log.Fatalf("CRITICAL: Failed to write WireGuard config: %v", err)
+			log.Printf("[ERROR] Failed to write WireGuard config: %v", err)
+			return
 		}
 	}
 }
