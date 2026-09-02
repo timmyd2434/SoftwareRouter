@@ -472,8 +472,14 @@ func getSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func updateSettings(w http.ResponseWriter, r *http.Request) {
-	var newConfig Config
-	if err := json.NewDecoder(r.Body).Decode(&newConfig); err != nil {
+	var req struct {
+		AdGuard         *AdGuardConfig    `json:"adguard"`
+		ProtectedSubnet *string           `json:"protected_subnet"`
+		WebAccess       *WebAccessConfig  `json:"web_access"`
+		DNSPrivacy      *DNSPrivacyConfig `json:"dns_privacy"`
+		AdBlocker       *string           `json:"ad_blocker"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -481,23 +487,35 @@ func updateSettings(w http.ResponseWriter, r *http.Request) {
 	configLock.Lock()
 	defer configLock.Unlock()
 
-	// Don't update password if it's the masked value
-	if newConfig.AdGuard.Password == maskPassword(config.AdGuard.Password) {
-		newConfig.AdGuard.Password = config.AdGuard.Password
+	// Selectively merge updated fields into the existing global config
+	if req.AdGuard != nil {
+		if req.AdGuard.Password == maskPassword(config.AdGuard.Password) {
+			req.AdGuard.Password = config.AdGuard.Password
+		}
+		config.AdGuard = *req.AdGuard
+	}
+	if req.ProtectedSubnet != nil {
+		config.ProtectedSubnet = *req.ProtectedSubnet
+	}
+	if req.WebAccess != nil {
+		config.WebAccess = *req.WebAccess
+	}
+	if req.DNSPrivacy != nil {
+		config.DNSPrivacy = *req.DNSPrivacy
+	}
+	if req.AdBlocker != nil {
+		config.AdBlocker = *req.AdBlocker
 	}
 
-	// Validate before saving
-	if err := ValidateConfig(newConfig); err != nil {
+	// Validate merged config before saving
+	if err := ValidateConfig(config); err != nil {
 		logAuditEvent(getUsernameFromToken(r), "settings.update", "config",
 			fmt.Sprintf("{\"error\":\"validation failed: %s\"}", err.Error()), getClientIP(r), false)
 		http.Error(w, fmt.Sprintf("Validation failed: %v", err), http.StatusBadRequest)
 		return
 	}
 
-	// Update config
-	config = newConfig
-
-	// Save to file
+	// Save merged config to file
 	if err := saveConfigLocked(); err != nil {
 		logAuditEvent(getUsernameFromToken(r), "settings.update", "config",
 			fmt.Sprintf("{\"error\":\"%s\"}", err.Error()), getClientIP(r), false)

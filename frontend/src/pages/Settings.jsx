@@ -43,7 +43,12 @@ const Settings = () => {
             const res = await authFetch(API_ENDPOINTS.CONFIG);
             if (res.ok) {
                 const data = await res.json();
-                setConfig(data);
+                setConfig({
+                    ...data,
+                    web_access: data.web_access || { allow_wan: false, wan_port_http: 980, wan_port_https: 9443 },
+                    dns_privacy: data.dns_privacy || { enabled: false, provider: 'cloudflare', mode: 'opportunistic' },
+                    adguard: data.adguard || { url: '', username: '', password: '' }
+                });
             }
         } catch (err) {
             console.error('Failed to fetch config', err);
@@ -58,7 +63,11 @@ const Settings = () => {
             if (res.ok) {
                 const data = await res.json();
                 if (data.adguard) {
-                    setAdguardSettings(data.adguard);
+                    setAdguardSettings({
+                        url: data.adguard.url || '',
+                        username: data.adguard.username || '',
+                        password: data.adguard.password || ''
+                    });
                 }
             }
         } catch (err) {

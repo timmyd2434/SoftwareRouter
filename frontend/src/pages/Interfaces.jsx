@@ -1133,7 +1133,7 @@ const Interfaces = () => {
                                         <input
                                             type="text"
                                             className="form-input"
-                                            value={dhcpForm.dnsServers.join(', ')}
+                                            value={(dhcpForm.dnsServers || []).join(', ')}
                                             onChange={e => setDhcpForm({ ...dhcpForm, dnsServers: e.target.value.split(',').map(s => s.trim()).filter(s => s) })}
                                             placeholder="e.g., 1.1.1.1, 8.8.8.8"
                                         />
@@ -1197,7 +1197,7 @@ const Interfaces = () => {
                                             <input
                                                 type="text"
                                                 className="form-input"
-                                                value={dhcpForm.dnsServersIPv6.join(', ')}
+                                                value={(dhcpForm.dnsServersIPv6 || []).join(', ')}
                                                 onChange={e => setDhcpForm({ ...dhcpForm, dnsServersIPv6: e.target.value.split(',').map(s => s.trim()).filter(s => s) })}
                                                 placeholder="e.g., 2001:4860:4860::8888"
                                             />
