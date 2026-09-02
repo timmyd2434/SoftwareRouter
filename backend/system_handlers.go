@@ -291,14 +291,32 @@ func controlService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Pre-start check for WireGuard
+	if strings.HasPrefix(req.ServiceName, "wg-quick@") && (req.Action == "start" || req.Action == "restart") {
+		initWireGuard()
+	}
+
 	log.Printf("Controlling service: %s %s", req.Action, req.ServiceName)
 
 	// Execute systemctl command
 	output, err := runPrivilegedCombinedOutput("systemctl", req.Action, req.ServiceName)
 
 	if err != nil {
-		log.Printf("[ERROR] Service control failed: %s - output: %s", err.Error(), string(output))
-		respondSystemError(w, ErrSystemServiceControl, "Service control failed", err)
+		outStr := strings.TrimSpace(string(output))
+		log.Printf("[ERROR] Service control failed: %s - output: %s", err.Error(), outStr)
+
+		detailMsg := fmt.Sprintf("Service %s failed to %s", req.ServiceName, req.Action)
+		if strings.Contains(outStr, "not be found") || strings.Contains(outStr, "not-found") || strings.Contains(outStr, "No such file") {
+			if strings.HasPrefix(req.ServiceName, "wg-quick") {
+				detailMsg = "WireGuard package is not installed on this router. Please run 'sudo apt install wireguard wireguard-tools' or update via update.sh."
+			} else {
+				detailMsg = fmt.Sprintf("Service unit %s is not installed on this router system.", req.ServiceName)
+			}
+		} else if outStr != "" {
+			detailMsg = fmt.Sprintf("Failed to %s %s: %s", req.Action, req.ServiceName, outStr)
+		}
+
+		respondSystemError(w, ErrSystemServiceControl, detailMsg, fmt.Errorf("%s", outStr))
 		return
 	}
 

@@ -162,6 +162,16 @@ if pgrep -f softrouter-backend > /dev/null; then
 fi
 echo ""
 
+# Ensure WireGuard packages are installed
+if ! command -v wg &> /dev/null || ! systemctl list-unit-files | grep -q "^wg-quick@"; then
+    echo "📦 Checking WireGuard packages..."
+    if command -v apt-get &> /dev/null; then
+        apt-get update -qq && apt-get install -y -qq wireguard wireguard-tools || true
+        echo "  ✓ WireGuard packages verified"
+    fi
+fi
+echo ""
+
 # Build backend
 echo "🔨 Building backend..."
 cd backend
