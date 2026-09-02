@@ -658,3 +658,47 @@ func getDHCPLeases(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, leases)
 }
+
+// InitDHCP initializes the DHCP service (dnsmasq) on router boot
+func InitDHCP() {
+	log.Println("[INFO] Initializing DHCP Server (dnsmasq)...")
+
+	// Ensure systemd service is enabled
+	if err := runPrivileged("systemctl", "enable", "dnsmasq"); err != nil {
+		log.Printf("[WARN] Failed to enable dnsmasq service: %v", err)
+	}
+
+	// Load DHCP config and regenerate /etc/dnsmasq.d/softrouter-dhcp.conf
+	store, err := loadDHCPConfig()
+	if err != nil {
+		log.Printf("[WARN] Failed to load DHCP config: %v", err)
+	} else if store != nil {
+		if err := regenerateDnsmasqDHCPConfig(store); err != nil {
+			log.Printf("[WARN] Failed to regenerate dnsmasq config: %v", err)
+		}
+	}
+
+	// Ensure dnsmasq service is active
+	if err := runPrivileged("systemctl", "start", "dnsmasq"); err != nil {
+		log.Printf("[WARN] Failed to start dnsmasq service: %v", err)
+	}
+}
+
+// InitDNSServices ensures the appropriate DNS resolver and DHCP server are running on startup
+func InitDNSServices() {
+	InitDHCP()
+
+	configLock.RLock()
+	adBlocker := config.AdBlocker
+	configLock.RUnlock()
+
+	if adBlocker == "none" || adBlocker == "" {
+		log.Println("[INFO] Initializing standard DNS resolver (unbound)...")
+		runPrivileged("systemctl", "enable", "unbound")
+		runPrivileged("systemctl", "start", "unbound")
+	} else if adBlocker == "adguard" {
+		log.Println("[INFO] Initializing AdGuard Home DNS...")
+		runPrivileged("systemctl", "enable", "AdGuardHome")
+		runPrivileged("systemctl", "start", "AdGuardHome")
+	}
+}

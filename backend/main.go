@@ -599,6 +599,7 @@ func main() {
 	InitFirewallManager()
 	// Apply rules initially — skip watchdog since there's no user to confirm at boot
 	firewallManager.ApplyFirewallRules(true)
+	InitDNSServices() // Initialize DHCP (dnsmasq) and DNS services
 
 	initTrafficStats()
 	initDeviceTraffic()
