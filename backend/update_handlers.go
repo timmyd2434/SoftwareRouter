@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -21,9 +22,24 @@ type UpdateStatus struct {
 	LastChecked     string `json:"last_checked"`
 }
 
-var repoDir = "/home/tim/SoftwareRouter/SoftwareRouter"
+func getRepoDir() string {
+	if cwd, err := os.Getwd(); err == nil {
+		if _, err := os.Stat(filepath.Join(cwd, ".git")); err == nil {
+			return cwd
+		}
+		parent := filepath.Dir(cwd)
+		if _, err := os.Stat(filepath.Join(parent, ".git")); err == nil {
+			return parent
+		}
+	}
+	if _, err := os.Stat("/opt/SoftwareRouter/.git"); err == nil {
+		return "/opt/SoftwareRouter"
+	}
+	return "/home/tim/SoftwareRouter/SoftwareRouter"
+}
 
 func getUpdateStatus(w http.ResponseWriter, r *http.Request) {
+	repoDir := getRepoDir()
 	branch := r.URL.Query().Get("branch")
 	
 	if branch == "" {
@@ -42,10 +58,10 @@ func getUpdateStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch latest (log error if network fails, but do not fail status endpoint)
+	// Fetch latest (log warning if fetch produces output/error, but do not crash endpoint)
 	fetchCmd := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "fetch", "origin")
-	if err := fetchCmd.Run(); err != nil {
-		log.Printf("[WARN] Failed to fetch git updates from origin: %v", err)
+	if out, err := fetchCmd.CombinedOutput(); err != nil {
+		log.Printf("[WARN] Failed to fetch git updates from origin: %v, output: %s", err, string(out))
 	}
 
 	// Current branch
@@ -82,6 +98,7 @@ func getUpdateStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func applyUpdate(w http.ResponseWriter, r *http.Request) {
+	repoDir := getRepoDir()
 	var req struct {
 		Branch string `json:"branch"`
 		Force  bool   `json:"force"`
@@ -105,12 +122,13 @@ func applyUpdate(w http.ResponseWriter, r *http.Request) {
 
 	logAuditEvent(getUsernameFromToken(r), "system.update", "system", fmt.Sprintf("{\"branch\":\"%s\",\"force\":%v}", req.Branch, req.Force), getClientIP(r), true)
 
+	updateScript := filepath.Join(repoDir, "update.sh")
 	go func() {
 		var cmd *exec.Cmd
 		if os.Getuid() == 0 {
-			cmd = exec.Command("/home/tim/SoftwareRouter/SoftwareRouter/update.sh", args...)
+			cmd = exec.Command(updateScript, args...)
 		} else {
-			cmd = exec.Command("sudo", append([]string{"/home/tim/SoftwareRouter/SoftwareRouter/update.sh"}, args...)...)
+			cmd = exec.Command("sudo", append([]string{updateScript}, args...)...)
 		}
 		cmd.Dir = repoDir
 		output, err := cmd.CombinedOutput()
