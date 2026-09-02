@@ -154,7 +154,17 @@ func initWireGuard() {
 		}
 	}
 
+	needConfig := false
 	if _, err := os.Stat(confPath); os.IsNotExist(err) {
+		needConfig = true
+	} else if confData, err := os.ReadFile(confPath); err == nil {
+		if strings.Contains(string(confData), "postrouting { type nat") {
+			log.Println("[INFO] WireGuard wg0.conf contains unquoted PostUp syntax. Updating...")
+			needConfig = true
+		}
+	}
+
+	if needConfig {
 		fmt.Println("Initializing WireGuard Base Config...")
 		// #nosec G304 G703: path is validated or constructed from safe internal sources
 		privData, err := os.ReadFile(privPath)
@@ -162,7 +172,7 @@ func initWireGuard() {
 			log.Printf("[ERROR] Failed to read WireGuard private key for config: %v", err)
 			return
 		}
-		baseConf := fmt.Sprintf("[Interface]\nPrivateKey = %s\nAddress = 10.8.0.1/24\nListenPort = 51820\nPostUp = nft add table inet wg-filter; nft add chain inet wg-filter postrouting { type nat hook postrouting priority 100; policy accept; }; nft add rule inet wg-filter postrouting oifname \"*\" masquerade\nPostDown = nft delete table inet wg-filter\n", strings.TrimSpace(string(privData)))
+		baseConf := fmt.Sprintf("[Interface]\nPrivateKey = %s\nAddress = 10.8.0.1/24\nListenPort = 51820\nPostUp = nft add table inet wg-filter\nPostUp = nft add chain inet wg-filter postrouting '{ type nat hook postrouting priority 100; policy accept; }'\nPostUp = nft add rule inet wg-filter postrouting masquerade\nPostDown = nft delete table inet wg-filter\n", strings.TrimSpace(string(privData)))
 		// #nosec G304 G703: path is validated or constructed from safe internal sources
 		if err := os.WriteFile(confPath, []byte(baseConf), 0600); err != nil {
 			log.Printf("[ERROR] Failed to write WireGuard config: %v", err)
