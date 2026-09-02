@@ -5,10 +5,13 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Session represents an active user session
 type Session struct {
+	ID        string    `json:"id"`
 	Token     string    `json:"token"`
 	Username  string    `json:"username"`
 	CreatedAt time.Time `json:"created_at"`
@@ -73,6 +76,7 @@ func (ss *SessionStore) AddSession(token, username, ipAddress, userAgent string)
 
 	now := time.Now()
 	session := &Session{
+		ID:        uuid.New().String(),
 		Token:     token,
 		Username:  username,
 		CreatedAt: now,
@@ -106,7 +110,7 @@ func (ss *SessionStore) UpdateLastUsed(token string) {
 	}
 }
 
-// DeleteSession removes a session from the store
+// DeleteSession removes a session from the store by token
 func (ss *SessionStore) DeleteSession(token string) bool {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
@@ -114,6 +118,20 @@ func (ss *SessionStore) DeleteSession(token string) bool {
 	if _, exists := ss.sessions[token]; exists {
 		delete(ss.sessions, token)
 		return true
+	}
+	return false
+}
+
+// DeleteSessionByID removes a session from the store by its safe ID
+func (ss *SessionStore) DeleteSessionByID(id string, username string) bool {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+
+	for token, session := range ss.sessions {
+		if (session.ID == id || token == id) && session.Username == username {
+			delete(ss.sessions, token)
+			return true
+		}
 	}
 	return false
 }
@@ -228,6 +246,7 @@ func (ss *SessionStore) ExportSessions() ([]byte, error) {
 
 // SessionInfo returns safe session info (without token)
 type SessionInfo struct {
+	ID        string    `json:"id"`
 	Username  string    `json:"username"`
 	CreatedAt time.Time `json:"created_at"`
 	LastUsed  time.Time `json:"last_used"`
@@ -237,9 +256,13 @@ type SessionInfo struct {
 	IsCurrent bool      `json:"is_current"`
 }
 
-// GetSafeSessionInfo returns session info without sensitive token
+// ToSafeInfo returns session info without sensitive token
 func (s *Session) ToSafeInfo(currentToken string) SessionInfo {
+	if s.ID == "" {
+		s.ID = uuid.New().String()
+	}
 	return SessionInfo{
+		ID:        s.ID,
 		Username:  s.Username,
 		CreatedAt: s.CreatedAt,
 		LastUsed:  s.LastUsed,

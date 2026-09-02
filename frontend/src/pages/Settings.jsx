@@ -875,8 +875,13 @@ const SessionManagement = () => {
         if (!sessionToRevoke) return;
 
         try {
-            const token = sessionToRevoke.token || localStorage.getItem('sr_token');
-            const res = await authFetch(`/api/sessions?token=${token}`, {
+            const sessionId = sessionToRevoke.id;
+            if (!sessionId) {
+                setMessage({ type: 'error', text: 'Invalid session ID' });
+                return;
+            }
+
+            const res = await authFetch(`/api/sessions?id=${encodeURIComponent(sessionId)}`, {
                 method: 'DELETE'
             });
 
@@ -887,7 +892,7 @@ const SessionManagement = () => {
                 setMessage({ type: 'error', text: 'Failed to revoke session' });
             }
         } catch {
-            setMessage({ type: 'error', text: 'Network error' });
+            setMessage({ type: 'error', text: 'Network error revoking session' });
         } finally {
             setShowRevokeModal(false);
             setSessionToRevoke(null);
