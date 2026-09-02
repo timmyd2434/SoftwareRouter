@@ -291,6 +291,20 @@ else
 fi
 echo ""
 
+# Ensure DHCP and DNS services are enabled and active
+echo "📡 Ensuring DHCP (dnsmasq) and DNS services are active..."
+systemctl enable dnsmasq 2>/dev/null || true
+if ! systemctl is-active --quiet dnsmasq; then
+    systemctl start dnsmasq 2>/dev/null || true
+    echo "  ✓ Started dnsmasq (DHCP server)"
+else
+    echo "  ✓ dnsmasq is running"
+fi
+
+if systemctl list-unit-files | grep -q "^unbound.service"; then
+    systemctl enable unbound 2>/dev/null || true
+fi
+
 # Restart the backend service
 echo "🚀 Starting SoftRouter backend service..."
 if systemctl list-unit-files | grep -q "^softrouter.service"; then

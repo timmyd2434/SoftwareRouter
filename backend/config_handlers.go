@@ -219,55 +219,56 @@ func applyCloudflareConfig(cfg Config) error {
 }
 
 func applyAdBlockerConfig(cfg Config) error {
-	if cfg.AdBlocker == "none" {
-		// Ensure standard DNS services are running if we're not using an adblocker
-		runPrivileged("systemctl", "start", "dnsmasq")
+	const adguardCompatFile = "/etc/dnsmasq.d/adguard-compat.conf"
+
+	if cfg.AdBlocker == "none" || cfg.AdBlocker == "" {
+		// Remove port=0 compat file if present so dnsmasq handles DNS again
+		os.Remove(adguardCompatFile)
+
+		// Stop external adblockers
+		runPrivileged("systemctl", "stop", "AdGuardHome")
+
+		// Ensure standard DNS and DHCP services are running
+		runPrivileged("systemctl", "enable", "unbound")
 		runPrivileged("systemctl", "start", "unbound")
+		runPrivileged("systemctl", "enable", "dnsmasq")
+		runPrivileged("systemctl", "restart", "dnsmasq")
 		return nil
 	}
 
-	// If adguard only (since we only support adguard or pihole)
 	if cfg.AdBlocker == "adguard" {
-		// Just ensure it's started
-		runPrivileged("systemctl", "start", "AdGuardHome")
-		// Stop conflicting
-		runPrivileged("systemctl", "stop", "dnsmasq")
+		// Write port=0 so dnsmasq operates in DHCP-only mode without binding port 53
+		compatContent := "# Configured by SoftRouter: DHCP-only mode (AdGuard Home handles port 53 DNS)\nport=0\n"
+		os.WriteFile(adguardCompatFile, []byte(compatContent), 0644)
+
+		// Stop unbound (conflicts with AdGuard on port 53)
 		runPrivileged("systemctl", "stop", "unbound")
+
+		// Start AdGuard Home
+		runPrivileged("systemctl", "enable", "AdGuardHome")
+		runPrivileged("systemctl", "start", "AdGuardHome")
+
+		// Restart dnsmasq in DHCP-only mode
+		runPrivileged("systemctl", "enable", "dnsmasq")
+		runPrivileged("systemctl", "restart", "dnsmasq")
 		return nil
 	}
 
 	if cfg.AdBlocker == "pihole" {
-		fmt.Println("Applying Pi-hole configuration...")
+		compatContent := "# Configured by SoftRouter: DHCP-only mode (Pi-hole handles port 53 DNS)\nport=0\n"
+		os.WriteFile(adguardCompatFile, []byte(compatContent), 0644)
 
-		// 1. Check if pihole is installed
+		runPrivileged("systemctl", "stop", "unbound")
+
 		_, err := exec.LookPath("pihole")
 		if err != nil {
-			fmt.Println("Installing Pi-hole (Unattended)...")
-
-			// Stop conflicting services
-			runPrivileged("systemctl", "stop", "dnsmasq")
-			runPrivileged("systemctl", "stop", "unbound")
-
-			// Pi-hole automated install command
-			// Note: We use --unattended and provide a basic config if needed,
-			// but we'll try the simplest route first.
-			// SECURITY FIX (HIGH-1): Avoid bash -c for installs
-			// Use curl directly instead of shell piping
-			installCmd := "https://install.pi-hole.net"
-			log.Printf("Installing Pi-hole (download installer)...")
-			// Note: Pi-hole install script needs to be downloaded then executed separately
-			// This is placeholder - actual install needs proper verification
-			if err := runPrivileged("curl", "-fsSL", installCmd, "-o", "/tmp/pihole-install.sh"); err != nil {
-				log.Printf("ERROR: Failed to download Pi-hole installer: %v", err)
-				return fmt.Errorf("failed to install Pi-hole: %v", err)
-			}
+			log.Printf("[WARN] Pi-hole binary not found")
 		} else {
 			runPrivileged("pihole", "enable")
-			// Stop conflicting services
-			runPrivileged("systemctl", "stop", "dnsmasq")
-			runPrivileged("systemctl", "stop", "unbound")
 		}
-		fmt.Println("Pi-hole setup complete.")
+
+		runPrivileged("systemctl", "enable", "dnsmasq")
+		runPrivileged("systemctl", "restart", "dnsmasq")
 	}
 
 	return nil
