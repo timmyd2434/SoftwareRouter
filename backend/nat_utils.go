@@ -86,8 +86,8 @@ func GetPortForwardingRules() []PortForwardingRule {
 }
 
 func applyPortForwardingRules() {
-	// Delegate to FirewallManager
-	firewallManager.ApplyFirewallRules(false)
+	// Delegate to FirewallManager with skipWatchdog = true for direct UI updates
+	firewallManager.ApplyFirewallRules(true)
 }
 
 // Deprecated and REMOVED for security reasons
@@ -148,12 +148,7 @@ func updatePortForwardingRule(id string, updatedRule PortForwardingRule) error {
 
 	for i, r := range pfStore.Rules {
 		if r.ID == id {
-			// Keep the same ID and enabled status
 			updatedRule.ID = id
-			if updatedRule.Enabled == false && r.Enabled == false {
-				// Preserve enabled status if not explicitly set
-				updatedRule.Enabled = r.Enabled
-			}
 			pfStore.Rules[i] = updatedRule
 			found = true
 			break

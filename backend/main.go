@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -1081,7 +1080,9 @@ func main() {
 			}
 			logAuditEvent(getUsernameFromToken(r), "firewall.toggle", "firewall", "Enabled firewall", getClientIP(r), true)
 		} else {
-			exec.Command("nft", "flush", "ruleset").Run()
+			if _, err := runPrivilegedCombinedOutput("nft", "flush", "ruleset"); err != nil {
+				log.Printf("[ERROR] Failed to flush ruleset when disabling firewall: %v", err)
+			}
 			logAuditEvent(getUsernameFromToken(r), "firewall.toggle", "firewall", "Disabled firewall", getClientIP(r), true)
 		}
 
