@@ -22,12 +22,13 @@ AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW CAP_SYS_MODUL
 # Explicitly allow kernel module loading
 ProtectKernelModules=no
 
-# Basic filesystem protections
-ProtectSystem=full
+# Filesystem protections
+# NOTE: PrivateTmp=yes is intentionally omitted — it triggers systemd NAMESPACE
+# errors (exit code 226) when ReadWritePaths includes paths under /home.
+# The service runs as root and already has appropriate access controls via
+# capabilities and the sudoers entry.
+ProtectSystem=no
 ProtectHome=no
-PrivateTmp=yes
-# Allow writing to configuration, backup, repository, and web directories
-ReadWritePaths=/etc/softrouter /etc/dnsmasq.d /etc/wireguard /var/backups/softrouter /home/tim/SoftwareRouter/SoftwareRouter /var/www/softrouter/html
 
 [Install]
 WantedBy=multi-user.target

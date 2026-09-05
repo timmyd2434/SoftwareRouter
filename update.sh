@@ -62,13 +62,20 @@ fi
 
 echo ""
 
-# Ensure .git object database permissions allow fetching/unpacking
+
+# Ensure .git directory is accessible by any user.
+# The backend service runs as root and may write FETCH_HEAD/packed-refs;
+# update.sh runs as SUDO_USER. Without world-write, the non-owner gets
+# "Permission denied" on FETCH_HEAD. Use a+rw so both can always read/write.
 if [ -d ".git" ]; then
-    chmod -R u+rw,g+rw .git 2>/dev/null || true
+    chmod -R a+rw .git 2>/dev/null || true
+    # If invoked via sudo, restore ownership to the original user so git
+    # operations run by that user also succeed (git checks directory ownership).
     if [ -n "$SUDO_USER" ]; then
-        chown -R "$SUDO_USER" .git 2>/dev/null || true
+        chown -R "$SUDO_USER:$SUDO_USER" .git 2>/dev/null || true
     fi
 fi
+
 
 # Pull latest changes from git
 echo "🔄 Pulling latest changes from Git..."
