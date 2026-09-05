@@ -89,10 +89,45 @@ func getFirewallRules(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(rules)
 }
 
+var (
+	nftCommentRegex  = regexp.MustCompile(`(?i)\bcomment\s+("[^"]*"|'[^']*'|\S+)`)
+	jsonCommentRegex = regexp.MustCompile(`(?i)"comment"\s*:\s*("[^"]*"|'[^']*'|[^,\}\]]+)`)
+)
+
+// cleanExprList strips any comment expressions or comment fields from nftables JSON expressions
+// so that rules are compared and deduplicated strictly by their operational logic (matches and actions).
+func cleanExprList(exprList []interface{}) []interface{} {
+	var clean []interface{}
+	for _, expr := range exprList {
+		if exprMap, ok := expr.(map[string]interface{}); ok {
+			// If this expression object is purely a comment {"comment": "..."}, omit it
+			if _, hasComment := exprMap["comment"]; hasComment && len(exprMap) == 1 {
+				continue
+			}
+			// If exprMap contains "comment" alongside other fields, strip the "comment" key
+			if _, hasComment := exprMap["comment"]; hasComment {
+				cleanMap := make(map[string]interface{})
+				for k, v := range exprMap {
+					if k != "comment" {
+						cleanMap[k] = v
+					}
+				}
+				expr = cleanMap
+			}
+		}
+		clean = append(clean, expr)
+	}
+	return clean
+}
+
 // normaliseRule folds a raw nftables rule string to a canonical form for
 // duplicate comparison: lowercase, collapse all whitespace to single spaces,
-// strip leading/trailing space.
+// strip leading/trailing space, and remove rule comments.
 func normaliseRule(raw string) string {
+	// Strip comments (both raw nftables syntax like 'comment "..."' and JSON syntax like '"comment": "..."')
+	raw = nftCommentRegex.ReplaceAllString(raw, "")
+	raw = jsonCommentRegex.ReplaceAllString(raw, "")
+
 	// Map every run of whitespace (including tabs/newlines) to a single space
 	var b strings.Builder
 	inSpace := false
@@ -146,11 +181,10 @@ func isDuplicateRule(family, table, chain, rawStatement string) bool {
 		}
 
 		// Re-serialise the stored expression JSON and normalise it the same
-		// way the incoming raw string is normalised.  This lets us compare
-		// "tcp dport 22 accept" against the JSON blob nftables stores.
-		// It is not a perfect semantic comparison but catches the common
-		// case of re-submitting the exact same text.
-		exprBytes, _ := json.Marshal(ruleObj["expr"])
+		// way the incoming raw string is normalised (ignoring comments).
+		rawExprs, _ := ruleObj["expr"].([]interface{})
+		cleanExprs := cleanExprList(rawExprs)
+		exprBytes, _ := json.Marshal(cleanExprs)
 		existNorm := normaliseRule(string(exprBytes))
 
 		if existNorm == wantNorm {
@@ -561,10 +595,11 @@ func cleanupFirewallRules(w http.ResponseWriter, r *http.Request) {
 		chain, _ := ruleInfo["chain"].(string)
 		handle, _ := ruleInfo["handle"].(float64)
 		exprList, _ := ruleInfo["expr"].([]interface{})
+		cleanExprs := cleanExprList(exprList)
 
-		// Create raw expression
+		// Create raw expression without comments
 		var rawParts []string
-		for _, expr := range exprList {
+		for _, expr := range cleanExprs {
 			exprBytes, _ := json.Marshal(expr)
 			rawParts = append(rawParts, string(exprBytes))
 		}

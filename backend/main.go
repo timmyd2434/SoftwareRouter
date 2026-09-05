@@ -614,6 +614,7 @@ func main() {
 	initWireGuard()
 	InitQoS() // 4. Initialize Networking
 
+	initPortForwarding()
 	InitFirewallManager()
 	// Apply rules initially — skip watchdog since there's no user to confirm at boot
 	firewallManager.ApplyFirewallRules(true)
