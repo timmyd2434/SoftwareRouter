@@ -1013,7 +1013,7 @@ const SystemUpdate = () => {
         try {
             setUpdating(true);
             setShowUpdateModal(false);
-            setMessage({ type: 'info', text: 'Initiating system update... The service will restart.' });
+            setMessage({ type: 'info', text: 'Initiating system update... The service will rebuild and restart.' });
 
             const force = (status && !status.update_available) ? true : false;
             const res = await authFetch(API_ENDPOINTS.UPDATE_APPLY, {
@@ -1023,7 +1023,31 @@ const SystemUpdate = () => {
             });
 
             if (res.ok) {
-                setMessage({ type: 'success', text: 'Update process started! The web interface will refresh once complete.' });
+                setMessage({ type: 'info', text: 'Update in progress... Waiting for service to complete build and restart.' });
+
+                // Poll status every 3s for up to 60s
+                let attempts = 0;
+                const interval = setInterval(async () => {
+                    attempts++;
+                    try {
+                        const statusRes = await authFetch(`${API_ENDPOINTS.UPDATE_STATUS}?branch=${selectedBranch}`);
+                        if (statusRes.ok) {
+                            const data = await statusRes.json();
+                            setStatus(data);
+                            clearInterval(interval);
+                            setUpdating(false);
+                            setMessage({ type: 'success', text: `Update process finished! Running commit ${data.current_commit}.` });
+                        }
+                    } catch (e) {
+                        // Service may be restarting temporarily
+                    }
+
+                    if (attempts >= 20) {
+                        clearInterval(interval);
+                        setUpdating(false);
+                        setMessage({ type: 'info', text: 'Update triggered. If the interface does not automatically update, refresh the page.' });
+                    }
+                }, 3000);
             } else {
                 setMessage({ type: 'error', text: 'Failed to trigger update process' });
                 setUpdating(false);

@@ -24,10 +24,10 @@ ProtectKernelModules=no
 
 # Basic filesystem protections
 ProtectSystem=full
-ProtectHome=yes
+ProtectHome=no
 PrivateTmp=yes
-# Allow writing to configuration and backup directories
-ReadWritePaths=/etc/softrouter /etc/dnsmasq.d /etc/wireguard /var/backups/softrouter
+# Allow writing to configuration, backup, repository, and web directories
+ReadWritePaths=/etc/softrouter /etc/dnsmasq.d /etc/wireguard /var/backups/softrouter /home/tim/SoftwareRouter/SoftwareRouter /var/www/softrouter/html
 
 [Install]
 WantedBy=multi-user.target
