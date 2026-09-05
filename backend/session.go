@@ -37,7 +37,7 @@ func (ss *SessionStore) AddSession(token, username, ipAddress, userAgent string)
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 
-	// Enforce session cap per user (max 50)
+	// Enforce per-user session cap (max 10)
 	userSessions := []*Session{}
 	for _, s := range ss.sessions {
 		if s.Username == username {
@@ -45,7 +45,7 @@ func (ss *SessionStore) AddSession(token, username, ipAddress, userAgent string)
 		}
 	}
 
-	const maxSessionsPerUser = 50
+	const maxSessionsPerUser = 10
 	if len(userSessions) >= maxSessionsPerUser {
 		var oldest *Session
 		for _, s := range userSessions {

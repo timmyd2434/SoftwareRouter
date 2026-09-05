@@ -579,6 +579,22 @@ func setDHCPConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	for _, dns := range req.Config.DNSServers {
+		ip := net.ParseIP(dns)
+		if ip == nil || ip.To4() == nil {
+			respondInvalidRequest(w, fmt.Sprintf("Invalid IPv4 DNS server address: %s", dns))
+			return
+		}
+	}
+
+	for _, dns := range req.Config.DNSServersIPv6 {
+		ip := net.ParseIP(dns)
+		if ip == nil || ip.To16() == nil {
+			respondInvalidRequest(w, fmt.Sprintf("Invalid IPv6 DNS server address: %s", dns))
+			return
+		}
+	}
+
 	// Validate IPv4 range if IPv4 DHCP is enabled
 	if req.Config.Enabled {
 		// Only validate if the fields are actually populated

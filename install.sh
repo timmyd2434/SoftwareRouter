@@ -197,14 +197,20 @@ chmod 700 /etc/softrouter
 if [ ! -f "/etc/softrouter/user_credentials.json" ]; then
     echo -e "${CYAN}Generating secure bcrypt hash for admin password...${NC}"
     cd backend
-    HASHED_PASS=$(go run - <<EOF
+    HASHED_PASS=$(SR_ADMIN_PASS="$ADMIN_PASS" go run - <<'EOF'
 package main
 import (
 	"fmt"
+	"os"
 	"golang.org/x/crypto/bcrypt"
 )
 func main() {
-	bytes, _ := bcrypt.GenerateFromPassword([]byte("$ADMIN_PASS"), 12)
+	pass := os.Getenv("SR_ADMIN_PASS")
+	bytes, err := bcrypt.GenerateFromPassword([]byte(pass), 12)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "bcrypt error: %v\n", err)
+		os.Exit(1)
+	}
 	fmt.Print(string(bytes))
 }
 EOF

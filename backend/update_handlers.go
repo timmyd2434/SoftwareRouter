@@ -50,15 +50,7 @@ func getUpdateStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ensure .git is readable/writable by the current process (root).
-	// chmod a+rw so that git's lock files and FETCH_HEAD can always be written.
-	gitDir := filepath.Join(repoDir, ".git")
-	_ = exec.Command("chmod", "-R", "a+rw", gitDir).Run()
-
-	// runGit runs a git command directly as the current process (root).
-	// We set GIT_CONFIG_NOSYSTEM=1 and pass -c safe.directory=* to bypass
-	// the "dubious ownership" check without relying on sudo (which requires
-	// a TTY when running as root switching to another user).
+	// runGit runs a git command safely
 	runGit := func(args ...string) ([]byte, error) {
 		gitArgs := append([]string{"-c", "safe.directory=*", "-C", repoDir}, args...)
 		cmd := exec.Command("git", gitArgs...)
@@ -135,8 +127,6 @@ func getUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(status)
 }
 
-
-
 func applyUpdate(w http.ResponseWriter, r *http.Request) {
 	repoDir := getRepoDir()
 	var req struct {
@@ -164,24 +154,20 @@ func applyUpdate(w http.ResponseWriter, r *http.Request) {
 
 	updateScript := filepath.Join(repoDir, "update.sh")
 	go func() {
-		var cmd *exec.Cmd
+		var output []byte
+		var err error
 		if os.Getuid() == 0 {
 			// Run via systemd-run in isolated transient unit so stopping softrouter doesn't kill the update script
 			unitName := fmt.Sprintf("softrouter-update-%d", time.Now().Unix())
 			sysdArgs := append([]string{"--unit=" + unitName, "--service-type=oneshot", updateScript}, args...)
-			cmd = exec.Command("systemd-run", sysdArgs...)
+			output, err = runPrivilegedCombinedOutput("systemd-run", sysdArgs...)
 		} else {
-			cmd = exec.Command("sudo", append([]string{"-n", updateScript}, args...)...)
+			output, err = runPrivilegedInDirCombinedOutput(repoDir, updateScript, args...)
 		}
-		cmd.Dir = repoDir
-		output, err := cmd.CombinedOutput()
 		if err != nil {
-			log.Printf("[ERROR] Update launch failed: %v\nOutput: %s. Retrying directly with nohup...", err, string(output))
-			fallbackCmd := exec.Command("nohup", append([]string{"bash", updateScript}, args...)...)
-			fallbackCmd.Dir = repoDir
-			_ = fallbackCmd.Start()
+			log.Printf("[ERROR] Update execution failed: %v\nOutput: %s", err, string(output))
 		} else {
-			log.Printf("[INFO] Update process launched successfully: %s", string(output))
+			log.Printf("[INFO] Update process completed successfully: %s", string(output))
 		}
 	}()
 
