@@ -145,16 +145,22 @@ func applyUpdate(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		var cmd *exec.Cmd
 		if os.Getuid() == 0 {
-			cmd = exec.Command(updateScript, args...)
+			// Run via systemd-run in isolated transient unit so stopping softrouter doesn't kill the update script
+			unitName := fmt.Sprintf("softrouter-update-%d", time.Now().Unix())
+			sysdArgs := append([]string{"--unit=" + unitName, "--service-type=oneshot", updateScript}, args...)
+			cmd = exec.Command("systemd-run", sysdArgs...)
 		} else {
-			cmd = exec.Command("sudo", append([]string{updateScript}, args...)...)
+			cmd = exec.Command("sudo", append([]string{"-n", updateScript}, args...)...)
 		}
 		cmd.Dir = repoDir
 		output, err := cmd.CombinedOutput()
 		if err != nil {
-			log.Printf("[ERROR] Update failed: %v\nOutput: %s", err, string(output))
+			log.Printf("[ERROR] Update launch failed: %v\nOutput: %s. Retrying directly with nohup...", err, string(output))
+			fallbackCmd := exec.Command("nohup", append([]string{"bash", updateScript}, args...)...)
+			fallbackCmd.Dir = repoDir
+			_ = fallbackCmd.Start()
 		} else {
-			log.Printf("[INFO] Update completed successfully: %s", string(output))
+			log.Printf("[INFO] Update process launched successfully: %s", string(output))
 		}
 	}()
 
