@@ -549,21 +549,18 @@ cd ..
 
 # 9. Firewall Baseline
 echo -e "${CYAN}[8/10] Applying Firewall Baseline (nftables)...${NC}"
+# Write a clean baseline that just flushes the ruleset.
+# The SoftRouter backend manages its own "table inet softrouter" and writes
+# the full ruleset on startup.  A static "table inet filter" here would
+# accumulate stale rules across updates, so we intentionally omit it.
 cat <<EOF > /etc/nftables.conf
+# SoftRouter nftables baseline — managed by softrouter-backend
+# DO NOT add static tables here; the backend writes table inet softrouter.
 flush ruleset
-
-table inet filter {
-    chain input {
-        type filter hook input priority 0; policy accept;
-        iifname "lo" accept
-        ct state established,related accept
-        tcp dport 443 accept
-        tcp dport 22 accept
-    }
-}
 EOF
 systemctl enable nftables
 systemctl restart nftables
+
 
 # 10. Service Installation
 echo -e "${CYAN}[9/10] Creating Systemd Service...${NC}"
