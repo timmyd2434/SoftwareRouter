@@ -79,16 +79,23 @@ fi
 
 # Pull latest changes from git
 echo "🔄 Pulling latest changes from Git..."
+FETCH_URL="origin"
+TARGET="${TARGET_BRANCH:-Dev}"
+
 if [ -n "$SUDO_USER" ]; then
     if ! sudo -u "$SUDO_USER" git -c safe.directory=* fetch origin 2>/dev/null; then
         if ! git -c safe.directory=* fetch origin 2>/dev/null; then
-            git -c safe.directory=* fetch https://github.com/timmyd2434/SoftwareRouter.git ${TARGET_BRANCH:-Dev} 2>/dev/null || true
+            echo "  ℹ️  Origin fetch (SSH) failed; fetching via HTTPS..."
+            FETCH_URL="https://github.com/timmyd2434/SoftwareRouter.git"
+            git -c safe.directory=* fetch "$FETCH_URL" "+refs/heads/$TARGET:refs/remotes/origin/$TARGET" 2>/dev/null || true
         fi
     fi
     CURRENT_BRANCH=$(sudo -u "$SUDO_USER" git -c safe.directory=* branch --show-current 2>/dev/null || git -c safe.directory=* branch --show-current)
 else
     if ! git -c safe.directory=* fetch origin 2>/dev/null; then
-        git -c safe.directory=* fetch https://github.com/timmyd2434/SoftwareRouter.git ${TARGET_BRANCH:-Dev} 2>/dev/null || true
+        echo "  ℹ️  Origin fetch (SSH) failed; fetching via HTTPS..."
+        FETCH_URL="https://github.com/timmyd2434/SoftwareRouter.git"
+        git -c safe.directory=* fetch "$FETCH_URL" "+refs/heads/$TARGET:refs/remotes/origin/$TARGET" 2>/dev/null || true
     fi
     CURRENT_BRANCH=$(git -c safe.directory=* branch --show-current)
 fi
@@ -109,7 +116,7 @@ if [ -n "$TARGET_BRANCH" ] && [ "$TARGET_BRANCH" != "$CURRENT_BRANCH" ]; then
 fi
 
 # Check if there are updates
-if git -c safe.directory=* diff --quiet HEAD origin/$CURRENT_BRANCH; then
+if git -c safe.directory=* diff --quiet HEAD origin/$CURRENT_BRANCH 2>/dev/null; then
     if [ "$FORCE_UPDATE" = false ]; then
         echo "  ℹ️  Already up to date!"
         echo ""
@@ -123,12 +130,17 @@ if git -c safe.directory=* diff --quiet HEAD origin/$CURRENT_BRANCH; then
     fi
 fi
 
+echo "  📥 Pulling changes for $CURRENT_BRANCH..."
 if [ -n "$SUDO_USER" ]; then
-    if ! sudo -u "$SUDO_USER" git -c safe.directory=* pull origin $CURRENT_BRANCH 2>/dev/null; then
-        git -c safe.directory=* pull origin $CURRENT_BRANCH
+    if ! sudo -u "$SUDO_USER" git -c safe.directory=* pull "$FETCH_URL" $CURRENT_BRANCH 2>/dev/null; then
+        if ! git -c safe.directory=* pull "$FETCH_URL" $CURRENT_BRANCH 2>/dev/null; then
+            git -c safe.directory=* pull https://github.com/timmyd2434/SoftwareRouter.git $CURRENT_BRANCH || true
+        fi
     fi
 else
-    git -c safe.directory=* pull origin $CURRENT_BRANCH
+    if ! git -c safe.directory=* pull "$FETCH_URL" $CURRENT_BRANCH 2>/dev/null; then
+        git -c safe.directory=* pull https://github.com/timmyd2434/SoftwareRouter.git $CURRENT_BRANCH || true
+    fi
 fi
 echo "  ✓ Updated to latest version"
 echo ""

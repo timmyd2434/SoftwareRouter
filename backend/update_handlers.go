@@ -74,7 +74,8 @@ func getUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	// Fetch latest from origin (non-fatal — display cached data if it fails)
 	if out, err := runGitCombined("fetch", "origin"); err != nil {
 		log.Printf("[WARN] git fetch origin failed (%v): %s — trying HTTPS...", err, strings.TrimSpace(string(out)))
-		if out2, err2 := runGitCombined("fetch", "https://github.com/timmyd2434/SoftwareRouter.git", branch); err2 != nil {
+		refSpec := fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", branch, branch)
+		if out2, err2 := runGitCombined("fetch", "https://github.com/timmyd2434/SoftwareRouter.git", refSpec); err2 != nil {
 			log.Printf("[WARN] HTTPS fetch also failed: %v: %s", err2, strings.TrimSpace(string(out2)))
 		}
 	}
