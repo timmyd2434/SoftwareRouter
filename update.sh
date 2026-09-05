@@ -282,6 +282,22 @@ nft delete table ip filter   2>/dev/null && echo "  ✓ Removed legacy table ip 
 nft delete table ip6 filter  2>/dev/null && echo "  ✓ Removed legacy table ip6 filter"  || true
 echo ""
 
+# Load nf_conntrack and enable byte accounting for device bandwidth monitoring.
+# Without nf_conntrack_acct=1 the bytes= fields in /proc/net/nf_conntrack are 0.
+echo "📊 Enabling conntrack byte accounting..."
+modprobe nf_conntrack 2>/dev/null || true
+sysctl -w net.netfilter.nf_conntrack_acct=1 2>/dev/null && echo "  ✓ nf_conntrack_acct enabled" || echo "  ⚠️  nf_conntrack_acct not available (module may not be loaded yet)"
+# Persist the setting
+if ! grep -q "nf_conntrack_acct" /etc/sysctl.d/99-softrouter.conf 2>/dev/null; then
+    echo "net.netfilter.nf_conntrack_acct=1" >> /etc/sysctl.d/99-softrouter.conf 2>/dev/null || true
+fi
+# Add nf_conntrack to module autoload
+if ! grep -q "nf_conntrack" /etc/modules-load.d/softrouter.conf 2>/dev/null; then
+    echo "nf_conntrack" >> /etc/modules-load.d/softrouter.conf
+fi
+echo ""
+
+
 # Install/Update systemd service
 echo "⚙️  Configuring systemd service..."
 if [ -f "softrouter.service" ]; then
