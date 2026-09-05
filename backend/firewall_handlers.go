@@ -501,7 +501,47 @@ func cleanupFirewallRules(w http.ResponseWriter, r *http.Request) {
 
 	duplicatesRemoved := 0
 	staleRemoved := 0
+	legacyTablesRemoved := 0
 	var details []CleanupDetail
+
+	// 3a. Detect and remove entire unmanaged legacy tables.
+	// The only table the backend owns is "softrouter" (family inet).
+	// Any other table — especially the old static "table inet filter" written
+	// by install.sh — is considered legacy and must be purged so it can't
+	// shadow or duplicate our managed ruleset.
+	managedTable := "softrouter"
+	for _, item := range root.Nftables {
+		tableObj, ok := item["table"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		tName, _ := tableObj["name"].(string)
+		tFamily, _ := tableObj["family"].(string)
+		if tFamily == "" {
+			tFamily = "inet"
+		}
+		// Skip our own managed table
+		if strings.EqualFold(tName, managedTable) {
+			continue
+		}
+		// Only purge tables named "filter" — the classic legacy name used by
+		// install.sh and iptables-legacy migrations. Other custom tables are
+		// left untouched to avoid accidentally removing user-configured rules.
+		if strings.EqualFold(tName, "filter") {
+			if _, delErr := runPrivilegedCombinedOutput("nft", "delete", "table", tFamily, tName); delErr == nil {
+				legacyTablesRemoved++
+				log.Printf("[INFO] cleanupFirewallRules: removed legacy table %s/%s", tFamily, tName)
+				details = append(details, CleanupDetail{
+					Reason: fmt.Sprintf("legacy_table:%s/%s", tFamily, tName),
+					Table:  tName,
+					Chain:  "*",
+					Handle: 0,
+				})
+			} else {
+				log.Printf("[WARN] cleanupFirewallRules: could not remove legacy table %s/%s: %v", tFamily, tName, delErr)
+			}
+		}
+	}
 
 	// Map to track duplicates: key is fmt.Sprintf("%s/%s/%s/%s", family, table, chain, normalizedExpr)
 	// Value is the lowest handle we've seen.
@@ -590,8 +630,9 @@ func cleanupFirewallRules(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"duplicates_removed": duplicatesRemoved,
-		"stale_removed":      staleRemoved,
-		"details":            details,
+		"duplicates_removed":    duplicatesRemoved,
+		"stale_removed":         staleRemoved,
+		"legacy_tables_removed": legacyTablesRemoved,
+		"details":               details,
 	})
 }

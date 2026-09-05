@@ -47,39 +47,17 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Backup configuration files
+# Backup configuration files from /etc/softrouter/ (authoritative runtime location)
 echo "📦 Backing up configuration files..."
 BACKUP_DIR="/tmp/softrouter-backup-$(date +%s)"
-mkdir -p "$BACKUP_DIR"
+mkdir -p "$BACKUP_DIR/etc_softrouter"
 
-# Backup config.json if it exists
-if [ -f "config.json" ]; then
-    cp config.json "$BACKUP_DIR/"
-    echo "  ✓ Backed up config.json"
-fi
-
-# Backup interface metadata if it exists
-if [ -f "interface_metadata.json" ]; then
-    cp interface_metadata.json "$BACKUP_DIR/"
-    echo "  ✓ Backed up interface_metadata.json"
-fi
-
-# Backup port forwarding rules if they exist
-if [ -f "port_forwarding_rules.json" ]; then
-    cp port_forwarding_rules.json "$BACKUP_DIR/"
-    echo "  ✓ Backed up port_forwarding_rules.json"
-fi
-
-# Backup PBR rules if they exist
-if [ -f "pbr_rules.json" ]; then
-    cp pbr_rules.json "$BACKUP_DIR/"
-    echo "  ✓ Backed up pbr_rules.json"
-fi
-
-# Backup DHCP config if it exists
-if [ -f "dhcp_config.json" ]; then
-    cp dhcp_config.json "$BACKUP_DIR/"
-    echo "  ✓ Backed up dhcp_config.json"
+# Back up the entire /etc/softrouter/ directory (all runtime configs)
+if [ -d "/etc/softrouter" ]; then
+    cp -a /etc/softrouter/. "$BACKUP_DIR/etc_softrouter/"
+    echo "  ✓ Backed up /etc/softrouter/ ($(ls "$BACKUP_DIR/etc_softrouter" | wc -l) files)"
+else
+    echo "  ⚠️  /etc/softrouter/ not found – nothing to back up"
 fi
 
 echo ""
@@ -255,16 +233,18 @@ fi
 cd ..
 echo ""
 
-# Restore configuration files
+# Restore configuration files back to /etc/softrouter/
 echo "📥 Restoring configuration files..."
-if [ -d "$BACKUP_DIR" ]; then
-    for file in "$BACKUP_DIR"/*; do
-        if [ -f "$file" ]; then
-            filename=$(basename "$file")
-            cp "$file" "./$filename"
-            echo "  ✓ Restored $filename"
-        fi
-    done
+if [ -d "$BACKUP_DIR/etc_softrouter" ] && [ -n "$(ls -A "$BACKUP_DIR/etc_softrouter" 2>/dev/null)" ]; then
+    mkdir -p /etc/softrouter
+    chmod 700 /etc/softrouter
+    # Restore all backed-up files, preserving permissions where possible
+    cp -a "$BACKUP_DIR/etc_softrouter/." /etc/softrouter/
+    # Enforce secure permissions on sensitive files
+    find /etc/softrouter -maxdepth 1 -type f \( -name "*.json" -o -name "*.key" -o -name "*.nft" \) -exec chmod 600 {} \;
+    echo "  ✓ Restored /etc/softrouter/ ($(ls /etc/softrouter | wc -l) files)"
+else
+    echo "  ℹ️  No /etc/softrouter/ backup to restore"
 fi
 echo ""
 
@@ -291,6 +271,15 @@ if [ ! -f "/etc/softrouter/token_secret.key" ]; then
 else
     echo "  ✓ token_secret.key exists"
 fi
+
+# FIREWALL CLEANUP: Purge legacy/stale nftables tables before starting the service.
+# install.sh used to write a static "table inet filter" to /etc/nftables.conf;
+# the backend manages "table inet softrouter" exclusively. Any leftover legacy
+# tables at priority 0 can shadow or duplicate the managed ruleset.
+echo "🔥 Purging legacy nftables tables..."
+nft delete table inet filter 2>/dev/null && echo "  ✓ Removed legacy table inet filter" || echo "  ✓ No legacy table inet filter present"
+nft delete table ip filter   2>/dev/null && echo "  ✓ Removed legacy table ip filter"   || true
+nft delete table ip6 filter  2>/dev/null && echo "  ✓ Removed legacy table ip6 filter"  || true
 echo ""
 
 # Install/Update systemd service
