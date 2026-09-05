@@ -1,0 +1,15 @@
+{
+  "web_access": {
+    "allow_wan": true,
+    "wan_port_http": 980,
+    "wan_port_https": 9443
+  }
+}
+{
+  "tls": {
+    "enabled": true,
+    "port": ":443",
+    "cert_file": "/opt/SoftwareRouter/certs/server.crt",
+    "key_file": "/opt/SoftwareRouter/certs/server.key"
+  }
+}
