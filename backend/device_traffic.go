@@ -42,6 +42,10 @@ var (
 
 func initDeviceTraffic() {
 	deviceTrafficReset = todayMidnight()
+	if err := runPrivileged("modprobe", "nf_conntrack"); err != nil {
+		log.Printf("[WARN] Could not load nf_conntrack module: %v", err)
+	}
+	collectDeviceTraffic()
 	go deviceTrafficLoop()
 	log.Println("Per-device traffic monitoring started")
 }
@@ -72,80 +76,81 @@ func collectDeviceTraffic() {
 		deviceTrafficMu.Unlock()
 	}
 
+	var data []byte
+	var err error
+
 	// Read conntrack table for per-connection byte counts
-	data, err := os.ReadFile("/proc/net/nf_conntrack")
+	data, err = os.ReadFile("/proc/net/nf_conntrack")
 	if err != nil {
-		// Fallback: try /proc/net/ip_conntrack (older kernels)
 		data, err = os.ReadFile("/proc/net/ip_conntrack")
-		if err != nil {
-			// conntrack not available — try nft approach
-			collectDeviceTrafficNFT()
-			return
+	}
+
+	if err != nil || len(data) == 0 {
+		// Attempt to load module and try once more
+		_ = runPrivileged("modprobe", "nf_conntrack")
+		data, err = os.ReadFile("/proc/net/nf_conntrack")
+	}
+
+	if (err != nil || len(data) == 0) && allowedCommands["conntrack"] {
+		// Fallback: use conntrack CLI if proc file unavailable
+		if out, conntrackErr := runPrivilegedOutput("conntrack", "-L"); conntrackErr == nil {
+			data = out
+			err = nil
 		}
 	}
 
-	// Parse conntrack entries
-	// Format: ipv4 2 tcp 6 431999 ESTABLISHED src=192.168.1.100 dst=142.250.80.46 sport=54321 dport=443 bytes=12345 ...
 	perIP := make(map[string][2]uint64) // ip -> [rx, tx]
 
-	lines := strings.Split(string(data), "\n")
-	for _, line := range lines {
-		fields := strings.Fields(line)
-		if len(fields) < 10 {
-			continue
-		}
+	if err == nil && len(data) > 0 {
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			fields := strings.Fields(line)
+			if len(fields) < 8 {
+				continue
+			}
 
-		var src, dst string
-		var txBytes, rxBytes uint64
+			var src, dst string
+			var txBytes, rxBytes uint64
+			var seenFirstBytes bool
 
-		for _, f := range fields {
-			if strings.HasPrefix(f, "src=") {
-				if src == "" {
-					src = f[4:]
-				}
-			} else if strings.HasPrefix(f, "dst=") {
-				if dst == "" {
-					dst = f[4:]
-				}
-			} else if strings.HasPrefix(f, "bytes=") {
-				val, _ := strconv.ParseUint(f[6:], 10, 64)
-				if txBytes == 0 {
-					txBytes = val // First bytes= is src->dst (upload from src)
-				} else {
-					rxBytes = val // Second bytes= is dst->src (download to src)
+			for _, f := range fields {
+				if strings.HasPrefix(f, "src=") {
+					if src == "" {
+						src = f[4:]
+					}
+				} else if strings.HasPrefix(f, "dst=") {
+					if dst == "" {
+						dst = f[4:]
+					}
+				} else if strings.HasPrefix(f, "bytes=") {
+					val, _ := strconv.ParseUint(f[6:], 10, 64)
+					if !seenFirstBytes {
+						txBytes = val // First bytes= is src->dst (upload from src)
+						seenFirstBytes = true
+					} else {
+						rxBytes = val // Second bytes= is dst->src (download to src)
+					}
 				}
 			}
-		}
 
-		// Only track local (private) IPs
-		if src != "" && isPrivateIP(src) {
-			entry := perIP[src]
-			entry[0] += rxBytes // download to this device
-			entry[1] += txBytes // upload from this device
-			perIP[src] = entry
-		}
-		if dst != "" && isPrivateIP(dst) && !isPrivateIP(src) {
-			// Inbound from public to private
-			entry := perIP[dst]
-			entry[0] += txBytes
-			entry[1] += rxBytes
-			perIP[dst] = entry
+			// Only track local (private) IPs
+			if src != "" && isPrivateIP(src) {
+				entry := perIP[src]
+				entry[0] += rxBytes // download to this device
+				entry[1] += txBytes // upload from this device
+				perIP[src] = entry
+			}
+			if dst != "" && isPrivateIP(dst) && !isPrivateIP(src) {
+				// Inbound from public to private
+				entry := perIP[dst]
+				entry[0] += txBytes
+				entry[1] += rxBytes
+				perIP[dst] = entry
+			}
 		}
 	}
 
 	updateDeviceTrafficFromSnapshot(perIP)
-}
-
-// collectDeviceTrafficNFT uses nftables counters as a fallback
-func collectDeviceTrafficNFT() {
-	output, err := runPrivilegedOutput("nft", "list", "ruleset")
-	if err != nil {
-		return
-	}
-
-	// Parse nft output for per-IP counters
-	// This is a simplified parser — in production, set up dedicated nft counting rules
-	_ = output // Placeholder — conntrack approach is preferred
 }
 
 func updateDeviceTrafficFromSnapshot(snapshot map[string][2]uint64) {
@@ -208,60 +213,99 @@ func getDeviceTraffic(w http.ResponseWriter, r *http.Request) {
 	arpEntries, _ := getARPTable()
 	dhcpLeases, _ := parseDHCPLeases()
 
-	// Build hostname lookup
-	ipToHostname := make(map[string]string)
-	ipToMAC := make(map[string]string)
-	for _, lease := range dhcpLeases {
-		if lease.Hostname != "*" && lease.Hostname != "" {
-			ipToHostname[lease.IP] = lease.Hostname
-		}
-		ipToMAC[lease.IP] = lease.MAC
+	type devInfo struct {
+		MAC      string
+		Hostname string
 	}
+	knownDevices := make(map[string]devInfo)
+
+	for _, lease := range dhcpLeases {
+		if lease.IP == "" {
+			continue
+		}
+		knownDevices[lease.IP] = devInfo{
+			MAC:      lease.MAC,
+			Hostname: lease.Hostname,
+		}
+	}
+
 	for _, arp := range arpEntries {
-		if _, ok := ipToMAC[arp.IP]; !ok {
-			ipToMAC[arp.IP] = arp.MAC
+		if arp.IP == "" {
+			continue
 		}
-		if arp.Hostname != "" {
-			ipToHostname[arp.IP] = arp.Hostname
+		dev := knownDevices[arp.IP]
+		if arp.MAC != "" {
+			dev.MAC = arp.MAC
 		}
+		if arp.Hostname != "" && (dev.Hostname == "" || dev.Hostname == "*") {
+			dev.Hostname = arp.Hostname
+		}
+		knownDevices[arp.IP] = dev
 	}
 
 	// Also check static leases
 	store, _ := loadDHCPConfig()
 	if store != nil {
 		for _, sl := range store.StaticLeases {
-			if sl.Hostname != "" {
-				ipToHostname[sl.IP] = sl.Hostname
+			if sl.IP == "" {
+				continue
 			}
-			ipToMAC[sl.IP] = sl.MAC
+			dev := knownDevices[sl.IP]
+			if sl.MAC != "" {
+				dev.MAC = sl.MAC
+			}
+			if sl.Hostname != "" && (dev.Hostname == "" || dev.Hostname == "*") {
+				dev.Hostname = sl.Hostname
+			}
+			knownDevices[sl.IP] = dev
 		}
 	}
 
 	deviceTrafficMu.RLock()
 	defer deviceTrafficMu.RUnlock()
 
+	// Add any additional IPs currently in deviceTrafficMap
+	for ip := range deviceTrafficMap {
+		if _, exists := knownDevices[ip]; !exists {
+			knownDevices[ip] = devInfo{}
+		}
+	}
+
 	var entries []DeviceTrafficEntry
-	for ip, state := range deviceTrafficMap {
-		entry := DeviceTrafficEntry{
-			IP:         ip,
-			MAC:        ipToMAC[ip],
-			Hostname:   ipToHostname[ip],
-			RxBytes:    state.RxBytes,
-			TxBytes:    state.TxBytes,
-			RxRate:     state.RxRate,
-			TxRate:     state.TxRate,
-			TotalToday: deviceTrafficDay[ip],
+	for ip, dev := range knownDevices {
+		if !isPrivateIP(ip) || ip == "127.0.0.1" {
+			continue
 		}
 
-		// Skip devices with zero traffic
-		if state.RxBytes == 0 && state.TxBytes == 0 {
-			continue
+		state := deviceTrafficMap[ip]
+		var rxBytes, txBytes, rxRate, txRate, totalToday uint64
+		if state != nil {
+			rxBytes = state.RxBytes
+			txBytes = state.TxBytes
+			rxRate = state.RxRate
+			txRate = state.TxRate
+			totalToday = deviceTrafficDay[ip]
+		}
+
+		hostname := dev.Hostname
+		if hostname == "*" || hostname == "" {
+			hostname = "Device (" + ip + ")"
+		}
+
+		entry := DeviceTrafficEntry{
+			IP:         ip,
+			MAC:        dev.MAC,
+			Hostname:   hostname,
+			RxBytes:    rxBytes,
+			TxBytes:    txBytes,
+			RxRate:     rxRate,
+			TxRate:     txRate,
+			TotalToday: totalToday,
 		}
 
 		entries = append(entries, entry)
 	}
 
-	// If no entries, return empty array (not null)
 	if entries == nil {
 		entries = []DeviceTrafficEntry{}
 	}
@@ -283,19 +327,24 @@ func getDeviceTrafficDetail(w http.ResponseWriter, r *http.Request) {
 	dailyTotal := deviceTrafficDay[ip]
 	deviceTrafficMu.RUnlock()
 
-	if !exists {
-		respondWithError(w, ErrGenericNotFound, "Device not found in traffic tracking", http.StatusNotFound, nil)
-		return
+	var rxBytes, txBytes, rxRate, txRate uint64
+	var lastUpdate time.Time = time.Now()
+	if exists && state != nil {
+		rxBytes = state.RxBytes
+		txBytes = state.TxBytes
+		rxRate = state.RxRate
+		txRate = state.TxRate
+		lastUpdate = state.LastUpdate
 	}
 
 	detail := map[string]interface{}{
 		"ip":          ip,
-		"rx_bytes":    state.RxBytes,
-		"tx_bytes":    state.TxBytes,
-		"rx_rate":     state.RxRate,
-		"tx_rate":     state.TxRate,
+		"rx_bytes":    rxBytes,
+		"tx_bytes":    txBytes,
+		"rx_rate":     rxRate,
+		"tx_rate":     txRate,
 		"total_today": dailyTotal,
-		"last_update": state.LastUpdate,
+		"last_update": lastUpdate,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -51,6 +51,7 @@ var allowedCommands = map[string]bool{
 	"ss":              true, // Socket statistics (active connections)
 	"netstat":         true, // Network statistics (fallback)
 	"dnsmasq":         true, // DHCP/DNS server (version check)
+	"conntrack":       true, // Connection tracking CLI
 	"./update.sh":     true, // System update script
 }
 
