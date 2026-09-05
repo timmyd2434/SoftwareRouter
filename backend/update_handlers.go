@@ -41,7 +41,7 @@ func getRepoDir() string {
 func getUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	repoDir := getRepoDir()
 	branch := r.URL.Query().Get("branch")
-	
+
 	if branch == "" {
 		// get current branch
 		cmd := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "branch", "--show-current")
@@ -58,49 +58,88 @@ func getUpdateStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch latest from origin, falling back to public HTTPS if SSH fails
-	fetchCmd := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "fetch", "origin")
-	if out, err := fetchCmd.CombinedOutput(); err != nil {
+	// Fix .git directory permissions before fetching.
+	// The service runs as root but the repo may be owned by the original user (e.g. tim).
+	// git refuses to write FETCH_HEAD if it can't open the file.
+	// Make the .git directory and all files group-readable/writable so any user can fetch.
+	gitDir := filepath.Join(repoDir, ".git")
+	if info, err := os.Stat(gitDir); err == nil && info.IsDir() {
+		// chmod -R a+rw .git — ignore errors (best-effort)
+		_ = exec.Command("chmod", "-R", "a+rw", gitDir).Run()
+	}
+
+	// Determine who owns the repo so we can run git as that user
+	repoOwner := ""
+	if info, err := os.Stat(repoDir); err == nil {
+		// Try to get the owning username via stat
+		statCmd := exec.Command("stat", "-c", "%U", repoDir)
+		if out, err := statCmd.Output(); err == nil {
+			owner := strings.TrimSpace(string(out))
+			if owner != "" && owner != "root" {
+				repoOwner = owner
+			}
+		}
+		_ = info
+	}
+
+	// Run a git command, either as repo owner (if different from current user) or directly
+	runGit := func(args ...string) ([]byte, error) {
+		baseArgs := append([]string{"-c", "safe.directory=*", "-C", repoDir}, args...)
+		if repoOwner != "" && os.Getuid() == 0 {
+			suArgs := append([]string{"-u", repoOwner, "git"}, baseArgs...)
+			cmd := exec.Command("sudo", suArgs...)
+			return cmd.Output()
+		}
+		return exec.Command("git", baseArgs...).Output()
+	}
+
+	runGitCombined := func(args ...string) ([]byte, error) {
+		baseArgs := append([]string{"-c", "safe.directory=*", "-C", repoDir}, args...)
+		if repoOwner != "" && os.Getuid() == 0 {
+			suArgs := append([]string{"-u", repoOwner, "git"}, baseArgs...)
+			cmd := exec.Command("sudo", suArgs...)
+			return cmd.CombinedOutput()
+		}
+		cmd := exec.Command("git", baseArgs...)
+		return cmd.CombinedOutput()
+	}
+
+	// Fetch latest from origin
+	if out, err := runGitCombined("fetch", "origin"); err != nil {
 		log.Printf("[WARN] Failed to fetch git updates from origin (%v): %s. Attempting HTTPS fetch...", err, string(out))
-		httpsFetch := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "fetch", "https://github.com/timmyd2434/SoftwareRouter.git", branch)
-		if out2, err2 := httpsFetch.CombinedOutput(); err2 != nil {
+		if out2, err2 := runGitCombined("fetch", "https://github.com/timmyd2434/SoftwareRouter.git", branch); err2 != nil {
 			log.Printf("[WARN] HTTPS fetch failed: %v, output: %s", err2, string(out2))
 		}
 	}
 
 	// Current branch
-	currBranchCmd := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "branch", "--show-current")
-	currBranchOut, _ := currBranchCmd.Output()
+	currBranchOut, _ := runGit("branch", "--show-current")
 	currentBranch := strings.TrimSpace(string(currBranchOut))
 	if currentBranch == "" {
 		currentBranch = branch
 	}
 
 	// Current commit
-	currCommitCmd := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "rev-parse", "--short", "HEAD")
-	currCommitOut, _ := currCommitCmd.Output()
+	currCommitOut, _ := runGit("rev-parse", "--short", "HEAD")
 	currentCommit := strings.TrimSpace(string(currCommitOut))
 
-	// Latest commit
-	latestCommitCmd := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "rev-parse", "--short", "origin/"+branch)
-	latestCommitOut, _ := latestCommitCmd.Output()
+	// Latest commit on remote branch
+	latestCommitOut, err := runGit("rev-parse", "--short", "origin/"+branch)
 	latestCommit := strings.TrimSpace(string(latestCommitOut))
-	if latestCommit == "" {
-		fetchHeadCmd := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "rev-parse", "--short", "FETCH_HEAD")
-		fetchHeadOut, _ := fetchHeadCmd.Output()
+	if latestCommit == "" || err != nil {
+		fetchHeadOut, _ := runGit("rev-parse", "--short", "FETCH_HEAD")
 		latestCommit = strings.TrimSpace(string(fetchHeadOut))
 	}
 
 	// Behind count
 	targetRef := "origin/" + branch
 	if latestCommit != "" {
-		checkRefCmd := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "rev-parse", "--verify", targetRef)
-		if err := checkRefCmd.Run(); err != nil {
+		checkRefOut, checkErr := runGit("rev-parse", "--verify", targetRef)
+		if checkErr != nil || strings.TrimSpace(string(checkRefOut)) == "" {
 			targetRef = "FETCH_HEAD"
 		}
 	}
-	behindCmd := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "rev-list", "--count", "HEAD.."+targetRef)
-	behindOut, _ := behindCmd.Output()
+	behindOut, _ := runGit("rev-list", "--count", "HEAD.."+targetRef)
 	behindCount, _ := strconv.Atoi(strings.TrimSpace(string(behindOut)))
 
 	status := UpdateStatus{
@@ -115,6 +154,7 @@ func getUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(status)
 }
+
 
 func applyUpdate(w http.ResponseWriter, r *http.Request) {
 	repoDir := getRepoDir()
