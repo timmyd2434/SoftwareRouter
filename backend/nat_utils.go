@@ -127,6 +127,14 @@ func savePortForwardingRules() error {
 
 func GetPortForwardingRules() []PortForwardingRule {
 	pfStoreLock.RLock()
+	needLoad := pfStore.Rules == nil
+	pfStoreLock.RUnlock()
+
+	if needLoad {
+		loadPortForwardingRules()
+	}
+
+	pfStoreLock.RLock()
 	defer pfStoreLock.RUnlock()
 	// Return a copy to avoid races if caller modifies
 	rules := make([]PortForwardingRule, len(pfStore.Rules))
