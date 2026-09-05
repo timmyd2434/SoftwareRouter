@@ -1015,10 +1015,11 @@ const SystemUpdate = () => {
             setShowUpdateModal(false);
             setMessage({ type: 'info', text: 'Initiating system update... The service will restart.' });
 
+            const force = (status && !status.update_available) ? true : false;
             const res = await authFetch(API_ENDPOINTS.UPDATE_APPLY, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ branch: selectedBranch, force: false })
+                body: JSON.stringify({ branch: selectedBranch, force: force })
             });
 
             if (res.ok) {
@@ -1107,10 +1108,10 @@ const SystemUpdate = () => {
                     type="button"
                     className="btn-primary"
                     onClick={() => setShowUpdateModal(true)}
-                    disabled={checking || updating || (status && !status.update_available)}
+                    disabled={checking || updating}
                 >
                     {updating ? <Loader2 size={16} className="spin" /> : <Download size={16} />}
-                    Update Software
+                    {status && status.update_available ? 'Update Software' : 'Rebuild / Force Update'}
                 </button>
             </div>
 

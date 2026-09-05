@@ -46,10 +46,10 @@ func getUpdateStatus(w http.ResponseWriter, r *http.Request) {
 		// get current branch
 		cmd := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "branch", "--show-current")
 		out, err := cmd.Output()
-		if err == nil {
+		if err == nil && strings.TrimSpace(string(out)) != "" {
 			branch = strings.TrimSpace(string(out))
 		} else {
-			branch = "main" // fallback
+			branch = "Dev" // fallback
 		}
 	}
 
@@ -58,16 +58,23 @@ func getUpdateStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch latest (log warning if fetch produces output/error, but do not crash endpoint)
+	// Fetch latest from origin, falling back to public HTTPS if SSH fails
 	fetchCmd := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "fetch", "origin")
 	if out, err := fetchCmd.CombinedOutput(); err != nil {
-		log.Printf("[WARN] Failed to fetch git updates from origin: %v, output: %s", err, string(out))
+		log.Printf("[WARN] Failed to fetch git updates from origin (%v): %s. Attempting HTTPS fetch...", err, string(out))
+		httpsFetch := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "fetch", "https://github.com/timmyd2434/SoftwareRouter.git", branch)
+		if out2, err2 := httpsFetch.CombinedOutput(); err2 != nil {
+			log.Printf("[WARN] HTTPS fetch failed: %v, output: %s", err2, string(out2))
+		}
 	}
 
 	// Current branch
 	currBranchCmd := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "branch", "--show-current")
 	currBranchOut, _ := currBranchCmd.Output()
 	currentBranch := strings.TrimSpace(string(currBranchOut))
+	if currentBranch == "" {
+		currentBranch = branch
+	}
 
 	// Current commit
 	currCommitCmd := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "rev-parse", "--short", "HEAD")
@@ -78,9 +85,21 @@ func getUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	latestCommitCmd := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "rev-parse", "--short", "origin/"+branch)
 	latestCommitOut, _ := latestCommitCmd.Output()
 	latestCommit := strings.TrimSpace(string(latestCommitOut))
+	if latestCommit == "" {
+		fetchHeadCmd := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "rev-parse", "--short", "FETCH_HEAD")
+		fetchHeadOut, _ := fetchHeadCmd.Output()
+		latestCommit = strings.TrimSpace(string(fetchHeadOut))
+	}
 
 	// Behind count
-	behindCmd := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "rev-list", "--count", "HEAD..origin/"+branch)
+	targetRef := "origin/" + branch
+	if latestCommit != "" {
+		checkRefCmd := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "rev-parse", "--verify", targetRef)
+		if err := checkRefCmd.Run(); err != nil {
+			targetRef = "FETCH_HEAD"
+		}
+	}
+	behindCmd := exec.Command("git", "-c", "safe.directory=*", "-C", repoDir, "rev-list", "--count", "HEAD.."+targetRef)
 	behindOut, _ := behindCmd.Output()
 	behindCount, _ := strconv.Atoi(strings.TrimSpace(string(behindOut)))
 
