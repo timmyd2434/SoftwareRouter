@@ -170,12 +170,24 @@ systemctl restart dnsmasq
 
 
 # Enable IP Forwarding Persistent
-echo -e "${CYAN}Enabling Persistent IP Forwarding...${NC}"
+echo -e "${CYAN}Enabling Persistent IP Forwarding and Conntrack Accounting...${NC}"
 cat <<EOF > /etc/sysctl.d/99-softrouter.conf
 net.ipv4.ip_forward=1
 net.ipv6.conf.all.forwarding=1
+
+# Enable per-connection byte accounting for device bandwidth monitoring
+# Without this, /proc/net/nf_conntrack bytes= fields are always 0
+net.netfilter.nf_conntrack_acct=1
 EOF
-sysctl -p /etc/sysctl.d/99-softrouter.conf
+sysctl -p /etc/sysctl.d/99-softrouter.conf 2>/dev/null || true
+
+# Ensure nf_conntrack loads at boot and accounting is on from first packet
+if ! grep -q "nf_conntrack" /etc/modules-load.d/softrouter.conf 2>/dev/null; then
+    echo "nf_conntrack" >> /etc/modules-load.d/softrouter.conf
+fi
+modprobe nf_conntrack 2>/dev/null || true
+sysctl -w net.netfilter.nf_conntrack_acct=1 2>/dev/null || true
+
 
 # 3. Security Setup (Non-Interactive)
 echo -e "${CYAN}[2/10] Security Configuration...${NC}"
