@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -25,36 +26,49 @@ var (
 )
 
 // installDeadManSwitch adds temporary emergency access rules
-// These rules ensure SSH and WebUI remain accessible during firewall transitions
+// These rules ensure SSH and WebUI remain accessible on LAN/loopback during firewall transitions
 // They are removed after successful application or on rollback
-func installDeadManSwitch() error {
+func installDeadManSwitch(lanInterfaces []string) error {
 	log.Println("[RESILIENCE] Installing dead-man switch (emergency access rules)")
 
-	// Create temporary ruleset that accepts SSH and WebUI traffic unconditionally
-	// This is applied BEFORE flushing existing rules
-	deadManRules := `
-# Emergency access rules - applied during firewall transitions
-# These rules ensure management access survives firewall application failures
-
-table inet deadman {
-	chain input {
-		type filter hook input priority -200; policy drop;
-		
-		# Accept loopback traffic
-		iif lo accept
-		
-		# Accept SSH
-		tcp dport 22 accept comment "Dead-man switch: SSH"
-		
-		# Accept WebUI
-		tcp dport 8080 accept comment "Dead-man switch: WebUI redirect"
-		tcp dport 443 accept comment "Dead-man switch: WebUI HTTPS"
-		
-		# Accept established connections
-		ct state established,related accept
+	// If lanInterfaces is empty, attempt to load from interface metadata
+	if len(lanInterfaces) == 0 {
+		metaStore, err := loadInterfaceMetadata()
+		if err == nil {
+			for iface, meta := range metaStore.Metadata {
+				if strings.EqualFold(meta.Label, "LAN") {
+					lanInterfaces = append(lanInterfaces, iface)
+				}
+			}
+		}
 	}
-}
-`
+
+	var b strings.Builder
+	b.WriteString("# Emergency access rules - applied during firewall transitions\n")
+	b.WriteString("# These rules ensure management access survives firewall application failures\n\n")
+	b.WriteString("table inet deadman {\n")
+	b.WriteString("  chain input {\n")
+	b.WriteString("    type filter hook input priority -200; policy drop;\n\n")
+	b.WriteString("    # Accept loopback traffic\n")
+	b.WriteString("    iif lo accept\n\n")
+	b.WriteString("    # Accept established connections\n")
+	b.WriteString("    ct state established,related accept\n\n")
+
+	// Restrict emergency management access to LAN interfaces and loopback only
+	if len(lanInterfaces) > 0 {
+		for _, lan := range lanInterfaces {
+			b.WriteString(fmt.Sprintf("    iifname \"%s\" tcp dport 22 accept comment \"Dead-man switch: SSH LAN\"\n", lan))
+			b.WriteString(fmt.Sprintf("    iifname \"%s\" tcp dport 8080 accept comment \"Dead-man switch: WebUI HTTP LAN\"\n", lan))
+			b.WriteString(fmt.Sprintf("    iifname \"%s\" tcp dport 443 accept comment \"Dead-man switch: WebUI HTTPS LAN\"\n", lan))
+		}
+	} else {
+		log.Println("[RESILIENCE] WARNING: No LAN interfaces specified for dead-man switch. WAN access remains blocked.")
+	}
+
+	b.WriteString("  }\n")
+	b.WriteString("}\n")
+
+	deadManRules := b.String()
 
 	tmpfile, err := os.CreateTemp("", "softrouter-deadman-*.nft")
 	if err != nil {
