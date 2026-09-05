@@ -96,11 +96,15 @@ fi
 echo "🔄 Pulling latest changes from Git..."
 if [ -n "$SUDO_USER" ]; then
     if ! sudo -u "$SUDO_USER" git -c safe.directory=* fetch origin 2>/dev/null; then
-        git -c safe.directory=* fetch origin
+        if ! git -c safe.directory=* fetch origin 2>/dev/null; then
+            git -c safe.directory=* fetch https://github.com/timmyd2434/SoftwareRouter.git ${TARGET_BRANCH:-Dev} 2>/dev/null || true
+        fi
     fi
     CURRENT_BRANCH=$(sudo -u "$SUDO_USER" git -c safe.directory=* branch --show-current 2>/dev/null || git -c safe.directory=* branch --show-current)
 else
-    git -c safe.directory=* fetch origin
+    if ! git -c safe.directory=* fetch origin 2>/dev/null; then
+        git -c safe.directory=* fetch https://github.com/timmyd2434/SoftwareRouter.git ${TARGET_BRANCH:-Dev} 2>/dev/null || true
+    fi
     CURRENT_BRANCH=$(git -c safe.directory=* branch --show-current)
 fi
 echo "  Current branch: $CURRENT_BRANCH"
