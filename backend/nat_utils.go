@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -51,15 +52,32 @@ func loadPortForwardingRules() {
 	data, err := os.ReadFile(pfConfigPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			pfStore.Rules = []PortForwardingRule{} // Init empty
+			if pfStore.Rules == nil {
+				pfStore.Rules = []PortForwardingRule{} // Init empty
+			}
 			return
 		}
 		fmt.Printf("Error loading port forwarding rules: %v\n", err)
 		return
 	}
 
-	if err := json.Unmarshal(data, &pfStore); err != nil {
-		fmt.Printf("Error parsing port forwarding rules: %v\n", err)
+	// First try unmarshaling into pfStore struct ({"rules": [...]})
+	var tempStore PortForwardingStore
+	if err := json.Unmarshal(data, &tempStore); err == nil {
+		pfStore.Rules = tempStore.Rules
+		return
+	}
+
+	// Fallback: try unmarshaling directly as []PortForwardingRule array ([...])
+	var rawRules []PortForwardingRule
+	if err := json.Unmarshal(data, &rawRules); err == nil {
+		pfStore.Rules = rawRules
+		return
+	}
+
+	fmt.Printf("Error parsing port forwarding rules from %s: invalid JSON format\n", pfConfigPath)
+	// Do NOT wipe existing in-memory rules if unmarshal failed on corrupted file
+	if pfStore.Rules == nil {
 		pfStore.Rules = []PortForwardingRule{}
 	}
 }
@@ -73,7 +91,38 @@ func savePortForwardingRules() error {
 		return err
 	}
 
-	return os.WriteFile(pfConfigPath, data, 0600)
+	dir := filepath.Dir(pfConfigPath)
+	if err := os.MkdirAll(dir, 0750); err != nil {
+		return fmt.Errorf("failed to create config dir: %w", err)
+	}
+
+	tmpFile, err := os.CreateTemp(dir, "port_forwarding-*.json.tmp")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file for port forwarding: %w", err)
+	}
+	tmpName := tmpFile.Name()
+
+	if _, err := tmpFile.Write(data); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("failed to write temp file for port forwarding: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("failed to close temp file for port forwarding: %w", err)
+	}
+
+	if err := os.Chmod(tmpName, 0600); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("failed to chmod temp file for port forwarding: %w", err)
+	}
+
+	if err := os.Rename(tmpName, pfConfigPath); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("failed to replace port forwarding config: %w", err)
+	}
+
+	return nil
 }
 
 func GetPortForwardingRules() []PortForwardingRule {

@@ -524,6 +524,17 @@ func updateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Re-apply firewall rules if network/access settings changed
+	if req.WebAccess != nil || req.ProtectedSubnet != nil {
+		go func() {
+			if firewallManager != nil {
+				if err := firewallManager.ApplyFirewallRules(true); err != nil {
+					log.Printf("ERROR: Failed to re-apply firewall rules after config update: %v", err)
+				}
+			}
+		}()
+	}
+
 	logAuditEvent(getUsernameFromToken(r), "settings.update", "config",
 		"{\"status\":\"success\"}", getClientIP(r), true)
 

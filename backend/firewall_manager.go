@@ -131,7 +131,7 @@ func (fm *FirewallManager) ApplyFirewallRules(skipWatchdog bool) error {
 	}
 
 	// 8. Install dead-man switch (emergency access protection)
-	if err := installDeadManSwitch(); err != nil {
+	if err := installDeadManSwitch(lanInterfaces); err != nil {
 		fmt.Printf("Warning: Could not install dead-man switch: %v\n", err)
 	}
 
@@ -395,9 +395,14 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 		}
 
 		for _, wan := range wanInterfaces {
-			// WAN HTTPS only — no unencrypted WAN access
-			b.WriteString(fmt.Sprintf("    iifname \"%s\" tcp dport %d dnat to 127.0.0.1:%s comment \"WAN WebUI HTTPS\"\n",
-				wan, httpsPort, targetHTTPS))
+			if httpPort > 0 {
+				b.WriteString(fmt.Sprintf("    iifname \"%s\" tcp dport %d dnat to 127.0.0.1:8080 comment \"WAN WebUI HTTP redirect\"\n",
+					wan, httpPort))
+			}
+			if httpsPort > 0 {
+				b.WriteString(fmt.Sprintf("    iifname \"%s\" tcp dport %d dnat to 127.0.0.1:%s comment \"WAN WebUI HTTPS\"\n",
+					wan, httpsPort, targetHTTPS))
+			}
 		}
 	}
 

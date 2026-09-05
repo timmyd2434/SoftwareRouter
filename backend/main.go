@@ -548,10 +548,11 @@ func loadSystemConfig() {
 		fmt.Printf("Error parsing config file: %v. Using defaults.\n", err)
 	}
 
-	// Upgrade Logic: If WebAccess is uninitialized, set defaults
+	// Upgrade Logic: If WebAccess ports are uninitialized, set defaults
 	if config.WebAccess.WANPortHTTP == 0 {
-		config.WebAccess.AllowWAN = true
 		config.WebAccess.WANPortHTTP = 980
+	}
+	if config.WebAccess.WANPortHTTPS == 0 {
 		config.WebAccess.WANPortHTTPS = 9443
 	}
 
