@@ -53,6 +53,8 @@ var allowedCommands = map[string]bool{
 	"dnsmasq":         true, // DHCP/DNS server (version check)
 	"conntrack":       true, // Connection tracking CLI
 	"./update.sh":     true, // System update script
+	"update.sh":       true, // System update script
+	"systemd-run":     true, // Systemd transient service runner (for updates)
 }
 
 // commandExecutionLog stores recent command executions for debugging
@@ -155,8 +157,8 @@ func validateCommand(cmd string, args []string) error {
 
 func getCommandContext(cmd string) (context.Context, context.CancelFunc) {
 	timeout := 30 * time.Second
-	if cmd == "speedtest-cli" || cmd == "suricata-update" || cmd == "curl" {
-		timeout = 5 * time.Minute
+	if cmd == "speedtest-cli" || cmd == "suricata-update" || cmd == "curl" || cmd == "systemd-run" || cmd == "./update.sh" || cmd == "update.sh" {
+		timeout = 10 * time.Minute
 	}
 	return context.WithTimeout(context.Background(), timeout)
 }

@@ -284,7 +284,6 @@ func controlService(w http.ResponseWriter, r *http.Request) {
 		"suricata":     true,
 		"crowdsec":     true,
 		"unifi":        true,
-		"softrouter":   true,
 	}
 	if !validServices[req.ServiceName] {
 		http.Error(w, "Invalid service name", http.StatusBadRequest)

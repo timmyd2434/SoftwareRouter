@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -21,8 +22,8 @@ func validatePortForwardingRuleFields(rule PortForwardingRule) error {
 		return fmt.Errorf("internal IP required")
 	}
 	ip := net.ParseIP(rule.InternalIP)
-	if ip == nil {
-		return fmt.Errorf("invalid internal IP address format")
+	if ip == nil || ip.To4() == nil {
+		return fmt.Errorf("invalid internal IPv4 address format")
 	}
 	if ip.IsLoopback() || ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() {
 		return fmt.Errorf("internal IP cannot be loopback, unspecified, multicast, or link-local address")
@@ -32,7 +33,7 @@ func validatePortForwardingRuleFields(rule PortForwardingRule) error {
 	if len(rule.Description) > 100 {
 		return fmt.Errorf("description too long (max 100 characters)")
 	}
-	dangerousChars := []string{";", "|", "&", "$", "`", "\n", "\r", "<", ">", "\""}
+	dangerousChars := []string{";", "|", "&", "$", "`", "\n", "\r", "<", ">", "\"", "\\"}
 	for _, char := range dangerousChars {
 		if strings.Contains(rule.Description, char) {
 			return fmt.Errorf("description contains invalid characters")
@@ -55,10 +56,22 @@ func listPortForwardingRules(w http.ResponseWriter, r *http.Request) {
 }
 
 func createPortForwardingRule(w http.ResponseWriter, r *http.Request) {
+	var rawMap map[string]interface{}
 	var rule PortForwardingRule
-	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+	
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
+	}
+	if err := json.Unmarshal(bodyBytes, &rule); err != nil {
+		http.Error(w, "Invalid request body JSON", http.StatusBadRequest)
+		return
+	}
+	if err := json.Unmarshal(bodyBytes, &rawMap); err == nil {
+		if _, exists := rawMap["enabled"]; !exists {
+			rule.Enabled = true // Default to true if omitted
+		}
 	}
 
 	if err := validatePortForwardingRuleFields(rule); err != nil {
@@ -67,7 +80,6 @@ func createPortForwardingRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rule.ID = uuid.New().String()
-	rule.Enabled = true // Default to enabled
 
 	if err := addPortForwardingRule(rule); err != nil {
 		respondSystemError(w, ErrNetworkRuleAddFailed, "Failed to save rule", err)

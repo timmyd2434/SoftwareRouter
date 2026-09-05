@@ -69,6 +69,14 @@ func ValidateConfig(cfg Config) error {
 		}
 	}
 
+	// 5b. Validate OpenVPN and VPNServer Ports
+	if cfg.OpenVPNPort < 1 || cfg.OpenVPNPort > 65535 {
+		return fmt.Errorf("invalid OpenVPN port (must be between 1 and 65535)")
+	}
+	if cfg.VPNServer.Port < 1 || cfg.VPNServer.Port > 65535 {
+		return fmt.Errorf("invalid VPN server port (must be between 1 and 65535)")
+	}
+
 	// 6. Validate Trusted Proxies
 	for _, proxy := range cfg.TrustedProxies {
 		if net.ParseIP(proxy) == nil {
