@@ -157,10 +157,29 @@ func applyUpdate(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		var output []byte
 		var err error
+		homeDir := os.Getenv("HOME")
+		if homeDir == "" {
+			homeDir = "/root"
+		}
+		pathEnv := "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+		if curPath := os.Getenv("PATH"); curPath != "" {
+			pathEnv += ":" + curPath
+		}
+
 		if os.Getuid() == 0 {
 			// Run via systemd-run in isolated transient unit so stopping softrouter doesn't kill the update script
 			unitName := fmt.Sprintf("softrouter-update-%d", time.Now().Unix())
-			sysdArgs := append([]string{"--unit=" + unitName, "--service-type=oneshot", updateScript}, args...)
+			sysdArgs := []string{
+				"--unit=" + unitName,
+				"--service-type=oneshot",
+				"-p", "WorkingDirectory=" + repoDir,
+				"-p", "Environment=PATH=" + pathEnv,
+				"-p", "Environment=HOME=" + homeDir,
+				"-p", "Environment=GOCACHE=/tmp/go-build-cache",
+				"-p", "Environment=GOPATH=/tmp/go",
+				updateScript,
+			}
+			sysdArgs = append(sysdArgs, args...)
 			output, err = runPrivilegedCombinedOutput("systemd-run", sysdArgs...)
 		} else {
 			output, err = runPrivilegedInDirCombinedOutput(repoDir, updateScript, args...)
@@ -168,7 +187,7 @@ func applyUpdate(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Printf("[ERROR] Update execution failed: %v\nOutput: %s", err, string(output))
 		} else {
-			log.Printf("[INFO] Update process completed successfully: %s", string(output))
+			log.Printf("[INFO] Update process launched: %s", string(output))
 		}
 	}()
 

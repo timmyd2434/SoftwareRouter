@@ -43,9 +43,41 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Ensure PATH and environment variables are set for non-interactive / systemd execution
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH}"
+export HOME="${HOME:-/root}"
+export GOCACHE="${GOCACHE:-/tmp/go-build-cache}"
+export GOPATH="${GOPATH:-/tmp/go}"
+
 # Store current directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+
+# Safety Trap: Guarantee that softrouter-backend is restarted even if update script fails or exits unexpectedly
+ensure_service_running() {
+    local exit_code=$?
+    if [ $exit_code -ne 0 ]; then
+        echo "⚠️  Update script exited with code $exit_code"
+    fi
+
+    # Check if backend process is running
+    if ! pgrep -f softrouter-backend > /dev/null 2>&1; then
+        echo "🔄 Backend process is not running. Attempting auto-restart..."
+        if systemctl list-unit-files 2>/dev/null | grep -q "softrouter.service"; then
+            systemctl daemon-reload 2>/dev/null || true
+            systemctl restart softrouter 2>/dev/null || true
+        fi
+
+        if ! pgrep -f softrouter-backend > /dev/null 2>&1; then
+            if [ -x /usr/local/bin/softrouter-backend ]; then
+                nohup /usr/local/bin/softrouter-backend > /var/log/softrouter-backend.log 2>&1 &
+            elif [ -x "$SCRIPT_DIR/backend/softrouter-backend" ]; then
+                nohup "$SCRIPT_DIR/backend/softrouter-backend" > /var/log/softrouter-backend.log 2>&1 &
+            fi
+        fi
+    fi
+}
+trap ensure_service_running EXIT
 
 # Backup configuration files from /etc/softrouter/ (authoritative runtime location)
 echo "📦 Backing up configuration files..."
@@ -147,24 +179,24 @@ echo ""
 
 # Stop the backend service
 echo "🛑 Stopping SoftRouter backend service..."
-if systemctl is-active --quiet softrouter; then
-    systemctl stop softrouter
+if systemctl is-active --quiet softrouter 2>/dev/null; then
+    systemctl stop softrouter 2>/dev/null || true
     echo "  ✓ Service stopped"
 else
     echo "  ℹ️  Service not running"
 fi
 
 # Kill any running softrouter-backend processes (in case it's running outside systemd)
-if pgrep -f softrouter-backend > /dev/null; then
+if pgrep -f softrouter-backend > /dev/null 2>&1; then
     echo "  🔪 Killing running backend processes..."
-    pkill -f softrouter-backend
+    pkill -f softrouter-backend || true
     sleep 2  # Give processes time to terminate
     echo "  ✓ Processes terminated"
 fi
 echo ""
 
 # Ensure WireGuard packages are installed
-if ! command -v wg &> /dev/null || ! systemctl list-unit-files | grep -q "^wg-quick@"; then
+if ! command -v wg &> /dev/null || ! systemctl list-unit-files 2>/dev/null | grep -q "^wg-quick@"; then
     echo "📦 Checking WireGuard packages..."
     if command -v apt-get &> /dev/null; then
         apt-get update -qq && apt-get install -y -qq wireguard wireguard-tools || true
@@ -175,7 +207,7 @@ echo ""
 
 # Build backend
 echo "🔨 Building backend..."
-cd backend
+cd "$SCRIPT_DIR/backend"
 go build -o softrouter-backend
 if [ $? -eq 0 ]; then
     echo "  ✓ Backend built successfully"
@@ -186,10 +218,12 @@ if [ $? -eq 0 ]; then
 else
     echo "  ❌ Backend build failed!"
     echo "  Restoring configuration from backup..."
-    cp -r $BACKUP_DIR/* "$SCRIPT_DIR/"
+    if [ -d "$BACKUP_DIR" ]; then
+        cp -r "$BACKUP_DIR"/* "$SCRIPT_DIR/" 2>/dev/null || true
+    fi
     exit 1
 fi
-cd ..
+cd "$SCRIPT_DIR"
 
 # Create dnsmasq base configuration if it doesn't exist
 echo "📡 Configuring dnsmasq..."
@@ -225,7 +259,7 @@ echo ""
 
 # Build frontend
 echo "🎨 Building frontend..."
-cd frontend
+cd "$SCRIPT_DIR/frontend"
 
 # Install dependencies if node_modules doesn't exist
 if [ ! -d "node_modules" ]; then
@@ -244,12 +278,13 @@ if [ $? -eq 0 ]; then
     echo "  ✓ Frontend deployed"
 else
     echo "  ❌ Frontend build failed!"
-    cd ..
-    echo "  Restoring configuration from backup..."
-    cp -r $BACKUP_DIR/* "$SCRIPT_DIR/"
+    cd "$SCRIPT_DIR"
+    if [ -d "$BACKUP_DIR" ]; then
+        cp -r "$BACKUP_DIR"/* "$SCRIPT_DIR/" 2>/dev/null || true
+    fi
     exit 1
 fi
-cd ..
+cd "$SCRIPT_DIR"
 echo ""
 
 # Restore configuration files back to /etc/softrouter/
@@ -319,10 +354,10 @@ echo ""
 
 # Install/Update systemd service
 echo "⚙️  Configuring systemd service..."
-if [ -f "softrouter.service" ]; then
-    cp softrouter.service /etc/systemd/system/
-    systemctl daemon-reload
-    systemctl enable softrouter
+if [ -f "$SCRIPT_DIR/softrouter.service" ]; then
+    cp "$SCRIPT_DIR/softrouter.service" /etc/systemd/system/
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl enable softrouter 2>/dev/null || true
     echo "  ✓ Installed softrouter.service"
 else
     echo "  ⚠️  softrouter.service file not found in repo"
@@ -332,31 +367,32 @@ echo ""
 # Ensure DHCP and DNS services are enabled and active
 echo "📡 Ensuring DHCP (dnsmasq) and DNS services are active..."
 systemctl enable dnsmasq 2>/dev/null || true
-if ! systemctl is-active --quiet dnsmasq; then
+if ! systemctl is-active --quiet dnsmasq 2>/dev/null; then
     systemctl start dnsmasq 2>/dev/null || true
     echo "  ✓ Started dnsmasq (DHCP server)"
 else
     echo "  ✓ dnsmasq is running"
 fi
 
-if systemctl list-unit-files | grep -q "^unbound.service"; then
+if systemctl list-unit-files 2>/dev/null | grep -q "^unbound.service"; then
     systemctl enable unbound 2>/dev/null || true
 fi
 
 # Restart the backend service
 echo "🚀 Starting SoftRouter backend service..."
-if systemctl list-unit-files | grep -q "^softrouter.service"; then
-    systemctl start softrouter
-    if systemctl is-active --quiet softrouter; then
+systemctl daemon-reload 2>/dev/null || true
+if systemctl list-unit-files 2>/dev/null | grep -q "softrouter.service"; then
+    systemctl restart softrouter 2>/dev/null || systemctl start softrouter 2>/dev/null || true
+    sleep 2
+    if systemctl is-active --quiet softrouter 2>/dev/null || pgrep -f softrouter-backend > /dev/null 2>&1; then
         echo "  ✓ Service started successfully"
     else
-        echo "  ❌ Failed to start service!"
-        echo "  Check logs: journalctl -u softrouter -n 50"
-        exit 1
+        echo "  ⚠️ systemd restart failed, starting binary directly..."
+        nohup /usr/local/bin/softrouter-backend > /var/log/softrouter-backend.log 2>&1 &
     fi
 else
-    echo "  ℹ️  systemd service not found - start manually if needed"
-    echo "  Run: sudo /usr/local/bin/softrouter-backend &"
+    echo "  ℹ️  systemd service not found - starting binary directly"
+    nohup /usr/local/bin/softrouter-backend > /var/log/softrouter-backend.log 2>&1 &
 fi
 echo ""
 
@@ -365,11 +401,11 @@ echo "========================================="
 echo "  Update Complete!"
 echo "========================================="
 echo ""
-if systemctl list-unit-files | grep -q "^softrouter.service"; then
+if systemctl list-unit-files 2>/dev/null | grep -q "softrouter.service"; then
     echo "Service Status:"
-    systemctl status softrouter --no-pager -l | head -n 10
+    systemctl status softrouter --no-pager -l 2>/dev/null | head -n 10 || true
 else
-    echo "Service not configured. Running in manual mode."
+    echo "Service running in standalone background mode."
 fi
 echo ""
 echo "✅ SoftRouter has been updated successfully!"
