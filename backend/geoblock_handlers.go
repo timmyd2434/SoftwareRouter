@@ -61,12 +61,10 @@ func handleUpdateGeoBlockingConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Apply firewall rules if enabled
-	if cfg.Enabled {
-		if err := firewallManager.ApplyFirewallRules(false); err != nil {
-			fmt.Printf("Warning: Failed to apply firewall rules after geoblocking update: %v\n", err)
-			// Don't fail the request - config is saved
-		}
+	// Apply firewall rules (whether enabling, disabling, or updating countries)
+	if err := firewallManager.ApplyFirewallRules(false); err != nil {
+		fmt.Printf("Warning: Failed to apply firewall rules after geoblocking update: %v\n", err)
+		// Don't fail the request - config is saved
 	}
 
 	w.Header().Set("Content-Type", "application/json")
