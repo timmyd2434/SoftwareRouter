@@ -1018,7 +1018,10 @@ const SystemUpdate = () => {
             setShowUpdateModal(false);
             setMessage({ type: 'info', text: 'Initiating system update... The service will rebuild and restart.' });
 
-            const force = (status && !status.update_available) ? true : false;
+            // Always force rebuild so update.sh compiles the new binary even when
+            // git already has the latest commits pulled (e.g. the fetch happened
+            // earlier but the binary was never rebuilt).
+            const force = true;
             const res = await authFetch(API_ENDPOINTS.UPDATE_APPLY, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1028,7 +1031,13 @@ const SystemUpdate = () => {
             if (res.ok) {
                 setMessage({ type: 'info', text: 'Update in progress... Waiting for service to complete build and restart.' });
 
-                // Poll status every 3s for up to 60s
+                // Snapshot the commit hash BEFORE the update starts so we can
+                // detect when the service has restarted with the new binary.
+                const commitBefore = status ? status.current_commit : null;
+
+                // Poll every 4s for up to 120s (30 attempts).
+                // The service stops and rebuilds during the update, so the first
+                // few polls may fail (connection refused) — that's expected.
                 let attempts = 0;
                 const interval = setInterval(async () => {
                     attempts++;
@@ -1036,21 +1045,29 @@ const SystemUpdate = () => {
                         const statusRes = await authFetch(`${API_ENDPOINTS.UPDATE_STATUS}?branch=${selectedBranch}`);
                         if (statusRes.ok) {
                             const data = await statusRes.json();
-                            setStatus(data);
-                            clearInterval(interval);
-                            setUpdating(false);
-                            setMessage({ type: 'success', text: `Update process finished! Running commit ${data.current_commit}.` });
+                            // Only declare success once the running commit has changed,
+                            // or after 3 successful polls post-restart (handles force rebuild
+                            // where the commit hash stays the same).
+                            const commitChanged = commitBefore && data.current_commit !== commitBefore;
+                            const noUpdateNeeded = !commitBefore; // unknown baseline
+                            if (commitChanged || noUpdateNeeded || attempts >= 25) {
+                                setStatus(data);
+                                clearInterval(interval);
+                                setUpdating(false);
+                                setMessage({ type: 'success', text: `✓ Update complete! Running commit ${data.current_commit}.` });
+                            }
+                            // else: commit hasn't changed yet — service may still be rebuilding
                         }
                     } catch (e) {
-                        // Service may be restarting temporarily
+                        // Service is restarting — keep polling
                     }
 
-                    if (attempts >= 20) {
+                    if (attempts >= 30) {
                         clearInterval(interval);
                         setUpdating(false);
-                        setMessage({ type: 'info', text: 'Update triggered. If the interface does not automatically update, refresh the page.' });
+                        setMessage({ type: 'info', text: 'Update triggered. Refresh the page to confirm the new version is running.' });
                     }
-                }, 3000);
+                }, 4000);
             } else {
                 setMessage({ type: 'error', text: 'Failed to trigger update process' });
                 setUpdating(false);
