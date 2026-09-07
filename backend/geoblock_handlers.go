@@ -47,11 +47,15 @@ func handleUpdateGeoBlockingConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ensure IP lists exist for all blocked countries
-	for _, country := range cfg.BlockedCountries {
-		if err := ensureCountryIPList(country); err != nil {
-			respondSystemError(w, ErrGenericInternalError, fmt.Sprintf("Failed to get IP list for %s", country), err)
-			return
+	// Only ensure IP lists exist when geoblocking is actually being enabled with countries.
+	// Skip this when disabling — we don't need the IP lists to flush the rules, and a
+	// download failure should never prevent a user from turning geoblocking OFF.
+	if cfg.Enabled && len(cfg.BlockedCountries) > 0 {
+		for _, country := range cfg.BlockedCountries {
+			if err := ensureCountryIPList(country); err != nil {
+				respondSystemError(w, ErrGenericInternalError, fmt.Sprintf("Failed to get IP list for %s", country), err)
+				return
+			}
 		}
 	}
 
