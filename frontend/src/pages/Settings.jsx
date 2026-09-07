@@ -594,7 +594,10 @@ const BackupRestore = () => {
             setLoading(true);
             setMessage({ type: '', text: '' });
 
-            const res = await authFetch(`/api/backup/create?password=${encodeURIComponent(createPassword)}`);
+            const res = await authFetch('/api/backup/create', {
+                method: 'POST',
+                body: JSON.stringify({ password: createPassword })
+            });
             if (res.ok) {
                 const blob = await res.blob();
                 const url = window.URL.createObjectURL(blob);
