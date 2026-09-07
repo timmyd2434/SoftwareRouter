@@ -66,9 +66,26 @@ func handleUpdateGeoBlockingConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Apply firewall rules (whether enabling, disabling, or updating countries)
-	if err := firewallManager.ApplyFirewallRules(true); err != nil {
-		fmt.Printf("Warning: Failed to apply firewall rules after geoblocking update: %v\n", err)
-		// Don't fail the request - config is saved
+	applyErr := firewallManager.ApplyFirewallRules(true)
+	if applyErr != nil {
+		fmt.Printf("Warning: Failed to apply firewall rules after geoblocking update: %v\n", applyErr)
+
+		// If we're disabling geoblocking and the full regeneration failed, attempt a
+		// targeted removal of any geoblocking rules still in the live ruleset.
+		// This ensures rules are removed even when the full atomic apply fails.
+		if !cfg.Enabled {
+			fmt.Println("Attempting direct geoblocking rule flush as fallback...")
+			if flushErr := flushGeoBlockingRules(); flushErr != nil {
+				fmt.Printf("Fallback flush also failed: %v\n", flushErr)
+				respondSystemError(w, ErrGenericInternalError, "Failed to remove geoblocking rules from firewall", applyErr)
+				return
+			}
+			fmt.Println("✓ Geoblocking rules removed via fallback flush")
+		} else {
+			// Enabling failed — surface the error to the user
+			respondSystemError(w, ErrGenericInternalError, "Geoblocking config saved but firewall rules could not be applied", applyErr)
+			return
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
