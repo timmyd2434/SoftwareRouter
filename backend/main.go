@@ -781,16 +781,25 @@ func main() {
 		json.NewEncoder(w).Encode(logs)
 	}))
 
-	// Backup & Restore
-	mux.HandleFunc("POST /api/backup/create", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Password string `json:"password"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Password == "" {
-			http.Error(w, "Password field in JSON body required to create encrypted backup", http.StatusBadRequest)
+	mux.HandleFunc("/api/backup/create", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		password := req.Password
+
+		password := r.URL.Query().Get("password")
+		if password == "" && r.Method == http.MethodPost && r.Body != nil {
+			var req struct {
+				Password string `json:"password"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			password = req.Password
+		}
+
+		if password == "" {
+			http.Error(w, "Password parameter or JSON body required to create encrypted backup", http.StatusBadRequest)
+			return
+		}
 
 		backupData, err := createBackup(password)
 		if err != nil {
