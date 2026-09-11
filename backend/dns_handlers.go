@@ -21,8 +21,89 @@ type TopDomain struct {
 	Hits   int    `json:"hits"`
 }
 
+func parseTopDomains(raw interface{}) []TopDomain {
+	result := make([]TopDomain, 0)
+	if raw == nil {
+		return result
+	}
+
+	addDomain := func(d string, h int) {
+		if d == "" {
+			return
+		}
+		for _, existing := range result {
+			if existing.Domain == d {
+				return
+			}
+		}
+		result = append(result, TopDomain{Domain: d, Hits: h})
+	}
+
+	// Format 1: Array of items (AdGuard Home: [{"domain.com": 85}] or [{"name": "domain.com", "count": 85}])
+	if list, ok := raw.([]interface{}); ok {
+		for _, item := range list {
+			if len(result) >= 10 {
+				break
+			}
+			if obj, ok := item.(map[string]interface{}); ok {
+				var domainName string
+				var hitsCount int
+				foundExplicit := false
+
+				// Check explicit keys: "name", "domain", "host"
+				for _, key := range []string{"name", "domain", "host"} {
+					if v, ok := obj[key].(string); ok && v != "" {
+						domainName = v
+						foundExplicit = true
+						break
+					}
+				}
+				// Check explicit count keys: "count", "hits", "value", "queries"
+				for _, key := range []string{"count", "hits", "value", "queries"} {
+					if v, ok := obj[key].(float64); ok {
+						hitsCount = int(v)
+						break
+					}
+				}
+
+				if foundExplicit && domainName != "" {
+					addDomain(domainName, hitsCount)
+					continue
+				}
+
+				// Single-key map format: {"doubleclick.net": 85}
+				for k, v := range obj {
+					if countFloat, ok := v.(float64); ok {
+						addDomain(k, int(countFloat))
+						break
+					}
+				}
+			}
+		}
+		return result
+	}
+
+	// Format 2: Map/Object (Pi-hole: {"doubleclick.net": 85, "google-analytics.com": 62})
+	if obj, ok := raw.(map[string]interface{}); ok {
+		for k, v := range obj {
+			if len(result) >= 10 {
+				break
+			}
+			if countFloat, ok := v.(float64); ok {
+				addDomain(k, int(countFloat))
+			}
+		}
+	}
+
+	return result
+}
+
 func getDNSStats(w http.ResponseWriter, r *http.Request) {
-	stats := DNSStats{}
+	stats := DNSStats{
+		TopBlocked: make([]TopDomain, 0),
+		TopQueries: make([]TopDomain, 0),
+		TopClients: make([]TopDomain, 0),
+	}
 
 	// Get AdGuard Home configuration from config
 	configLock.RLock()
@@ -39,7 +120,6 @@ func getDNSStats(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{Timeout: 5 * time.Second}
 	req, err := http.NewRequest("GET", aghURL+"/control/stats", nil)
 	if err != nil {
-		// Fall back to mock data
 		stats = getMockDNSStats()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(stats)
@@ -53,7 +133,6 @@ func getDNSStats(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := client.Do(req)
 	if err != nil || resp.StatusCode != 200 {
-		// Fall back to mock data if AdGuard Home is not available
 		stats = getMockDNSStats()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(stats)
@@ -80,47 +159,10 @@ func getDNSStats(w http.ResponseWriter, r *http.Request) {
 		stats.BlockedPercentage = (float64(stats.BlockedFiltering) / float64(stats.TotalQueries)) * 100
 	}
 
-	// Parse top blocked domains
-	if topBlocked, ok := aghData["top_blocked_domains"].([]interface{}); ok {
-		for i, item := range topBlocked {
-			if i >= 10 { // Limit to top 10
-				break
-			}
-			if domainData, ok := item.(map[string]interface{}); ok {
-				domain := TopDomain{}
-				if name, ok := domainData["name"].(string); ok {
-					domain.Domain = name
-				}
-				if count, ok := domainData["count"].(float64); ok {
-					domain.Hits = int(count)
-				}
-				if domain.Domain != "" {
-					stats.TopBlocked = append(stats.TopBlocked, domain)
-				}
-			}
-		}
-	}
-
-	// Parse top queried domains
-	if topQueried, ok := aghData["top_queried_domains"].([]interface{}); ok {
-		for i, item := range topQueried {
-			if i >= 10 { // Limit to top 10
-				break
-			}
-			if domainData, ok := item.(map[string]interface{}); ok {
-				domain := TopDomain{}
-				if name, ok := domainData["name"].(string); ok {
-					domain.Domain = name
-				}
-				if count, ok := domainData["count"].(float64); ok {
-					domain.Hits = int(count)
-				}
-				if domain.Domain != "" {
-					stats.TopQueries = append(stats.TopQueries, domain)
-				}
-			}
-		}
-	}
+	// Parse top blocked domains, queried domains, and clients using multi-format parser
+	stats.TopBlocked = parseTopDomains(aghData["top_blocked_domains"])
+	stats.TopQueries = parseTopDomains(aghData["top_queried_domains"])
+	stats.TopClients = parseTopDomains(aghData["top_clients"])
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
@@ -140,6 +182,9 @@ func getMockDNSStats() DNSStats {
 		TopQueries: []TopDomain{
 			{Domain: "google.com", Hits: 210},
 			{Domain: "github.com", Hits: 155},
+		},
+		TopClients: []TopDomain{
+			{Domain: "192.168.1.100", Hits: 850},
 		},
 	}
 }
