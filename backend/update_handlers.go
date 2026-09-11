@@ -200,7 +200,7 @@ func applyUpdate(w http.ResponseWriter, r *http.Request) {
 		if homeDir == "" {
 			homeDir = "/root"
 		}
-		pathEnv := "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+		pathEnv := "/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 		if curPath := os.Getenv("PATH"); curPath != "" {
 			pathEnv += ":" + curPath
 		}

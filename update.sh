@@ -44,7 +44,12 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # Ensure PATH and environment variables are set for non-interactive / systemd execution
-export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH}"
+export PATH="/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH}"
+for extra_path in /usr/local/go/bin /snap/bin; do
+    if [ -d "$extra_path" ]; then
+        export PATH="$extra_path:$PATH"
+    fi
+done
 export HOME="${HOME:-/root}"
 export GOCACHE="${GOCACHE:-/tmp/go-build-cache}"
 export GOPATH="${GOPATH:-/tmp/go}"
@@ -53,17 +58,34 @@ export GOPATH="${GOPATH:-/tmp/go}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Log output to /var/log/softrouter-update.log as well as stdout
+mkdir -p /var/log
+exec > >(tee -a /var/log/softrouter-update.log) 2>&1
+
 # Persist the repo location so the backend binary can find it at runtime.
 # This is the single source of truth for the repo path on this machine.
 mkdir -p /etc/softrouter
 echo "$SCRIPT_DIR" > /etc/softrouter/repo_path
 chmod 644 /etc/softrouter/repo_path
 
+# Determine the real user who owns the repository directory
+REAL_USER="${SUDO_USER:-$(stat -c "%U" "$SCRIPT_DIR" 2>/dev/null || echo "root")}"
+if [ "$REAL_USER" = "UNKNOWN" ] || [ -z "$REAL_USER" ]; then
+    REAL_USER="root"
+fi
+echo "ℹ️  Update running as root, repo owned by: $REAL_USER"
+
 # Safety Trap: Guarantee that softrouter-backend is restarted even if update script fails or exits unexpectedly
 ensure_service_running() {
     local exit_code=$?
     if [ $exit_code -ne 0 ]; then
         echo "⚠️  Update script exited with code $exit_code"
+    fi
+
+    # Fix permissions so REAL_USER still owns the repo
+    if [ -d "$SCRIPT_DIR/.git" ] && [ "$REAL_USER" != "root" ]; then
+        chmod -R a+rw "$SCRIPT_DIR/.git" 2>/dev/null || true
+        chown -R "$REAL_USER:$REAL_USER" "$SCRIPT_DIR" 2>/dev/null || true
     fi
 
     # Check if backend process is running
@@ -100,61 +122,63 @@ fi
 
 echo ""
 
+# Ensure git safe.directory is configured for both root and REAL_USER
+git config --global --add safe.directory "$SCRIPT_DIR" 2>/dev/null || true
+git config --global --add safe.directory '*' 2>/dev/null || true
+if [ "$REAL_USER" != "root" ]; then
+    sudo -u "$REAL_USER" git config --global --add safe.directory "$SCRIPT_DIR" 2>/dev/null || true
+    sudo -u "$REAL_USER" git config --global --add safe.directory '*' 2>/dev/null || true
+fi
 
-# Ensure .git directory is accessible by any user.
-# The backend service runs as root and may write FETCH_HEAD/packed-refs;
-# update.sh runs as SUDO_USER. Without world-write, the non-owner gets
-# "Permission denied" on FETCH_HEAD. Use a+rw so both can always read/write.
+# Ensure .git directory is accessible by any user
 if [ -d ".git" ]; then
     chmod -R a+rw .git 2>/dev/null || true
-    # If invoked via sudo, restore ownership to the original user so git
-    # operations run by that user also succeed (git checks directory ownership).
-    if [ -n "$SUDO_USER" ]; then
-        chown -R "$SUDO_USER:$SUDO_USER" .git 2>/dev/null || true
+    if [ "$REAL_USER" != "root" ]; then
+        chown -R "$REAL_USER:$REAL_USER" .git 2>/dev/null || true
     fi
 fi
 
+# Helper function to execute git commands safely as REAL_USER or root
+run_git() {
+    local git_args=("$@")
+    if [ "$REAL_USER" != "root" ]; then
+        if sudo -u "$REAL_USER" git -c safe.directory=* "${git_args[@]}"; then
+            return 0
+        fi
+    fi
+    git -c safe.directory=* "${git_args[@]}"
+}
 
 # Pull latest changes from git
 echo "🔄 Pulling latest changes from Git..."
-FETCH_URL="origin"
 TARGET="${TARGET_BRANCH:-Dev}"
+FETCH_URL="origin"
 
-if [ -n "$SUDO_USER" ]; then
-    if ! sudo -u "$SUDO_USER" git -c safe.directory=* fetch origin 2>/dev/null; then
-        if ! git -c safe.directory=* fetch origin 2>/dev/null; then
-            echo "  ℹ️  Origin fetch (SSH) failed; fetching via HTTPS..."
-            FETCH_URL="https://github.com/timmyd2434/SoftwareRouter.git"
-            git -c safe.directory=* fetch "$FETCH_URL" "+refs/heads/$TARGET:refs/remotes/origin/$TARGET" 2>/dev/null || true
-        fi
-    fi
-    CURRENT_BRANCH=$(sudo -u "$SUDO_USER" git -c safe.directory=* branch --show-current 2>/dev/null || git -c safe.directory=* branch --show-current)
-else
-    if ! git -c safe.directory=* fetch origin 2>/dev/null; then
-        echo "  ℹ️  Origin fetch (SSH) failed; fetching via HTTPS..."
-        FETCH_URL="https://github.com/timmyd2434/SoftwareRouter.git"
-        git -c safe.directory=* fetch "$FETCH_URL" "+refs/heads/$TARGET:refs/remotes/origin/$TARGET" 2>/dev/null || true
-    fi
-    CURRENT_BRANCH=$(git -c safe.directory=* branch --show-current)
+if ! run_git fetch origin; then
+    echo "  ℹ️  Fetch from 'origin' failed; attempting HTTPS fallback..."
+    FETCH_URL="https://github.com/timmyd2434/SoftwareRouter.git"
+    run_git fetch "$FETCH_URL" "+refs/heads/$TARGET:refs/remotes/origin/$TARGET" || true
+fi
+
+CURRENT_BRANCH=$(run_git branch --show-current 2>/dev/null || echo "$TARGET")
+if [ -z "$CURRENT_BRANCH" ]; then
+    CURRENT_BRANCH="$TARGET"
 fi
 echo "  Current branch: $CURRENT_BRANCH"
 
 # Switch branch if requested
 if [ -n "$TARGET_BRANCH" ] && [ "$TARGET_BRANCH" != "$CURRENT_BRANCH" ]; then
     echo "  🔀 Switching from $CURRENT_BRANCH to $TARGET_BRANCH..."
-    if [ -n "$SUDO_USER" ]; then
-        if ! sudo -u "$SUDO_USER" git -c safe.directory=* checkout "$TARGET_BRANCH" 2>/dev/null; then
-            git -c safe.directory=* checkout "$TARGET_BRANCH"
-        fi
-    else
-        git -c safe.directory=* checkout "$TARGET_BRANCH"
+    if ! run_git checkout "$TARGET_BRANCH"; then
+        echo "  ❌ Failed to checkout branch $TARGET_BRANCH"
+        exit 1
     fi
     CURRENT_BRANCH="$TARGET_BRANCH"
     echo "  ✓ Now on branch: $CURRENT_BRANCH"
 fi
 
 # Check if there are updates
-if git -c safe.directory=* diff --quiet HEAD origin/$CURRENT_BRANCH 2>/dev/null; then
+if run_git diff --quiet HEAD "origin/$CURRENT_BRANCH" 2>/dev/null; then
     if [ "$FORCE_UPDATE" = false ]; then
         echo "  ℹ️  Already up to date!"
         echo ""
@@ -169,18 +193,24 @@ if git -c safe.directory=* diff --quiet HEAD origin/$CURRENT_BRANCH 2>/dev/null;
 fi
 
 echo "  📥 Pulling changes for $CURRENT_BRANCH..."
-if [ -n "$SUDO_USER" ]; then
-    if ! sudo -u "$SUDO_USER" git -c safe.directory=* pull "$FETCH_URL" $CURRENT_BRANCH 2>/dev/null; then
-        if ! git -c safe.directory=* pull "$FETCH_URL" $CURRENT_BRANCH 2>/dev/null; then
-            git -c safe.directory=* pull https://github.com/timmyd2434/SoftwareRouter.git $CURRENT_BRANCH || true
-        fi
-    fi
+PULL_SUCCESS=false
+
+if run_git pull "$FETCH_URL" "$CURRENT_BRANCH"; then
+    PULL_SUCCESS=true
+elif run_git pull https://github.com/timmyd2434/SoftwareRouter.git "$CURRENT_BRANCH"; then
+    PULL_SUCCESS=true
+fi
+
+if [ "$PULL_SUCCESS" = true ]; then
+    echo "  ✓ Updated to latest version"
 else
-    if ! git -c safe.directory=* pull "$FETCH_URL" $CURRENT_BRANCH 2>/dev/null; then
-        git -c safe.directory=* pull https://github.com/timmyd2434/SoftwareRouter.git $CURRENT_BRANCH || true
+    echo "  ⚠️  Git pull failed; attempting git reset to origin/$CURRENT_BRANCH..."
+    if run_git reset --hard "origin/$CURRENT_BRANCH"; then
+        echo "  ✓ Reset to origin/$CURRENT_BRANCH"
+    else
+        echo "  ⚠️  Could not reset branch, proceeding with build..."
     fi
 fi
-echo "  ✓ Updated to latest version"
 echo ""
 
 # Stop the backend service
