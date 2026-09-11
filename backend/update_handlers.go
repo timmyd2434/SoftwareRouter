@@ -171,6 +171,7 @@ func applyUpdate(w http.ResponseWriter, r *http.Request) {
 			unitName := fmt.Sprintf("softrouter-update-%d", time.Now().Unix())
 			sysdArgs := []string{
 				"--unit=" + unitName,
+				"--no-block",          // fire-and-forget: don't wait for the unit to finish
 				"--service-type=oneshot",
 				"-p", "WorkingDirectory=" + repoDir,
 				"-p", "Environment=PATH=" + pathEnv,

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Server, CheckCircle, XCircle, Power, RotateCw, AlertCircle } from 'lucide-react';
 import './Services.css';
-import { API_ENDPOINTS, authFetch } from '../apiConfig';
+import { API_ENDPOINTS, API_BASE_URL, authFetch } from '../apiConfig';
 
 const Services = () => {
     const [services, setServices] = useState([]);
@@ -175,7 +175,7 @@ const UPnPConfig = () => {
     const [error, setError] = useState(null);
 
     useEffect(() => {
-        authFetch(`${API_ENDPOINTS.BASE}/api/upnp/config`)
+        authFetch(`${API_BASE_URL}/api/upnp/config`)
             .then(res => {
                 if (!res.ok) throw new Error(`Server returned ${res.status}`);
                 return res.json();
@@ -194,12 +194,17 @@ const UPnPConfig = () => {
     const handleSave = async () => {
         setSaving(true);
         try {
-            await authFetch(`${API_ENDPOINTS.BASE}/api/upnp/config`, {
+            const res = await authFetch(`${API_BASE_URL}/api/upnp/config`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(config)
             });
-            alert('UPnP Configuration Saved');
+            if (res.ok) {
+                alert('UPnP Configuration Saved');
+            } else {
+                const text = await res.text();
+                alert('Failed to save config: ' + text);
+            }
         } catch (err) {
             alert('Failed to save config: ' + err.message);
         }
