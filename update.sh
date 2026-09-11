@@ -53,6 +53,12 @@ export GOPATH="${GOPATH:-/tmp/go}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Persist the repo location so the backend binary can find it at runtime.
+# This is the single source of truth for the repo path on this machine.
+mkdir -p /etc/softrouter
+echo "$SCRIPT_DIR" > /etc/softrouter/repo_path
+chmod 644 /etc/softrouter/repo_path
+
 # Safety Trap: Guarantee that softrouter-backend is restarted even if update script fails or exits unexpectedly
 ensure_service_running() {
     local exit_code=$?
