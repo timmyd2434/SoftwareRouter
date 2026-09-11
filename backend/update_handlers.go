@@ -23,6 +23,22 @@ type UpdateStatus struct {
 }
 
 func getRepoDir() string {
+	// Primary: read the path written by update.sh / install.sh.
+	// This is the only reliable method when the binary is running as a
+	// systemd service (WorkingDirectory=/usr/local/bin) on a machine where
+	// the repo may be cloned anywhere (not necessarily /home/tim/...).
+	if data, err := os.ReadFile("/etc/softrouter/repo_path"); err == nil {
+		p := strings.TrimSpace(string(data))
+		if p != "" {
+			if _, err := os.Stat(filepath.Join(p, ".git")); err == nil {
+				return p
+			}
+			// Path recorded but .git not found there — log and fall through
+			log.Printf("[UPDATE] /etc/softrouter/repo_path points to %q but no .git found there", p)
+		}
+	}
+
+	// Secondary: cwd or its parent (works when running manually from the repo).
 	if cwd, err := os.Getwd(); err == nil {
 		if _, err := os.Stat(filepath.Join(cwd, ".git")); err == nil {
 			return cwd
@@ -32,15 +48,32 @@ func getRepoDir() string {
 			return parent
 		}
 	}
-	if _, err := os.Stat("/opt/SoftwareRouter/.git"); err == nil {
-		return "/opt/SoftwareRouter"
+
+	// Tertiary: well-known install paths.
+	for _, candidate := range []string{
+		"/opt/SoftwareRouter",
+		"/opt/softrouter",
+		"/srv/SoftwareRouter",
+	} {
+		if _, err := os.Stat(filepath.Join(candidate, ".git")); err == nil {
+			return candidate
+		}
 	}
-	return "/home/tim/SoftwareRouter/SoftwareRouter"
+
+	// No repo found — return empty so callers can surface a clear error.
+	log.Printf("[UPDATE] WARNING: could not locate repo directory. Run update.sh once to persist the path.")
+	return ""
 }
 
 func getUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	repoDir := getRepoDir()
 	branch := r.URL.Query().Get("branch")
+
+	if repoDir == "" {
+		respondSystemError(w, ErrGenericInternalError,
+			"Repo directory not found. Run update.sh once to register the repo path.", nil)
+		return
+	}
 
 	if branch == "" {
 		branch = "Dev" // default
@@ -137,6 +170,12 @@ func applyUpdate(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondInvalidRequest(w, "Invalid request body")
+		return
+	}
+
+	if repoDir == "" {
+		respondSystemError(w, ErrGenericInternalError,
+			"Repo directory not found. Run update.sh once to register the repo path.", nil)
 		return
 	}
 

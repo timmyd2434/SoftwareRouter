@@ -548,6 +548,13 @@ fi
 # Stop existing service
 systemctl stop softrouter 2>/dev/null || true
 
+# Persist the repo location so the backend binary can find it at runtime.
+# The binary runs from /usr/local/bin but needs to locate the repo for updates.
+mkdir -p /etc/softrouter
+echo "$(pwd)" > /etc/softrouter/repo_path
+chmod 644 /etc/softrouter/repo_path
+echo -e "  ✓ Repo path saved: $(pwd)"
+
 # Backend
 echo -e "Compiling Go Backend..."
 cd backend
