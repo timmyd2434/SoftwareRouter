@@ -53,6 +53,9 @@ func loadOUIDatabase() {
 			}
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		log.Printf("[FINGERPRINT] Warning: error reading OUI database: %v", err)
+	}
 
 	ouiEnabled = true
 	log.Printf("[FINGERPRINT] Loaded %d MAC vendor signatures.", len(ouiData))

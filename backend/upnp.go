@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -69,10 +70,11 @@ func generateMiniUPnPdConf() (string, error) {
 
 	hasExplicitWan := false
 	for iface, m := range metaStore.Metadata {
-		if m.Label == "WAN" {
+		switch {
+		case strings.EqualFold(m.Label, "WAN"):
 			extIf = iface
 			hasExplicitWan = true
-		} else if m.Label == "LAN" {
+		case strings.EqualFold(m.Label, "LAN"):
 			lanIf = iface
 		}
 	}
