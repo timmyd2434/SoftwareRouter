@@ -172,15 +172,23 @@ const UPnPConfig = () => {
     const [config, setConfig] = useState(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
 
     useEffect(() => {
         authFetch(`${API_ENDPOINTS.BASE}/api/upnp/config`)
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) throw new Error(`Server returned ${res.status}`);
+                return res.json();
+            })
             .then(data => {
                 setConfig(data);
                 setLoading(false);
             })
-            .catch(console.error);
+            .catch(err => {
+                console.error('UPnP config load failed:', err);
+                setError(err.message);
+                setLoading(false);
+            });
     }, []);
 
     const handleSave = async () => {
@@ -198,7 +206,9 @@ const UPnPConfig = () => {
         setSaving(false);
     };
 
-    if (loading) return <div>Loading UPnP settings...</div>;
+    if (loading) return <div style={{ padding: '1.5rem' }}>Loading UPnP settings...</div>;
+    if (error) return <div style={{ padding: '1.5rem', color: 'var(--color-error, #f87171)' }}>Failed to load UPnP settings: {error}</div>;
+    if (!config) return <div style={{ padding: '1.5rem' }}>No UPnP configuration found.</div>;
 
     return (
         <div style={{ padding: '1.5rem' }}>

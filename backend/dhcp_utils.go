@@ -216,6 +216,9 @@ func getARPTable() ([]ARPEntry, error) {
 			IsActive: true,
 		})
 	}
+	if err := scanner.Err(); err != nil {
+		return entries, err
+	}
 	return entries, nil
 }
 
@@ -708,11 +711,12 @@ func InitDNSServices() {
 	adBlocker := config.AdBlocker
 	configLock.RUnlock()
 
-	if adBlocker == "none" || adBlocker == "" {
+	switch adBlocker {
+	case "none", "":
 		log.Println("[INFO] Initializing standard DNS resolver (unbound)...")
 		runPrivileged("systemctl", "enable", "unbound")
 		runPrivileged("systemctl", "start", "unbound")
-	} else if adBlocker == "adguard" {
+	case "adguard":
 		log.Println("[INFO] Initializing AdGuard Home DNS...")
 		runPrivileged("systemctl", "enable", "AdGuardHome")
 		runPrivileged("systemctl", "start", "AdGuardHome")

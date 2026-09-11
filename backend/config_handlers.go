@@ -288,9 +288,10 @@ func applyDNSPrivacyConfig(cfg Config) error {
 	}
 
 	dnsServers := "1.1.1.1 1.0.0.1" // Default Cloudflare
-	if cfg.DNSPrivacy.Provider == "quad9" {
+	switch cfg.DNSPrivacy.Provider {
+	case "quad9":
 		dnsServers = "9.9.9.9 149.112.112.112"
-	} else if cfg.DNSPrivacy.Provider == "google" {
+	case "google":
 		dnsServers = "8.8.8.8 8.8.4.4"
 	}
 
