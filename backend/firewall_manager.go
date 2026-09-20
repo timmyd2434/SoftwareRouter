@@ -248,6 +248,10 @@ func (fm *FirewallManager) ApplyFirewallRules(skipWatchdog bool) error {
 func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []string, cfg Config, pfRules []PortForwardingRule) (string, error) {
 	var b strings.Builder
 
+	// Flush all existing kernel rulesets first to guarantee zero stale rules or tables
+	b.WriteString("# SoftRouter Managed Ruleset - Clean Generation\n")
+	b.WriteString("flush ruleset\n\n")
+
 	// Load and generate alias defines
 	aliasStore, err := loadFirewallAliases()
 	if err != nil {
@@ -268,9 +272,6 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 			b.WriteString(geoDefines)
 		}
 	}
-
-	// Flush all existing rules
-	b.WriteString("flush ruleset\n\n")
 
 	// ===== INET FILTER TABLE =====
 	b.WriteString("table inet softrouter {\n")
