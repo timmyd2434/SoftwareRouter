@@ -29,24 +29,18 @@ func TestWANStateHysteresis(t *testing.T) {
 	// Single failure
 	iface.FailCount++
 	iface.SuccessCount = 0
-	if iface.FailCount < 3 && iface.State == "offline" {
+	if iface.FailCount < 2 && iface.State == "offline" {
 		t.Errorf("interface prematurely marked offline on fail count %d", iface.FailCount)
 	}
 
-	// Second failure
+	// Second failure (2 cycles = 1 minute)
 	iface.FailCount++
-	if iface.FailCount < 3 && iface.State == "offline" {
-		t.Errorf("interface prematurely marked offline on fail count %d", iface.FailCount)
-	}
-
-	// Third failure
-	iface.FailCount++
-	if iface.FailCount >= 3 {
+	if iface.FailCount >= 2 {
 		iface.State = "offline"
 	}
 
 	if iface.State != "offline" {
-		t.Errorf("expected state offline after 3 failures, got %s", iface.State)
+		t.Errorf("expected state offline after 2 failures, got %s", iface.State)
 	}
 
 	// Single success while offline
