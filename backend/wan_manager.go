@@ -79,7 +79,7 @@ func saveWANConfig() error {
 
 // startWANMonitor runs the periodic health check
 func startWANMonitor() {
-	wanTicker = time.NewTicker(10 * time.Second) // Check every 10s
+	wanTicker = time.NewTicker(30 * time.Second) // Check every 30s
 	go func() {
 		for range wanTicker.C {
 			checkWANHealth()
@@ -132,7 +132,7 @@ func checkWANHealth() {
 			secondaryTarget = interfaces[i].Gateway
 		}
 
-		// Check primary target (3 packets)
+		// Check primary target (2 packets)
 		isOnline := pingTarget(interfaces[i].Interface, primaryTarget)
 
 		// If primary failed, verify with secondary fallback target before concluding check failure
@@ -154,7 +154,7 @@ func checkWANHealth() {
 			interfaces[i].SuccessCount++
 			interfaces[i].FailCount = 0
 
-			// Require 2 consecutive successes to mark back online from offline
+			// Require 2 consecutive successes (1 minute) to mark back online from offline
 			if interfaces[i].State == "offline" && interfaces[i].SuccessCount >= 2 {
 				interfaces[i].State = "online"
 				updated = true
@@ -172,22 +172,22 @@ func checkWANHealth() {
 			interfaces[i].FailCount++
 			interfaces[i].SuccessCount = 0
 
-			// Require 3 consecutive failures over 30s before declaring WAN offline and notifying/failing over
-			if interfaces[i].State == "online" && interfaces[i].FailCount >= 3 {
+			// Require 2 consecutive failures over 1 minute (2 x 30s checks) before declaring WAN offline and notifying/failing over
+			if interfaces[i].State == "online" && interfaces[i].FailCount >= 2 {
 				interfaces[i].State = "offline"
 				updated = true
-				fmt.Printf("[WAN] Interface %s (%s) OFFLINE (failed %d consecutive checks over 30s)\n",
+				fmt.Printf("[WAN] Interface %s (%s) OFFLINE (failed %d consecutive checks over 1 minute)\n",
 					interfaces[i].Name, interfaces[i].Interface, interfaces[i].FailCount)
 
 				SendNotification(NotificationEvent{
 					Type:     "wan_state_change",
 					Severity: "critical",
 					Title:    fmt.Sprintf("WAN %s is Offline", interfaces[i].Name),
-					Details: fmt.Sprintf("Interface %s (%s) is offline after 3 consecutive failed health checks (30s). Targets checked: %s, %s",
+					Details: fmt.Sprintf("Interface %s (%s) is offline after 2 consecutive failed health checks (1 minute). Targets checked: %s, %s",
 						interfaces[i].Name, interfaces[i].Interface, primaryTarget, secondaryTarget),
 				})
 			} else if interfaces[i].State == "online" {
-				fmt.Printf("[WAN] Interface %s (%s) missed health check (%d/3)\n",
+				fmt.Printf("[WAN] Interface %s (%s) missed health check (%d/2)\n",
 					interfaces[i].Name, interfaces[i].Interface, interfaces[i].FailCount)
 			}
 		}
