@@ -88,12 +88,20 @@ func startWANMonitor() {
 	fmt.Println("WAN Monitor started.")
 }
 
-// pingTarget sends 3 ping packets with 2-second timeout. Returns true if at least 1 packet succeeds.
+// pingTarget sends ping packets with 2-second timeout. Returns true if at least 1 packet succeeds.
 func pingTarget(iface, target string) bool {
 	if target == "" {
 		return false
 	}
-	err := runPrivileged("ping", "-I", iface, "-c", "3", "-W", "2", target)
+	// Attempt 1: Interface-bound ping
+	if iface != "" {
+		err := runPrivileged("ping", "-I", iface, "-c", "2", "-W", "2", target)
+		if err == nil {
+			return true
+		}
+	}
+	// Attempt 2: Standard ping without device binding
+	err := runPrivileged("ping", "-c", "2", "-W", "2", target)
 	return err == nil
 }
 

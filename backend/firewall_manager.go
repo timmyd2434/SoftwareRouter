@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"strings"
 	"sync"
@@ -51,43 +52,83 @@ func (fm *FirewallManager) ApplyFirewallRules(skipWatchdog bool) error {
 
 	pfRules := GetPortForwardingRules()
 
-	// 2. Determine Interface Groups
+	// 2. Determine Interface Groups (with robust auto-discovery fallbacks)
+	inList := func(list []string, item string) bool {
+		for _, v := range list {
+			if v == item {
+				return true
+			}
+		}
+		return false
+	}
+
 	wanInterfaces := []string{}
 	lanInterfaces := []string{}
 
-	hasExplicitWan := false
-	for _, m := range metaStore.Metadata {
-		if strings.EqualFold(m.Label, "WAN") {
-			hasExplicitWan = true
-			break
-		}
-	}
-
+	// Step A: Explicit metadata labels
 	for iface, meta := range metaStore.Metadata {
-		if strings.EqualFold(meta.Label, "WAN") {
-			wanInterfaces = append(wanInterfaces, iface)
-		} else if strings.EqualFold(meta.Label, "LAN") {
-			lanInterfaces = append(lanInterfaces, iface)
+		if strings.EqualFold(meta.Label, "WAN") || strings.EqualFold(meta.Label, "Internet") {
+			if !inList(wanInterfaces, iface) {
+				wanInterfaces = append(wanInterfaces, iface)
+			}
+		} else if strings.EqualFold(meta.Label, "LAN") || strings.EqualFold(meta.Label, "Bridge") {
+			if !inList(lanInterfaces, iface) {
+				lanInterfaces = append(lanInterfaces, iface)
+			}
 		}
 	}
 
-	// Fallback: Auto-detect WAN
-	if !hasExplicitWan {
-		defWan, err := getDefaultGatewayInterface()
-		if err == nil && defWan != "" {
-			fmt.Printf("Auto-detected WAN interface: %s\n", defWan)
-			wanInterfaces = append(wanInterfaces, defWan)
+	// Step B: Multi-WAN configured interfaces
+	wanLock.RLock()
+	for _, wIface := range wanStore.Interfaces {
+		if wIface.Interface != "" && !inList(wanInterfaces, wIface.Interface) {
+			wanInterfaces = append(wanInterfaces, wIface.Interface)
 		}
 	}
+	wanLock.RUnlock()
 
-	// 3. Self-Check: Validate configuration
+	// Step C: Auto-detect default gateway interface
+	defWan, err := getDefaultGatewayInterface()
+	if err == nil && defWan != "" && !inList(wanInterfaces, defWan) {
+		fmt.Printf("Auto-detected default gateway WAN interface: %s\n", defWan)
+		wanInterfaces = append(wanInterfaces, defWan)
+	}
+
+	// Step D: Fallback WAN detection if still empty
+	sysIfaces, _ := net.Interfaces()
 	if len(wanInterfaces) == 0 {
-		return fmt.Errorf("CRITICAL: No WAN interfaces defined. Refusing to apply firewall rules")
+		for _, sysIface := range sysIfaces {
+			name := sysIface.Name
+			if name == "lo" || strings.HasPrefix(name, "veth") || strings.HasPrefix(name, "docker") {
+				continue
+			}
+			if name == "eth0" || strings.HasPrefix(name, "wan") || strings.HasPrefix(name, "enp") {
+				wanInterfaces = append(wanInterfaces, name)
+				break
+			}
+		}
 	}
 
-	if len(lanInterfaces) == 0 {
-		fmt.Println("WARNING: No LAN interfaces labeled. Management access may be limited to localhost only")
+	// Step E: Auto-detect LAN interfaces for all non-WAN physical/bridge interfaces
+	for _, sysIface := range sysIfaces {
+		name := sysIface.Name
+		if name == "lo" || strings.HasPrefix(name, "veth") || strings.HasPrefix(name, "docker") || strings.HasPrefix(name, "br-") {
+			continue
+		}
+		if inList(wanInterfaces, name) {
+			continue
+		}
+		if !inList(lanInterfaces, name) {
+			lanInterfaces = append(lanInterfaces, name)
+		}
 	}
+
+	// Self-Check: Ensure at least 1 WAN interface is assigned
+	if len(wanInterfaces) == 0 {
+		return fmt.Errorf("CRITICAL: No WAN interfaces detected or defined. Refusing to apply firewall rules")
+	}
+
+	fmt.Printf("[FIREWALL] Active WAN Interfaces: %v | Active LAN Interfaces: %v\n", wanInterfaces, lanInterfaces)
 
 	// 4. Generate complete ruleset as text
 	ruleset, err := fm.generateFullRuleset(wanInterfaces, lanInterfaces, cfg, pfRules)
