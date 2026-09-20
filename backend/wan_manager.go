@@ -13,14 +13,16 @@ import (
 
 // WANInterface represents a WAN connection configuration
 type WANInterface struct {
-	Interface   string `json:"interface"`    // e.g., "eth0", "eth1"
-	Name        string `json:"name"`         // e.g., "Primary Fiber", "Backup 5G"
-	Gateway     string `json:"gateway"`      // e.g., "192.168.1.1"
-	CheckTarget string `json:"check_target"` // e.g., "8.8.8.8"
-	Priority    int    `json:"priority"`     // Lower is higher priority (1 = Primary)
-	Weight      int    `json:"weight"`       // For Load Balancing (default 1)
-	Enabled     bool   `json:"enabled"`
-	State       string `json:"state"` // "online", "offline", "unknown"
+	Interface    string `json:"interface"`    // e.g., "eth0", "eth1"
+	Name         string `json:"name"`         // e.g., "Primary Fiber", "Backup 5G"
+	Gateway      string `json:"gateway"`      // e.g., "192.168.1.1"
+	CheckTarget  string `json:"check_target"` // e.g., "1.1.1.1" or "8.8.8.8"
+	Priority     int    `json:"priority"`     // Lower is higher priority (1 = Primary)
+	Weight       int    `json:"weight"`       // For Load Balancing (default 1)
+	Enabled      bool   `json:"enabled"`
+	State        string `json:"state"`        // "online", "offline", "unknown"
+	FailCount    int    `json:"-"`            // In-memory counter for consecutive failures
+	SuccessCount int    `json:"-"`            // In-memory counter for consecutive successes
 }
 
 // WANStore manages persistence
@@ -86,58 +88,118 @@ func startWANMonitor() {
 	fmt.Println("WAN Monitor started.")
 }
 
+// pingTarget sends 3 ping packets with 2-second timeout. Returns true if at least 1 packet succeeds.
+func pingTarget(iface, target string) bool {
+	if target == "" {
+		return false
+	}
+	err := runPrivileged("ping", "-I", iface, "-c", "3", "-W", "2", target)
+	return err == nil
+}
+
 func checkWANHealth() {
 	wanLock.Lock()
 	interfaces := wanStore.Interfaces
 	mode := wanStore.Mode
-	wanLock.Unlock() // Unlock logic to avoid holding during long pings
+	wanLock.Unlock()
 
 	updated := false
 
-	// Check all interfaces
 	for i := range interfaces {
 		if !interfaces[i].Enabled {
 			continue
 		}
 
-		target := interfaces[i].CheckTarget
-		if target == "" {
-			target = "8.8.8.8" // Default
+		primaryTarget := interfaces[i].CheckTarget
+		if primaryTarget == "" {
+			primaryTarget = "1.1.1.1" // Primary default: Cloudflare DNS
 		}
 
-		// -W 2 seconds timeout
-		err := runPrivileged("ping", "-I", interfaces[i].Interface, "-c", "1", "-W", "2", target)
-
-		isOnline := (err == nil)
-		newState := "offline"
-		if isOnline {
-			newState = "online"
+		// Fallback target in case primary is rate-limited or temporarily unreachable
+		secondaryTarget := "8.8.8.8"
+		if primaryTarget == "8.8.8.8" {
+			secondaryTarget = "1.1.1.1"
+		}
+		if interfaces[i].Gateway != "" && interfaces[i].Gateway != primaryTarget {
+			secondaryTarget = interfaces[i].Gateway
 		}
 
-		if interfaces[i].State != newState {
-			interfaces[i].State = newState
-			updated = true
-			fmt.Printf("WAN Interface %s (%s) is now %s\n", interfaces[i].Name, interfaces[i].Interface, newState)
+		// Check primary target (3 packets)
+		isOnline := pingTarget(interfaces[i].Interface, primaryTarget)
 
-			// Notify on WAN state change
-			severity := "warning"
-			if newState == "offline" {
-				severity = "critical"
+		// If primary failed, verify with secondary fallback target before concluding check failure
+		if !isOnline {
+			isOnline = pingTarget(interfaces[i].Interface, secondaryTarget)
+		}
+
+		// Initialize initial state if unset
+		if interfaces[i].State == "" || interfaces[i].State == "unknown" {
+			if isOnline {
+				interfaces[i].State = "online"
+			} else {
+				interfaces[i].State = "offline"
 			}
-			SendNotification(NotificationEvent{
-				Type:     "wan_state_change",
-				Severity: severity,
-				Title:    fmt.Sprintf("WAN %s is now %s", interfaces[i].Name, newState),
-				Details:  fmt.Sprintf("Interface %s (%s) changed state to %s. Check target: %s", interfaces[i].Name, interfaces[i].Interface, newState, target),
-			})
+			updated = true
+		}
+
+		if isOnline {
+			interfaces[i].SuccessCount++
+			interfaces[i].FailCount = 0
+
+			// Require 2 consecutive successes to mark back online from offline
+			if interfaces[i].State == "offline" && interfaces[i].SuccessCount >= 2 {
+				interfaces[i].State = "online"
+				updated = true
+				fmt.Printf("[WAN] Interface %s (%s) RECOVERED (online after %d successful checks)\n",
+					interfaces[i].Name, interfaces[i].Interface, interfaces[i].SuccessCount)
+
+				SendNotification(NotificationEvent{
+					Type:     "wan_state_change",
+					Severity: "info",
+					Title:    fmt.Sprintf("WAN %s has Recovered", interfaces[i].Name),
+					Details:  fmt.Sprintf("Interface %s (%s) is back online. Target checked: %s", interfaces[i].Name, interfaces[i].Interface, primaryTarget),
+				})
+			}
+		} else {
+			interfaces[i].FailCount++
+			interfaces[i].SuccessCount = 0
+
+			// Require 3 consecutive failures over 30s before declaring WAN offline and notifying/failing over
+			if interfaces[i].State == "online" && interfaces[i].FailCount >= 3 {
+				interfaces[i].State = "offline"
+				updated = true
+				fmt.Printf("[WAN] Interface %s (%s) OFFLINE (failed %d consecutive checks over 30s)\n",
+					interfaces[i].Name, interfaces[i].Interface, interfaces[i].FailCount)
+
+				SendNotification(NotificationEvent{
+					Type:     "wan_state_change",
+					Severity: "critical",
+					Title:    fmt.Sprintf("WAN %s is Offline", interfaces[i].Name),
+					Details: fmt.Sprintf("Interface %s (%s) is offline after 3 consecutive failed health checks (30s). Targets checked: %s, %s",
+						interfaces[i].Name, interfaces[i].Interface, primaryTarget, secondaryTarget),
+				})
+			} else if interfaces[i].State == "online" {
+				fmt.Printf("[WAN] Interface %s (%s) missed health check (%d/3)\n",
+					interfaces[i].Name, interfaces[i].Interface, interfaces[i].FailCount)
+			}
 		}
 	}
 
-	// Update Store if states changed
+	// Update in-memory store state if updated or counters changed
+	wanLock.Lock()
+	for i := range interfaces {
+		for j := range wanStore.Interfaces {
+			if wanStore.Interfaces[j].Interface == interfaces[i].Interface {
+				wanStore.Interfaces[j].State = interfaces[i].State
+				wanStore.Interfaces[j].FailCount = interfaces[i].FailCount
+				wanStore.Interfaces[j].SuccessCount = interfaces[i].SuccessCount
+			}
+		}
+	}
+	wanLock.Unlock()
+
 	if updated {
-		wanLock.Lock()
-		wanStore.Interfaces = interfaces
-		wanLock.Unlock()
+		_ = saveWANConfig()
 	}
 
 	// Apply Routing Decision
