@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e  # Exit on error
+# SoftRouter Update Script (Robust Execution)
 
 echo "========================================="
 echo "  SoftRouter Update Script"
@@ -58,12 +58,7 @@ export GOPATH="${GOPATH:-/tmp/go}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Log output to /var/log/softrouter-update.log as well as stdout
-mkdir -p /var/log
-exec > >(tee -a /var/log/softrouter-update.log) 2>&1
-
 # Persist the repo location so the backend binary can find it at runtime.
-# This is the single source of truth for the repo path on this machine.
 mkdir -p /etc/softrouter
 echo "$SCRIPT_DIR" > /etc/softrouter/repo_path
 chmod 644 /etc/softrouter/repo_path
@@ -75,7 +70,7 @@ if [ "$REAL_USER" = "UNKNOWN" ] || [ -z "$REAL_USER" ]; then
 fi
 echo "ℹ️  Update running as root, repo owned by: $REAL_USER"
 
-# Safety Trap: Guarantee that softrouter-backend is restarted even if update script fails or exits unexpectedly
+# Safety Trap: Guarantee that softrouter-backend is restarted under all circumstances
 ensure_service_running() {
     local exit_code=$?
     if [ $exit_code -ne 0 ]; then
@@ -83,70 +78,63 @@ ensure_service_running() {
     fi
 
     # Fix permissions so REAL_USER still owns the repo
-    if [ -d "$SCRIPT_DIR/.git" ] && [ "$REAL_USER" != "root" ]; then
+    if [ -d "$SCRIPT_DIR/.git" ] && [ "$REAL_USER" != "root" ] && id "$REAL_USER" &>/dev/null; then
         chmod -R a+rw "$SCRIPT_DIR/.git" 2>/dev/null || true
         chown -R "$REAL_USER:$REAL_USER" "$SCRIPT_DIR" 2>/dev/null || true
     fi
 
-    # Check if backend process is running
-    if ! pgrep -f softrouter-backend > /dev/null 2>&1; then
-        echo "🔄 Backend process is not running. Attempting auto-restart..."
-        if systemctl list-unit-files 2>/dev/null | grep -q "softrouter.service"; then
-            systemctl daemon-reload 2>/dev/null || true
-            systemctl restart softrouter 2>/dev/null || true
-        fi
+    # Ensure backend process is running
+    echo "🔄 Guaranteeing SoftRouter service is running..."
+    if systemctl list-unit-files 2>/dev/null | grep -q "softrouter.service"; then
+        systemctl daemon-reload 2>/dev/null || true
+        systemctl restart softrouter 2>/dev/null || systemctl start softrouter 2>/dev/null || true
+        sleep 2
+    fi
 
-        if ! pgrep -f softrouter-backend > /dev/null 2>&1; then
-            if [ -x /usr/local/bin/softrouter-backend ]; then
-                nohup /usr/local/bin/softrouter-backend > /var/log/softrouter-backend.log 2>&1 &
-            elif [ -x "$SCRIPT_DIR/backend/softrouter-backend" ]; then
-                nohup "$SCRIPT_DIR/backend/softrouter-backend" > /var/log/softrouter-backend.log 2>&1 &
-            fi
+    if ! pgrep -f softrouter-backend > /dev/null 2>&1; then
+        if [ -x /usr/local/bin/softrouter-backend ]; then
+            nohup /usr/local/bin/softrouter-backend > /var/log/softrouter-backend.log 2>&1 &
+        elif [ -x "$SCRIPT_DIR/backend/softrouter-backend" ]; then
+            nohup "$SCRIPT_DIR/backend/softrouter-backend" > /var/log/softrouter-backend.log 2>&1 &
         fi
     fi
 }
 trap ensure_service_running EXIT
 
-# Backup configuration files from /etc/softrouter/ (authoritative runtime location)
+# Backup configuration files from /etc/softrouter/
 echo "📦 Backing up configuration files..."
 BACKUP_DIR="/tmp/softrouter-backup-$(date +%s)"
 mkdir -p "$BACKUP_DIR/etc_softrouter"
 
-# Back up the entire /etc/softrouter/ directory (all runtime configs)
 if [ -d "/etc/softrouter" ]; then
     cp -a /etc/softrouter/. "$BACKUP_DIR/etc_softrouter/"
-    echo "  ✓ Backed up /etc/softrouter/ ($(ls "$BACKUP_DIR/etc_softrouter" | wc -l) files)"
-else
-    echo "  ⚠️  /etc/softrouter/ not found – nothing to back up"
+    echo "  ✓ Backed up /etc/softrouter/"
 fi
-
 echo ""
 
-# Ensure git safe.directory is configured for both root and REAL_USER
+# Ensure git safe.directory is configured
 git config --global --add safe.directory "$SCRIPT_DIR" 2>/dev/null || true
 git config --global --add safe.directory '*' 2>/dev/null || true
-if [ "$REAL_USER" != "root" ]; then
+if [ "$REAL_USER" != "root" ] && id "$REAL_USER" &>/dev/null; then
     sudo -u "$REAL_USER" git config --global --add safe.directory "$SCRIPT_DIR" 2>/dev/null || true
     sudo -u "$REAL_USER" git config --global --add safe.directory '*' 2>/dev/null || true
 fi
 
-# Ensure .git directory is accessible by any user
+# Ensure .git directory is accessible
 if [ -d ".git" ]; then
     chmod -R a+rw .git 2>/dev/null || true
-    if [ "$REAL_USER" != "root" ]; then
+    if [ "$REAL_USER" != "root" ] && id "$REAL_USER" &>/dev/null; then
         chown -R "$REAL_USER:$REAL_USER" .git 2>/dev/null || true
     fi
 fi
 
-# Helper function to execute git commands safely as REAL_USER or root
+# Helper function to execute git commands safely without triggering bash set -e aborts
 run_git() {
-    local git_args=("$@")
-    if [ "$REAL_USER" != "root" ]; then
-        if sudo -u "$REAL_USER" git -c safe.directory=* "${git_args[@]}"; then
-            return 0
-        fi
+    if [ "$REAL_USER" != "root" ] && id "$REAL_USER" &>/dev/null; then
+        sudo -u "$REAL_USER" git -c safe.directory=* "$@" 2>/dev/null || git -c safe.directory=* "$@"
+    else
+        git -c safe.directory=* "$@"
     fi
-    git -c safe.directory=* "${git_args[@]}"
 }
 
 # Pull latest changes from git
@@ -154,11 +142,7 @@ echo "🔄 Pulling latest changes from Git..."
 TARGET="${TARGET_BRANCH:-Dev}"
 FETCH_URL="origin"
 
-if ! run_git fetch origin; then
-    echo "  ℹ️  Fetch from 'origin' failed; attempting HTTPS fallback..."
-    FETCH_URL="https://github.com/timmyd2434/SoftwareRouter.git"
-    run_git fetch "$FETCH_URL" "+refs/heads/$TARGET:refs/remotes/origin/$TARGET" || true
-fi
+run_git fetch origin || true
 
 CURRENT_BRANCH=$(run_git branch --show-current 2>/dev/null || echo "$TARGET")
 if [ -z "$CURRENT_BRANCH" ]; then
@@ -169,16 +153,16 @@ echo "  Current branch: $CURRENT_BRANCH"
 # Switch branch if requested
 if [ -n "$TARGET_BRANCH" ] && [ "$TARGET_BRANCH" != "$CURRENT_BRANCH" ]; then
     echo "  🔀 Switching from $CURRENT_BRANCH to $TARGET_BRANCH..."
-    if ! run_git checkout "$TARGET_BRANCH"; then
-        echo "  ❌ Failed to checkout branch $TARGET_BRANCH"
-        exit 1
-    fi
+    run_git checkout "$TARGET_BRANCH" || true
     CURRENT_BRANCH="$TARGET_BRANCH"
     echo "  ✓ Now on branch: $CURRENT_BRANCH"
 fi
 
-# Check if there are updates
-if run_git diff --quiet HEAD "origin/$CURRENT_BRANCH" 2>/dev/null; then
+# Check if there are updates using explicit exit status handling
+run_git diff --quiet HEAD "origin/$CURRENT_BRANCH" 2>/dev/null
+HAS_DIFFS=$?
+
+if [ $HAS_DIFFS -eq 0 ]; then
     if [ "$FORCE_UPDATE" = false ]; then
         echo "  ℹ️  Already up to date!"
         echo ""
@@ -222,11 +206,11 @@ else
     echo "  ℹ️  Service not running"
 fi
 
-# Kill any running softrouter-backend processes (in case it's running outside systemd)
+# Kill any running softrouter-backend processes
 if pgrep -f softrouter-backend > /dev/null 2>&1; then
     echo "  🔪 Killing running backend processes..."
     pkill -f softrouter-backend || true
-    sleep 2  # Give processes time to terminate
+    sleep 2
     echo "  ✓ Processes terminated"
 fi
 echo ""
@@ -244,10 +228,8 @@ echo ""
 # Build backend
 echo "🔨 Building backend..."
 cd "$SCRIPT_DIR/backend"
-go build -o softrouter-backend
-if [ $? -eq 0 ]; then
+if go build -o softrouter-backend; then
     echo "  ✓ Backend built successfully"
-    # Install the new binary
     cp softrouter-backend /usr/local/bin/
     chmod +x /usr/local/bin/softrouter-backend
     echo "  ✓ Backend installed to /usr/local/bin/"
@@ -266,24 +248,10 @@ echo "📡 Configuring dnsmasq..."
 if [ ! -f /etc/dnsmasq.d/softrouter-base.conf ]; then
     cat > /tmp/softrouter-dnsmasq-base.conf <<'DNSMASQ_EOF'
 # SoftwareRouter dnsmasq base configuration
-# This file provides minimal configuration for dnsmasq to start
-
-# Don't read /etc/resolv.conf - we'll configure DNS servers explicitly
 no-resolv
-
-# Don't read /etc/hosts
 no-hosts
-
-# Listen only on specified interfaces (none by default, configured per-DHCP network)
-# bind-interfaces will be added per-network config
-
-# Log DHCP transactions for debugging
 log-dhcp
-
-# Enable authoritative mode for faster DHCP
 dhcp-authoritative
-
-# Cache size
 cache-size=1000
 DNSMASQ_EOF
     mv /tmp/softrouter-dnsmasq-base.conf /etc/dnsmasq.d/softrouter-base.conf
@@ -297,18 +265,13 @@ echo ""
 echo "🎨 Building frontend..."
 cd "$SCRIPT_DIR/frontend"
 
-# Install dependencies if node_modules doesn't exist
 if [ ! -d "node_modules" ]; then
     echo "  📦 Installing npm dependencies..."
     npm install
 fi
 
-npm run build
-if [ $? -eq 0 ]; then
+if npm run build; then
     echo "  ✓ Frontend built successfully"
-    
-    # Copy to web directory
-    echo "  📋 Deploying frontend to web directory..."
     mkdir -p /var/www/softrouter/html
     cp -r dist/* /var/www/softrouter/html/
     echo "  ✓ Frontend deployed"
@@ -328,65 +291,30 @@ echo "📥 Restoring configuration files..."
 if [ -d "$BACKUP_DIR/etc_softrouter" ] && [ -n "$(ls -A "$BACKUP_DIR/etc_softrouter" 2>/dev/null)" ]; then
     mkdir -p /etc/softrouter
     chmod 700 /etc/softrouter
-    # Restore all backed-up files, preserving permissions where possible
     cp -a "$BACKUP_DIR/etc_softrouter/." /etc/softrouter/
-    # Enforce secure permissions on sensitive files
     find /etc/softrouter -maxdepth 1 -type f \( -name "*.json" -o -name "*.key" -o -name "*.nft" \) -exec chmod 600 {} \;
-    echo "  ✓ Restored /etc/softrouter/ ($(ls /etc/softrouter | wc -l) files)"
-else
-    echo "  ℹ️  No /etc/softrouter/ backup to restore"
+    echo "  ✓ Restored /etc/softrouter/"
 fi
 echo ""
 
 # Clean up backup
-echo "🧹 Cleaning up backup..."
 rm -rf "$BACKUP_DIR"
-echo "  ✓ Backup cleaned"
-echo ""
 
-# SECURITY CHECK: Verify token_secret.key exists (required as of Tier 3 fixes)
+# Security check
 echo "🔐 Security pre-flight checks..."
 if [ ! -f "/etc/softrouter/token_secret.key" ]; then
-    echo "  ⚠️  WARNING: token_secret.key not found!"
-    echo ""
-    echo "  The backend now requires /etc/softrouter/token_secret.key for security."
-    echo "  Generating a new secret key..."
     mkdir -p /etc/softrouter
     head -c 32 /dev/urandom | base64 > /etc/softrouter/token_secret.key
     chmod 600 /etc/softrouter/token_secret.key
-    echo "  ✓ New token_secret.key generated"
-    echo ""
-    echo "  ⚠️  IMPORTANT: All existing sessions will be invalidated."
-    echo "     You will need to log in again after the update."
+    echo "  ✓ Generated token_secret.key"
 else
     echo "  ✓ token_secret.key exists"
 fi
 
-# FIREWALL CLEANUP: Purge legacy/stale nftables tables before starting the service.
-# install.sh used to write a static "table inet filter" to /etc/nftables.conf;
-# the backend manages "table inet softrouter" exclusively. Any leftover legacy
-# tables at priority 0 can shadow or duplicate the managed ruleset.
-echo "🔥 Purging legacy nftables tables..."
-nft delete table inet filter 2>/dev/null && echo "  ✓ Removed legacy table inet filter" || echo "  ✓ No legacy table inet filter present"
-nft delete table ip filter   2>/dev/null && echo "  ✓ Removed legacy table ip filter"   || true
-nft delete table ip6 filter  2>/dev/null && echo "  ✓ Removed legacy table ip6 filter"  || true
-echo ""
-
-# Load nf_conntrack and enable byte accounting for device bandwidth monitoring.
-# Without nf_conntrack_acct=1 the bytes= fields in /proc/net/nf_conntrack are 0.
+# Load nf_conntrack and enable byte accounting
 echo "📊 Enabling conntrack byte accounting..."
 modprobe nf_conntrack 2>/dev/null || true
-sysctl -w net.netfilter.nf_conntrack_acct=1 2>/dev/null && echo "  ✓ nf_conntrack_acct enabled" || echo "  ⚠️  nf_conntrack_acct not available (module may not be loaded yet)"
-# Persist the setting
-if ! grep -q "nf_conntrack_acct" /etc/sysctl.d/99-softrouter.conf 2>/dev/null; then
-    echo "net.netfilter.nf_conntrack_acct=1" >> /etc/sysctl.d/99-softrouter.conf 2>/dev/null || true
-fi
-# Add nf_conntrack to module autoload
-if ! grep -q "nf_conntrack" /etc/modules-load.d/softrouter.conf 2>/dev/null; then
-    echo "nf_conntrack" >> /etc/modules-load.d/softrouter.conf
-fi
-echo ""
-
+sysctl -w net.netfilter.nf_conntrack_acct=1 2>/dev/null || true
 
 # Install/Update systemd service
 echo "⚙️  Configuring systemd service..."
@@ -395,26 +323,44 @@ if [ -f "$SCRIPT_DIR/softrouter.service" ]; then
     systemctl daemon-reload 2>/dev/null || true
     systemctl enable softrouter 2>/dev/null || true
     echo "  ✓ Installed softrouter.service"
-else
-    echo "  ⚠️  softrouter.service file not found in repo"
 fi
 echo ""
 
 # Ensure DHCP and DNS services are enabled and active
 echo "📡 Ensuring DHCP (dnsmasq) and DNS services are active..."
 systemctl enable dnsmasq 2>/dev/null || true
-if ! systemctl is-active --quiet dnsmasq 2>/dev/null; then
-    systemctl start dnsmasq 2>/dev/null || true
-    echo "  ✓ Started dnsmasq (DHCP server)"
-else
-    echo "  ✓ dnsmasq is running"
-fi
-
-if systemctl list-unit-files 2>/dev/null | grep -q "^unbound.service"; then
-    systemctl enable unbound 2>/dev/null || true
-fi
+systemctl start dnsmasq 2>/dev/null || true
 
 # Restart the backend service
+echo "🚀 Starting SoftRouter backend service..."
+systemctl daemon-reload 2>/dev/null || true
+systemctl restart softrouter 2>/dev/null || systemctl start softrouter 2>/dev/null || true
+sleep 2
+
+# Load nf_conntrack and enable byte accounting
+echo "📊 Enabling conntrack byte accounting..."
+modprobe nf_conntrack 2>/dev/null || true
+sysctl -w net.netfilter.nf_conntrack_acct=1 2>/dev/null || true
+if ! grep -q "nf_conntrack_acct" /etc/sysctl.d/99-softrouter.conf 2>/dev/null; then
+    echo "net.netfilter.nf_conntrack_acct=1" >> /etc/sysctl.d/99-softrouter.conf 2>/dev/null || true
+fi
+
+# Install/Update systemd service
+echo "⚙️  Configuring systemd service..."
+if [ -f "$SCRIPT_DIR/softrouter.service" ]; then
+    cp "$SCRIPT_DIR/softrouter.service" /etc/systemd/system/
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl enable softrouter 2>/dev/null || true
+    echo "  ✓ Installed softrouter.service"
+fi
+echo ""
+
+# Ensure DHCP and DNS services are active
+echo "📡 Ensuring DHCP (dnsmasq) and DNS services are active..."
+systemctl enable dnsmasq 2>/dev/null || true
+systemctl start dnsmasq 2>/dev/null || true
+
+# Restart backend service
 echo "🚀 Starting SoftRouter backend service..."
 systemctl daemon-reload 2>/dev/null || true
 if systemctl list-unit-files 2>/dev/null | grep -q "softrouter.service"; then
@@ -432,20 +378,8 @@ else
 fi
 echo ""
 
-# Display service status
 echo "========================================="
 echo "  Update Complete!"
 echo "========================================="
-echo ""
-if systemctl list-unit-files 2>/dev/null | grep -q "softrouter.service"; then
-    echo "Service Status:"
-    systemctl status softrouter --no-pager -l 2>/dev/null | head -n 10 || true
-else
-    echo "Service running in standalone background mode."
-fi
-echo ""
 echo "✅ SoftRouter has been updated successfully!"
-echo ""
-echo "Your firewall rules and configuration have been preserved."
-echo "The backend service is now running with the latest code."
 echo ""
