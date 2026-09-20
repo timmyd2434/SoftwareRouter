@@ -215,8 +215,9 @@ func applyUpdate(w http.ResponseWriter, r *http.Request) {
 				"-p", "WorkingDirectory=" + repoDir,
 				"-p", "Environment=PATH=" + pathEnv,
 				"-p", "Environment=HOME=" + homeDir,
-				"-p", "Environment=GOCACHE=/tmp/go-build-cache",
-				"-p", "Environment=GOPATH=/tmp/go",
+				"-p", "Environment=GOTOOLCHAIN=local",
+				"-p", "Environment=GOCACHE=" + homeDir + "/.cache/go-build",
+				"-p", "Environment=GOPATH=" + homeDir + "/go",
 				updateScript,
 			}
 			sysdArgs = append(sysdArgs, args...)

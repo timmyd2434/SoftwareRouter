@@ -44,6 +44,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # Ensure PATH and environment variables are set for non-interactive / systemd execution
+export GOTOOLCHAIN="local"
 export PATH="/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH}"
 for extra_path in /usr/local/go/bin /snap/bin; do
     if [ -d "$extra_path" ]; then
@@ -51,8 +52,11 @@ for extra_path in /usr/local/go/bin /snap/bin; do
     fi
 done
 export HOME="${HOME:-/root}"
-export GOCACHE="${GOCACHE:-/tmp/go-build-cache}"
-export GOPATH="${GOPATH:-/tmp/go}"
+export GOCACHE="${HOME}/.cache/go-build"
+export GOPATH="${HOME}/go"
+
+# Clean any broken or partial Go toolchain downloads in /tmp/go
+rm -rf /tmp/go/pkg/mod/golang.org/toolchain* 2>/dev/null || true
 
 # Store current directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
