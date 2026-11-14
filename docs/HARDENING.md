@@ -23,6 +23,12 @@ Applies on top of `main` @ df03d0d. Run `go mod tidy` in `backend/` once (argon2
 ## Installer: CrowdSec port clash
 CrowdSec's local API defaults to `127.0.0.1:8080`, the same port as SoftwareRouter's HTTP->HTTPS redirect server, and `install.sh` ended with `fuser -k 8080/tcp`, which killed it. The installer now moves CrowdSec to 9081 (config, CLI credentials, firewall bouncer) and only frees port 80.
 
+## Privileged command policy (`backend/priv_policy.go`)
+`allowedCommands` only named binaries; several were root-equivalent with free arguments (`systemd-run`, `cp`, `curl`, `tail`, `journalctl`, `mkdir`, `openvpn`, `ip netns exec`). Every command now has an argument policy that accepts only the shapes the code actually uses, and a command with no policy is refused. Examples: `tail` only reads the Suricata eve log; `journalctl` only `-u softrouter`; `cp` only between fixed directories; `curl` only https (plus the public-IP lookup) and only writes to fixed paths; `systemd-run` only the exact update invocation; `systemctl` only known units and actions; `sysctl` only four keys with 0/1. `suricata` (never called) was removed from the allowlist.
+`priv_policy_test.go` replays every call shape found in the code (must pass) and ~90 abuse attempts (must be refused). If you add a new privileged call and it is refused, the log line `SECURITY: arguments for '<cmd>' rejected: <reason>` says why; extend the matching policy.
+Also fixed: the non-root update path passed an absolute `.../update.sh` that the old allowlist never matched.
+Still open: sudoers (`NOPASSWD: ALL`) is the real boundary if the backend process itself is compromised.
+
 ## Upgrade notes
 * A pre-upgrade `table ip nat` stays loaded until reboot; the new rules use `ip softrouter_nat`. Reboot once after upgrading.
 * Install Go with `golang-1.24-go` (`/usr/lib/go-1.24/bin`).

@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -46,7 +47,6 @@ var allowedCommands = map[string]bool{
 	"speedtest-cli": true, // WAN speed test
 	"uptime":          true, // System uptime
 	"mkdir":           true, // Creating directories
-	"suricata":        true, // Suricata IPS engine
 	"suricata-update": true, // Suricata rule updater
 	"ss":              true, // Socket statistics (active connections)
 	"netstat":         true, // Network statistics (fallback)
@@ -107,8 +107,17 @@ func logCommandExecution(cmd string, args []string, success bool, err error) {
 
 // validateCommand checks if a command is allowed and performs basic validation
 func validateCommand(cmd string, args []string) error {
+	// Normalise the update script: it is invoked by absolute path from the
+	// repo directory (non-root mode) or as "update.sh" / "./update.sh".
+	key := cmd
+	if filepath.IsAbs(cmd) && filepath.Base(cmd) == "update.sh" && filepath.Clean(cmd) == cmd {
+		if repo := getRepoDir(); repo != "" && filepath.Dir(cmd) == filepath.Clean(repo) {
+			key = "update.sh"
+		}
+	}
+
 	// Check if command is in allow-list
-	if !allowedCommands[cmd] {
+	if !allowedCommands[key] {
 		return fmt.Errorf("SECURITY: command '%s' is not in the allowed command list", cmd)
 	}
 
@@ -138,6 +147,17 @@ func validateCommand(cmd string, args []string) error {
 		}
 	}
 
+	// Per-command argument policy: only the argument shapes SoftRouter actually
+	// uses are accepted (see priv_policy.go). No policy => refused (fail closed).
+	policy, hasPolicy := commandPolicies[key]
+	if !hasPolicy {
+		return fmt.Errorf("SECURITY: no argument policy defined for command '%s'", cmd)
+	}
+	if err := policy(args); err != nil {
+		log.Printf("SECURITY: Blocked %s: %v", cmd, err)
+		return fmt.Errorf("SECURITY: arguments for '%s' rejected: %v", cmd, err)
+	}
+
 	// Command-specific validation
 	switch cmd {
 	case "bash", "sh":
@@ -158,7 +178,7 @@ func validateCommand(cmd string, args []string) error {
 
 func getCommandContext(cmd string) (context.Context, context.CancelFunc) {
 	timeout := 30 * time.Second
-	if cmd == "speedtest-cli" || cmd == "suricata-update" || cmd == "curl" || cmd == "systemd-run" || cmd == "./update.sh" || cmd == "update.sh" {
+	if cmd == "speedtest-cli" || cmd == "suricata-update" || cmd == "curl" || cmd == "systemd-run" || cmd == "./update.sh" || filepath.Base(cmd) == "update.sh" {
 		timeout = 10 * time.Minute
 	}
 	return context.WithTimeout(context.Background(), timeout)
