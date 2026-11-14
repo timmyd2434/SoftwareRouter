@@ -20,6 +20,9 @@ Applies on top of `main` @ df03d0d. Run `go mod tidy` in `backend/` once (argon2
 * `config.json`: `allowed_hosts` (Host allowlist; IPs and `localhost` always pass), `allow_insecure_webhook`.
 * Rate limits: backup create 2 / 10 min; restore, update, speedtest 5 / 10 min and one at a time.
 
+## Installer: CrowdSec port clash
+CrowdSec's local API defaults to `127.0.0.1:8080`, the same port as SoftwareRouter's HTTP->HTTPS redirect server, and `install.sh` ended with `fuser -k 8080/tcp`, which killed it. The installer now moves CrowdSec to 9081 (config, CLI credentials, firewall bouncer) and only frees port 80.
+
 ## Upgrade notes
 * A pre-upgrade `table ip nat` stays loaded until reboot; the new rules use `ip softrouter_nat`. Reboot once after upgrading.
 * Install Go with `golang-1.24-go` (`/usr/lib/go-1.24/bin`).

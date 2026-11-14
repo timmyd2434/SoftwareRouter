@@ -555,8 +555,8 @@ func cleanupFirewallRules(w http.ResponseWriter, r *http.Request) {
 			tFamily = "inet"
 		}
 		// Skip our own managed table
-		if strings.EqualFold(tName, managedTable) {
-			continue
+		if strings.EqualFold(tName, managedTable) || strings.EqualFold(tName, "softrouter_nat") {
+			continue // tables SoftRouter owns
 		}
 		// SECURITY/COEXISTENCE: tables not owned by SoftRouter are never deleted.
 		// (iptables-nft, Docker and CrowdSec all create tables such as "ip filter";

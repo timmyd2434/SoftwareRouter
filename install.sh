@@ -306,6 +306,18 @@ if [[ "$INSTALL_SEC" =~ ^[Yy]$ ]]; then
     cscli collections install crowdsecurity/linux crowdsecurity/sshd crowdsecurity/http-cve crowdsecurity/iptables crowdsecurity/suricata --force
     
     # Start security services
+    # CrowdSec's local API defaults to 127.0.0.1:8080, which SoftwareRouter's
+    # HTTP->HTTPS redirect server also uses. Move CrowdSec to 9081 and keep its
+    # CLI credentials and the firewall bouncer pointed at the new port.
+    echo -e "Moving CrowdSec local API from :8080 to :9081 (avoids SoftwareRouter redirect port)..."
+    [ -f /etc/crowdsec/config.yaml ] && \
+        sed -i 's#listen_uri:[[:space:]]*127\.0\.0\.1:8080#listen_uri: 127.0.0.1:9081#' /etc/crowdsec/config.yaml
+    [ -f /etc/crowdsec/local_api_credentials.yaml ] && \
+        sed -i 's#^url:[[:space:]]*http://127\.0\.0\.1:8080#url: http://127.0.0.1:9081#' /etc/crowdsec/local_api_credentials.yaml
+    for f in /etc/crowdsec/bouncers/*.yaml /etc/crowdsec/bouncers/*.yaml.local; do
+        [ -f "$f" ] && sed -i 's#http://127\.0\.0\.1:8080#http://127.0.0.1:9081#' "$f"
+    done
+
     systemctl enable suricata crowdsec crowdsec-firewall-bouncer
     systemctl restart suricata crowdsec crowdsec-firewall-bouncer
     echo -e "${GREEN}IDS/IPS Stack successfully integrated.${NC}"
@@ -485,7 +497,7 @@ db.mongo.uri=mongodb://127.0.0.1:27017/unifi
 statdb.mongo.uri=mongodb://127.0.0.1:27017/unifi_stat
 unifi.db.name=unifi
 
-# Custom ports (avoid CrowdSec on 8080)
+# Custom ports (CrowdSec now uses 9081; 8080 is SoftwareRouter's redirect port)
 unifi.http.port=8081
 unifi.https.port=8443
 UNIFI_PROPS
@@ -660,7 +672,8 @@ EOF
 
 # 11. Finalize
 echo -e "${CYAN}[10/10] Launching System...${NC}"
-fuser -k 80/tcp 8080/tcp 2>/dev/null || true
+# Only free port 80. (Killing :8080 used to terminate CrowdSec's local API.)
+fuser -k 80/tcp 2>/dev/null || true
 systemctl daemon-reload
 systemctl enable softrouter
 systemctl restart softrouter
