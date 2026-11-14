@@ -8,42 +8,37 @@ import (
 // ControlPlane provides protection for router management services
 // This module generates NFTables rules to rate-limit and protect control plane traffic
 
-// generateControlPlaneRules creates NFT rules for control plane protection
-// These rules are injected early in the INPUT chain to rate-limit management access
-func generateControlPlaneRules() string {
+// generateControlPlaneRules creates NFT rules for control plane protection.
+//
+// SECURITY: the previous implementation emitted interface-unfiltered `accept`
+// rules for ports 22, 53, 80, 443, 8080 and 9443, which silently re-opened SSH,
+// DNS and the WebUI on the WAN and defeated the provisioning/lockdown model.
+// LAN access is already granted by the per-interface "LAN trust" rule, and WAN
+// WebUI traffic is handled by the explicit `ct status dnat` rule, so the only
+// thing worth adding here is a brute-force limiter in front of WAN SSH, and only
+// when WAN SSH is actually permitted.
+func generateControlPlaneRules(cfg Config, wanInterfaces []string) string {
 	var b strings.Builder
-
-	b.WriteString("  # === CONTROL PLANE PROTECTION ===\n")
-	b.WriteString("  # Rate-limit management services to prevent DoS\n")
-	b.WriteString("  # These rules protect SSH, WebUI, and API access\n\n")
-
-	// SSH Rate Limiting
-	b.WriteString("  # SSH rate limiting: max 10 new connections per minute per source\n")
-	b.WriteString("  tcp dport 22 ct state new limit rate 10/minute burst 20 packets accept comment \"SSH rate limit\"\n")
-	b.WriteString("  # Note: Existing connections always allowed by earlier established,related rule\n\n")
-
-	// WebUI HTTP Redirect Rate Limiting
-	b.WriteString("  # WebUI HTTP redirect rate limiting: max 100 new connections per minute per source\n")
-	b.WriteString("  tcp dport 8080 ct state new limit rate 100/minute burst 50 packets accept comment \"WebUI HTTP redirect rate limit\"\n")
-	b.WriteString("  tcp dport 80 ct state new limit rate 100/minute burst 50 packets accept comment \"WebUI HTTP redirect rate limit\"\n\n")
-
-	// WebUI HTTPS Rate Limiting
-	b.WriteString("  # WebUI HTTPS rate limiting: max 100 new connections per minute per source\n")
-	b.WriteString("  tcp dport 443 ct state new limit rate 100/minute burst 50 packets accept comment \"WebUI HTTPS rate limit\"\n")
-	b.WriteString("  tcp dport 9443 ct state new limit rate 100/minute burst 50 packets accept comment \"WebUI HTTPS rate limit\"\n\n")
-
-	// DNS Rate Limiting (protect local DNS resolver)
-	b.WriteString("  # DNS rate limiting: max 60 queries per second per source\n")
-	b.WriteString("  udp dport 53 limit rate 60/second burst 100 packets accept comment \"DNS rate limit\"\n")
-	b.WriteString("  tcp dport 53 limit rate 60/second burst 100 packets accept comment \"DNS rate limit\"\n\n")
-
+	if !(cfg.ProvisioningMode || cfg.AllowWANSSH) {
+		return ""
+	}
+	b.WriteString("  # === CONTROL PLANE PROTECTION (WAN SSH only while permitted) ===\n")
+	for _, wan := range wanInterfaces {
+		if sanitizeNFTValue(wan) != nil {
+			continue
+		}
+		b.WriteString(fmt.Sprintf("  iifname \"%s\" tcp dport 22 ct state new limit rate over 10/minute burst 20 packets drop comment \"WAN SSH rate limit\"\n", wan))
+	}
 	b.WriteString("  # === END CONTROL PLANE PROTECTION ===\n\n")
-
 	return b.String()
 }
 
 // injectControlPlaneProtectionV2 is used instead of the original V1 implementation.
-func injectControlPlaneProtectionV2(ruleset string) string {
+func injectControlPlaneProtectionV2(ruleset string, cfg Config, wanInterfaces []string) string {
+	rules := generateControlPlaneRules(cfg, wanInterfaces)
+	if rules == "" {
+		return ruleset
+	}
 	// Strategy: Find "ip6 nexthdr icmpv6 accept" and inject our rules right after it
 
 	marker := "ip6 nexthdr icmpv6 accept"
@@ -59,7 +54,7 @@ func injectControlPlaneProtectionV2(ruleset string) string {
 	}
 
 	// Reconstruct with our rules injected
-	result := parts[0] + marker + "\n\n" + generateControlPlaneRules() + parts[1]
+	result := parts[0] + marker + "\n\n" + rules + parts[1]
 
 	fmt.Println("[CONTROL_PLANE] ✓ Control plane protection rules injected")
 	return result

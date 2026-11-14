@@ -7,6 +7,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,10 +15,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
+	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/pbkdf2"
 )
 
@@ -48,29 +51,91 @@ var backupDir = "/var/backups/softrouter"
 var softrouterConfigDir = "/etc/softrouter"
 var isTesting = false
 
-const backupMagic = "SRBKP01" // Magic header to identify encrypted backup
+const (
+	backupMagicV1 = "SRBKP01" // legacy: PBKDF2-SHA256, 4096 iterations (read-only support)
+	backupMagicV2 = "SRBKP02" // Argon2id with versioned KDF header, header bound as GCM AAD
+	backupMagic   = backupMagicV2
+)
 
-// deriveKey derives a 32-byte key from the password and salt using PBKDF2-SHA256
-func deriveKey(password string, salt []byte) []byte {
+// Argon2id parameters for new backups (OWASP-recommended class: 64 MiB, t=3, p=4)
+const (
+	argonTime    uint32 = 3
+	argonMemKiB  uint32 = 64 * 1024
+	argonThreads uint8  = 4
+	argonAlgoID  byte   = 1
+
+	// Upper bounds accepted from an (attacker-supplied) backup header, so a
+	// crafted file cannot make the router allocate gigabytes during restore.
+	argonMaxTime    uint32 = 10
+	argonMaxMemKiB  uint32 = 256 * 1024
+	argonMaxThreads uint8  = 16
+
+	backupSaltLen = 16
+	// magic(7) + algo(1) + time(4) + mem(4) + threads(1) + salt(16)
+	backupHeaderLenV2 = 7 + 1 + 4 + 4 + 1 + backupSaltLen
+)
+
+// Files that must never be written into a backup archive (secrets that are
+// either regenerated per-host or must not travel with an exported file).
+var backupExcludedFiles = map[string]bool{
+	"token_secret.key":      true,
+	"user_credentials.json": true,
+}
+
+// deriveKeyLegacy is the old PBKDF2 derivation, kept only to read SRBKP01 files.
+func deriveKeyLegacy(password string, salt []byte) []byte {
 	return pbkdf2.Key([]byte(password), salt, 4096, 32, sha256.New)
 }
 
-// encryptBackup encrypts data using AES-256-GCM
-func encryptBackup(data []byte, password string) ([]byte, error) {
-	salt := make([]byte, 16)
-	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
-		return nil, fmt.Errorf("failed to generate random salt: %w", err)
+// deriveKeyArgon2id derives a 32-byte key. The password copy is wiped afterwards.
+func deriveKeyArgon2id(password string, salt []byte, t, memKiB uint32, threads uint8) []byte {
+	pw := []byte(password)
+	key := argon2.IDKey(pw, salt, t, memKiB, threads, 32)
+	for i := range pw {
+		pw[i] = 0
 	}
+	runtime.KeepAlive(pw)
+	return key
+}
 
-	key := deriveKey(password, salt)
+func newGCM(key []byte) (cipher.AEAD, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cipher block: %w", err)
 	}
-
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCM mode: %w", err)
+	}
+	return gcm, nil
+}
+
+// encryptBackup encrypts data using AES-256-GCM with an Argon2id-derived key.
+// Layout: header(magic|algo|time|mem|threads|salt) | nonce | ciphertext
+// The header is authenticated as AAD so KDF parameters cannot be tampered with.
+func encryptBackup(data []byte, password string) ([]byte, error) {
+	salt := make([]byte, backupSaltLen)
+	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
+		return nil, fmt.Errorf("failed to generate random salt: %w", err)
+	}
+
+	header := make([]byte, 0, backupHeaderLenV2)
+	header = append(header, []byte(backupMagicV2)...)
+	header = append(header, argonAlgoID)
+	header = binary.BigEndian.AppendUint32(header, argonTime)
+	header = binary.BigEndian.AppendUint32(header, argonMemKiB)
+	header = append(header, argonThreads)
+	header = append(header, salt...)
+
+	key := deriveKeyArgon2id(password, salt, argonTime, argonMemKiB, argonThreads)
+	defer func() {
+		for i := range key {
+			key[i] = 0
+		}
+	}()
+	gcm, err := newGCM(key)
+	if err != nil {
+		return nil, err
 	}
 
 	nonce := make([]byte, gcm.NonceSize())
@@ -78,48 +143,82 @@ func encryptBackup(data []byte, password string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to generate nonce: %w", err)
 	}
 
-	ciphertext := gcm.Seal(nil, nonce, data, nil)
+	ciphertext := gcm.Seal(nil, nonce, data, header)
 
-	// Format: magic + salt + nonce + ciphertext
-	payload := []byte(backupMagic)
-	payload = append(payload, salt...)
+	payload := append([]byte{}, header...)
 	payload = append(payload, nonce...)
 	payload = append(payload, ciphertext...)
-
 	return payload, nil
 }
 
-// decryptBackup decrypts GCM data with the password
+// decryptBackup decrypts a backup (SRBKP02 Argon2id, or legacy SRBKP01).
 func decryptBackup(data []byte, password string) ([]byte, error) {
-	magicLen := len(backupMagic)
+	if len(data) < len(backupMagicV1) {
+		return nil, fmt.Errorf("invalid or corrupted backup file format")
+	}
+	switch string(data[:len(backupMagicV1)]) {
+	case backupMagicV2:
+		return decryptBackupV2(data, password)
+	case backupMagicV1:
+		return decryptBackupV1(data, password)
+	default:
+		return nil, fmt.Errorf("not a valid encrypted backup file")
+	}
+}
+
+func decryptBackupV2(data []byte, password string) ([]byte, error) {
+	if len(data) < backupHeaderLenV2+12 {
+		return nil, fmt.Errorf("invalid or corrupted backup file format")
+	}
+	header := data[:backupHeaderLenV2]
+	if header[7] != argonAlgoID {
+		return nil, fmt.Errorf("unsupported backup KDF")
+	}
+	t := binary.BigEndian.Uint32(header[8:12])
+	mem := binary.BigEndian.Uint32(header[12:16])
+	threads := header[16]
+	salt := header[17 : 17+backupSaltLen]
+	if t < 1 || t > argonMaxTime || mem < 8*1024 || mem > argonMaxMemKiB || threads < 1 || threads > argonMaxThreads {
+		return nil, fmt.Errorf("backup KDF parameters out of accepted range")
+	}
+
+	key := deriveKeyArgon2id(password, salt, t, mem, threads)
+	defer func() {
+		for i := range key {
+			key[i] = 0
+		}
+	}()
+	gcm, err := newGCM(key)
+	if err != nil {
+		return nil, err
+	}
+	nonce := data[backupHeaderLenV2 : backupHeaderLenV2+gcm.NonceSize()]
+	ciphertext := data[backupHeaderLenV2+gcm.NonceSize():]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, header)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt backup: incorrect password or corrupted file")
+	}
+	return plaintext, nil
+}
+
+func decryptBackupV1(data []byte, password string) ([]byte, error) {
+	magicLen := len(backupMagicV1)
 	if len(data) < magicLen+16+12 {
 		return nil, fmt.Errorf("invalid or corrupted backup file format")
 	}
-
-	if string(data[:magicLen]) != backupMagic {
-		return nil, fmt.Errorf("not a valid encrypted backup file")
-	}
-
 	salt := data[magicLen : magicLen+16]
 	nonce := data[magicLen+16 : magicLen+16+12]
 	ciphertext := data[magicLen+16+12:]
 
-	key := deriveKey(password, salt)
-	block, err := aes.NewCipher(key)
+	key := deriveKeyLegacy(password, salt)
+	gcm, err := newGCM(key)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create cipher block: %w", err)
+		return nil, err
 	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GCM mode: %w", err)
-	}
-
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt backup: incorrect password or corrupted file")
 	}
-
 	return plaintext, nil
 }
 
@@ -166,6 +265,11 @@ func createBackup(password string) ([]byte, error) {
 			return nil
 		}
 
+		// SECURITY: never export the session-signing secret or the credential hash
+		if backupExcludedFiles[filepath.ToSlash(relPath)] {
+			return nil
+		}
+
 		// Read file contents
 		data, err := os.ReadFile(path)
 		if err == nil {
@@ -180,11 +284,7 @@ func createBackup(password string) ([]byte, error) {
 	configLock.RUnlock()
 
 	// Credentials (legacy fallback fields)
-	creds := loadCredentials()
-	snapshot.Config.Credentials = BackupCredentials{
-		Username: creds.Username,
-		Password: creds.Password,
-	}
+	// SECURITY: credential hash is no longer exported; Credentials stays empty.
 
 	// Interface metadata (legacy fallback fields)
 	if metadata, err := loadInterfaceMetadata(); err == nil {
@@ -253,11 +353,6 @@ func validateBackup(data []byte, password string) error {
 		return fmt.Errorf("backup version missing")
 	}
 
-	// Basic validation
-	if snapshot.Config.Credentials.Username == "" {
-		return fmt.Errorf("backup missing credentials")
-	}
-
 	return nil
 }
 
@@ -299,6 +394,20 @@ func restoreBackup(data []byte, password string) error {
 				continue
 			}
 
+			// SECURITY: never let a backup replace the session-signing secret, and
+			// only restore credentials onto a host that has none yet (fresh install).
+			slashRel := filepath.ToSlash(cleanedRel)
+			if slashRel == "token_secret.key" {
+				log.Printf("[BACKUP] Skipping %s (host-local secret)", cleanedRel)
+				continue
+			}
+			if slashRel == "user_credentials.json" {
+				if _, statErr := os.Stat(fullPath); statErr == nil {
+					log.Printf("[BACKUP] Skipping %s (credentials already exist on this host)", cleanedRel)
+					continue
+				}
+			}
+
 			// Ensure directory exists
 			if err := os.MkdirAll(filepath.Dir(fullPath), 0750); err != nil {
 				log.Printf("WARNING: Failed to create directory for %s: %v", fullPath, err)
@@ -325,12 +434,16 @@ func restoreBackup(data []byte, password string) error {
 		configLock.Unlock()
 
 		// Restore credentials
-		creds := UserCredentials{
-			Username: snapshot.Config.Credentials.Username,
-			Password: snapshot.Config.Credentials.Password,
-		}
-		if err := saveCredentials(creds); err != nil {
-			return fmt.Errorf("failed to restore credentials: %w", err)
+		if snapshot.Config.Credentials.Username != "" {
+			if _, statErr := os.Stat(filepath.Join(softrouterConfigDir, "user_credentials.json")); os.IsNotExist(statErr) {
+				creds := UserCredentials{
+					Username: snapshot.Config.Credentials.Username,
+					Password: snapshot.Config.Credentials.Password,
+				}
+				if err := saveCredentials(creds); err != nil {
+					return fmt.Errorf("failed to restore credentials: %w", err)
+				}
+			}
 		}
 
 		// Restore interface metadata

@@ -171,38 +171,52 @@ func loadKnownGoodSnapshot() (string, error) {
 // getBootSafeFallbackRuleset returns a minimal safe ruleset for emergency boot recovery
 // This ruleset allows SSH and basic connectivity even if all configs are corrupted
 func getBootSafeFallbackRuleset() string {
-	return `
-# Boot-safe fallback ruleset
-# This is the absolute minimal configuration to allow emergency access
-
-flush ruleset
+	// SECURITY: previously `flush ruleset` + `policy accept` on input + SSH from
+	// anywhere, i.e. a fully open WAN during recovery. Now: only SoftRouter-owned
+	// tables are replaced, input is default-drop, and management is limited to
+	// private (RFC1918 / ULA / link-local) sources.
+	return ownedTablesResetScript + `
+# Boot-safe fallback ruleset (emergency access, LAN/private sources only)
+table inet emergency
+delete table inet emergency
 
 table inet emergency {
 	chain input {
-		type filter hook input priority filter; policy accept;
-		
-		# Accept all on loopback
+		type filter hook input priority filter; policy drop;
+
 		iif lo accept
-		
-		# Accept established connections
 		ct state established,related accept
-		
-		# Accept SSH
-		tcp dport 22 accept comment "Emergency SSH access"
-		
-		# Accept ICMP
+		ct state invalid drop
+
+		ip saddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 } tcp dport { 22, 443, 8080 } accept comment "Emergency management (private sources)"
+		ip6 saddr { fc00::/7, fe80::/10 } tcp dport { 22, 443, 8080 } accept comment "Emergency management (private sources)"
+
 		ip protocol icmp accept
 		ip6 nexthdr icmpv6 accept
 	}
-	
+
 	chain forward {
 		type filter hook forward priority filter; policy drop;
-		
-		# Accept established connections
 		ct state established,related accept
 	}
 }
 `
+}
+
+// cancelWatchdog cancels a pending rollback timer without an HTTP request.
+// Used when a deliberate security-tightening change (lockdown) must not be
+// rolled back to an older, more permissive snapshot.
+func cancelWatchdog() {
+	watchdogMutex.Lock()
+	defer watchdogMutex.Unlock()
+	if !watchdogActive {
+		return
+	}
+	select {
+	case watchdogCancelChan <- true:
+	default:
+	}
+	watchdogActive = false
 }
 
 // startWatchdogTimer initiates a countdown that will rollback firewall changes
@@ -301,7 +315,8 @@ func performRollback(snapshot string) error {
 	}
 	defer os.Remove(tmpfile.Name())
 
-	if _, err := tmpfile.WriteString(snapshot); err != nil {
+	// Replace (not append to) SoftRouter's own tables; never touch foreign tables.
+	if _, err := tmpfile.WriteString(ownedTablesResetScript + "\n" + snapshot); err != nil {
 		return fmt.Errorf("failed to write rollback rules: %w", err)
 	}
 	if err := tmpfile.Close(); err != nil {

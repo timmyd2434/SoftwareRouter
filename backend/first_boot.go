@@ -5,7 +5,9 @@ import (
 	"log"
 	"net"
 	"os"
+	"strconv"
 	"strings"
+	"syscall"
 )
 
 const firstBootFlagFile = "/etc/softrouter/first_boot_complete"
@@ -119,16 +121,31 @@ dhcp-option=3,192.168.254.1
 dhcp-option=6,192.168.254.1
 `, fallbackIface.Name)
 
-	confPath := "/tmp/fallback-dnsmasq.conf"
-	pidPath := "/tmp/fallback-dnsmasq.pid"
+	// /run/softrouter is root-only (0700): /tmp is world-writable, which allowed
+	// symlink/pid-file tricks against a root process.
+	if err := os.MkdirAll("/run/softrouter", 0700); err != nil {
+		log.Printf("FallbackNetwork: Failed to create /run/softrouter: %v", err)
+		return
+	}
+	confPath := "/run/softrouter/fallback-dnsmasq.conf"
+	pidPath := "/run/softrouter/fallback-dnsmasq.pid"
 
 	if err := os.WriteFile(confPath, []byte(dnsmasqConf), 0600); err != nil {
 		log.Printf("FallbackNetwork: Failed to write temporary dnsmasq config: %v", err)
 		return
 	}
 
-	// Kill any existing fallback dnsmasq just in case
-	_ = runPrivileged("pkill", "-F", pidPath)
+	// Stop any previous fallback dnsmasq. (pkill is not on the privileged-command
+	// allowlist, so the old call silently failed.) Verify the PID really is dnsmasq.
+	if pidData, perr := os.ReadFile(pidPath); perr == nil {
+		if pid, aerr := strconv.Atoi(strings.TrimSpace(string(pidData))); aerr == nil && pid > 1 {
+			if comm, cerr := os.ReadFile(fmt.Sprintf("/proc/%d/comm", pid)); cerr == nil && strings.TrimSpace(string(comm)) == "dnsmasq" {
+				if proc, ferr := os.FindProcess(pid); ferr == nil {
+					_ = proc.Signal(syscall.SIGTERM)
+				}
+			}
+		}
+	}
 
 	if err := runPrivileged("dnsmasq", "-C", confPath, "-x", pidPath); err != nil {
 		log.Printf("FallbackNetwork: Failed to start temporary dnsmasq: %v", err)

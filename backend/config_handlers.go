@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -38,6 +39,20 @@ func ValidateConfig(cfg Config) error {
 	if cfg.TLS.Enabled {
 		if !isSafePath(cfg.TLS.CertFile) || !isSafePath(cfg.TLS.KeyFile) {
 			return fmt.Errorf("invalid TLS certificate or key file path (must be absolute paths under /etc/softrouter)")
+		}
+	}
+
+	// 3b. TLS port must be a real integer port (it is interpolated into nft rules)
+	if cfg.TLS.Port != "" {
+		if _, err := validatePortString(cfg.TLS.Port); err != nil {
+			return fmt.Errorf("invalid TLS port (must be 1-65535)")
+		}
+	}
+
+	// 3c. Allowed hosts must be valid hostnames / IPs
+	for _, h := range cfg.AllowedHosts {
+		if err := validateHostOrIP(h); err != nil {
+			return fmt.Errorf("invalid allowed host %q", h)
 		}
 	}
 
@@ -209,15 +224,14 @@ func applyCloudflareConfig(cfg Config) error {
 	// First, try to uninstall existing service to ensure clean state
 	runPrivileged("cloudflared", "service", "uninstall")
 
-	// Write token to temp file with strict permissions (0600) to avoid process table exposure
-	tokenFile := "/etc/softrouter/.cloudflare-token"
-	if err := os.WriteFile(tokenFile, []byte(cfg.CloudflareToken), 0600); err != nil {
-		return fmt.Errorf("failed to write token file: %w", err)
+	// Token is validated (isValidCloudflareToken: [A-Za-z0-9-_=] only) so it is
+	// safe to pass as a direct argument. No shell is involved. NOTE: cloudflared's
+	// CLI only accepts the token as an argument, so it is briefly visible in the
+	// process table; it is never written to disk by SoftRouter.
+	if !isValidCloudflareToken(cfg.CloudflareToken) {
+		return fmt.Errorf("invalid cloudflare token format")
 	}
-	defer os.Remove(tokenFile)
-
-	// Install service safely using token from file
-	err = runPrivileged("bash", "-c", fmt.Sprintf("cloudflared service install $(cat %s)", tokenFile))
+	err = runPrivileged("cloudflared", "service", "install", cfg.CloudflareToken)
 	if err != nil {
 		return fmt.Errorf("failed to install cloudflared service: %v", err)
 	}
@@ -325,19 +339,44 @@ DNSOverTLS=%s
 }
 
 func updateConfig(w http.ResponseWriter, r *http.Request) {
-	var cfg Config
-	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
+	}
+	var cfg Config
+	if err := json.Unmarshal(body, &cfg); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	var present map[string]json.RawMessage
+	_ = json.Unmarshal(body, &present)
+
+	// Load old config to see what changed
+	oldCfg := loadConfig()
+
+	// Server-owned state must never be reset by a client that doesn't know about it.
+	cfg.ProvisioningMode = oldCfg.ProvisioningMode
+	cfg.ProvisioningStarted = oldCfg.ProvisioningStarted
+	cfg.ProvisioningExpires = oldCfg.ProvisioningExpires
+	// Operator-settable flags: only change when explicitly present in the body.
+	if _, ok := present["allow_wan_ssh"]; !ok {
+		cfg.AllowWANSSH = oldCfg.AllowWANSSH
+	}
+	if _, ok := present["allow_wan_dns"]; !ok {
+		cfg.AllowWANDNS = oldCfg.AllowWANDNS
+	}
+	if _, ok := present["allowed_hosts"]; !ok {
+		cfg.AllowedHosts = oldCfg.AllowedHosts
+	}
+	if _, ok := present["allow_insecure_webhook"]; !ok {
+		cfg.AllowInsecureWebhook = oldCfg.AllowInsecureWebhook
 	}
 
 	if err := ValidateConfig(cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Validation failed: %v", err), http.StatusBadRequest)
 		return
 	}
-
-	// Load old config to see what changed
-	oldCfg := loadConfig()
 
 	if err := saveConfig(cfg); err != nil {
 		http.Error(w, "Failed to save config", http.StatusInternalServerError)

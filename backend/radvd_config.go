@@ -77,6 +77,10 @@ func generateRADVDConfig() error {
 			fmt.Printf("Warning: Interface %s has RA enabled but no prefix configured, skipping\n", ifaceName)
 			continue
 		}
+		// Defense in depth: never write unvalidated values into radvd.conf
+		if err := validateRAConfig(ifaceName, config.Prefix, config.DNSServers); err != nil {
+			return fmt.Errorf("refusing to write radvd config for %s: %w", ifaceName, err)
+		}
 
 		configLines = append(configLines, fmt.Sprintf("interface %s {", ifaceName))
 		configLines = append(configLines, "    AdvSendAdvert on;")
@@ -103,8 +107,18 @@ func generateRADVDConfig() error {
 		configLines = append(configLines, "")
 	}
 
-	// Write config file
+	// Write config file (after `radvd --configtest` on a candidate copy)
 	configContent := strings.Join(configLines, "\n")
+	candidate, cerr := os.CreateTemp("", "softrouter-radvd-*.conf")
+	if cerr != nil {
+		return fmt.Errorf("failed to create candidate radvd config: %w", cerr)
+	}
+	defer os.Remove(candidate.Name())
+	candidate.WriteString(configContent)
+	candidate.Close()
+	if out, terr := runPrivilegedCombinedOutput("radvd", "--configtest", "--config="+candidate.Name()); terr != nil {
+		return fmt.Errorf("generated radvd config failed validation (previous config kept): %s", strings.TrimSpace(string(out)))
+	}
 	if err := os.WriteFile(radvdConfigPath, []byte(configContent), 0600); err != nil {
 		return fmt.Errorf("failed to write radvd config: %w", err)
 	}

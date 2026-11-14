@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -196,10 +197,14 @@ explicit-exit-notify 1
 		return
 	}
 
-	// 6. Firewall Rule (Allow 1194/udp)
-	// We'll insert it into nftables.conf if not present, OR assumes user manages via firewall UI.
-	// For "Out of box" experience, let's auto-add to firewall via our existing API/logic or just exec nft
-	runPrivileged("nft", "add", "rule", "inet", "filter", "input", "udp", "dport", fmt.Sprintf("%d", ovpnPort), "accept")
+	// 6. Firewall: the listener rule now lives in the managed ruleset (generated
+	// from the existence of server.conf). The old `nft add rule inet filter ...`
+	// targeted a table that no longer exists, so it silently did nothing.
+	if firewallManager != nil {
+		if err := firewallManager.ApplyFirewallRules(true); err != nil {
+			log.Printf("WARNING: failed to re-apply firewall after OpenVPN setup: %v", err)
+		}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "success", "message": "OpenVPN Server configured and started"})

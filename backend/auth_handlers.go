@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -90,38 +91,30 @@ func verifySecureToken(token string) bool {
 	return hmac.Equal([]byte(providedSignature), []byte(expectedSignature))
 }
 
-// getUsernameFromToken extracts username from the Bearer token
+// sessionTokenFromRequest returns the session token from the cookie (preferred)
+// or, during the transition window, the Authorization: Bearer header.
+func sessionTokenFromRequest(r *http.Request) string {
+	if cookie, err := r.Cookie("session_token"); err == nil && cookie.Value != "" {
+		return cookie.Value
+	}
+	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
+		return strings.TrimPrefix(h, "Bearer ")
+	}
+	return ""
+}
+
+// getUsernameFromToken returns the authenticated username for audit logging.
+// It is taken from the server-side session store, never parsed out of the
+// client-supplied token string, so audit attribution cannot be spoofed.
 func getUsernameFromToken(r *http.Request) string {
-	var tokenValue string
-	cookie, err := r.Cookie("session_token")
-	if err == nil {
-		tokenValue = cookie.Value
-	} else {
-		token := r.Header.Get("Authorization")
-		if strings.HasPrefix(token, "Bearer ") {
-			tokenValue = strings.TrimPrefix(token, "Bearer ")
-		}
-	}
-
-	if tokenValue == "" {
+	token := sessionTokenFromRequest(r)
+	if token == "" {
 		return "unknown"
 	}
-
-	// Format is expected to be sr-username-timestamp-signature
-	cleanToken := strings.TrimPrefix(tokenValue, "sr-")
-
-	// The format is username-timestamp-signature.
-	// Username can contain dashes, so we find the last two dashes.
-	lastDash := strings.LastIndex(cleanToken, "-")
-	if lastDash == -1 {
-		return "unknown"
+	if sess, ok := sessionStore.GetSession(token); ok {
+		return sess.Username
 	}
-	secondLastDash := strings.LastIndex(cleanToken[:lastDash], "-")
-	if secondLastDash == -1 {
-		return "unknown"
-	}
-
-	return cleanToken[:secondLastDash]
+	return "unknown"
 }
 
 // --- Password Management ---
@@ -148,7 +141,7 @@ func verifyPassword(password, hash string) bool {
 
 	// Fallback to legacy SHA256 (64 hex characters)
 	if len(hash) == 64 {
-		return hashPasswordSHA256(password) == hash
+		return subtle.ConstantTimeCompare([]byte(hashPasswordSHA256(password)), []byte(hash)) == 1
 	}
 
 	return false
@@ -303,7 +296,11 @@ func login(w http.ResponseWriter, r *http.Request) {
 	}
 	loginMu.Unlock()
 
-	if req.Username == storedCreds.Username && verifyPassword(req.Password, storedCreds.Password) {
+	// Evaluate both checks unconditionally so response time does not reveal
+	// whether the username was correct.
+	userOK := subtle.ConstantTimeCompare([]byte(req.Username), []byte(storedCreds.Username)) == 1
+	passOK := verifyPassword(req.Password, storedCreds.Password)
+	if userOK && passOK {
 		// Success
 		loginMu.Lock()
 		delete(loginAttempts, ip)
@@ -330,22 +327,22 @@ func login(w http.ResponseWriter, r *http.Request) {
 		// Track session
 		userAgent := r.Header.Get("User-Agent")
 		sessionStore.AddSession(tokenValue, req.Username, ip, userAgent)
-		log.Printf("Session created for user %s (IP: %s, token: %s...)", req.Username, ip, tokenValue[:20])
+		log.Printf("Session created for user %s (IP: %s)", req.Username, ip)
 
 		// Set HttpOnly secure SameSite=Strict cookie
 		http.SetCookie(w, &http.Cookie{
 			Name:     "session_token",
 			Value:    tokenValue,
 			Path:     "/",
-			MaxAge:   7 * 24 * 60 * 60, // 7 days
+			MaxAge:   int(sessionTimeout.Seconds()), // matches the absolute session cap
 			HttpOnly: true,
-			Secure:   r.TLS != nil,
+			Secure:   true,
 			SameSite: http.SameSiteStrictMode,
 		})
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
-			"token":   tokenValue,
+			// The session token is delivered ONLY via the HttpOnly cookie.
 			"message": "Login successful",
 			"user":    req.Username,
 		})
@@ -410,7 +407,7 @@ func logout(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   r.TLS != nil,
+		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
 	})
 
@@ -476,9 +473,23 @@ func updateCredentials(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Log successful credential update
-	logAuditEvent(getUsernameFromToken(r), "credentials.update", "password",
+	// Log successful credential update (resolve the actor before revoking sessions)
+	actor := getUsernameFromToken(r)
+	logAuditEvent(actor, "credentials.update", "password",
 		fmt.Sprintf("{\"new_username\":\"%s\"}", req.NewUsername), getClientIP(r), true)
 
-	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+	// SECURITY: a credential change must invalidate every existing session
+	// (old and new username), including the caller's: they sign in again.
+	revoked := sessionStore.RevokeAllUserSessions(storedCreds.Username)
+	if req.NewUsername != storedCreds.Username {
+		revoked += sessionStore.RevokeAllUserSessions(req.NewUsername)
+	}
+	log.Printf("Credentials updated by %s; revoked %d session(s)", actor, revoked)
+	http.SetCookie(w, &http.Cookie{
+		Name: "session_token", Value: "", Path: "/", MaxAge: -1,
+		HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode,
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": "success", "relogin_required": true})
 }

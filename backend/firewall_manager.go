@@ -5,9 +5,27 @@ import (
 	"log"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 )
+
+// ownedTablesResetScript idempotently removes the tables SoftRouter owns. It is
+// prepended to every ruleset/rollback so applying is a replace, never an append,
+// and tables belonging to Docker, CrowdSec, miniupnpd etc. are never touched.
+const ownedTablesResetScript = "table inet softrouter\ndelete table inet softrouter\ntable ip softrouter_nat\ndelete table ip softrouter_nat\n"
+
+// snapshotOwnedTables captures only SoftRouter's own tables for rollback.
+func snapshotOwnedTables() []byte {
+	var snap []byte
+	for _, t := range [][2]string{{"inet", "softrouter"}, {"ip", "softrouter_nat"}} {
+		if out, err := runPrivilegedOutput("nft", "list", "table", t[0], t[1]); err == nil {
+			snap = append(snap, out...)
+			snap = append(snap, '\n')
+		}
+	}
+	return snap
+}
 
 // FirewallManager handles the generation and application of NFTables rules
 type FirewallManager struct {
@@ -139,10 +157,9 @@ func (fm *FirewallManager) ApplyFirewallRules(skipWatchdog bool) error {
 	// 5. Snapshot current ruleset for rollback (only needed if watchdog is active)
 	var snapshot []byte
 	if !skipWatchdog {
-		snapshot, err = runPrivilegedOutput("nft", "list", "ruleset")
-		if err != nil {
-			fmt.Printf("Warning: Failed to snapshot current ruleset: %v\n", err)
-			snapshot = nil
+		snapshot = snapshotOwnedTables()
+		if len(snapshot) == 0 {
+			snapshot = nil // nothing of ours loaded yet, nothing to roll back to
 		}
 	}
 
@@ -188,7 +205,7 @@ func (fm *FirewallManager) ApplyFirewallRules(skipWatchdog bool) error {
 			if err != nil {
 				fmt.Printf("ERROR: Failed to create rollback temp file: %v\n", err)
 			} else if rollbackFile != nil {
-				if _, err := rollbackFile.Write(snapshot); err != nil {
+				if _, err := rollbackFile.Write(append([]byte(ownedTablesResetScript+"\n"), snapshot...)); err != nil {
 					fmt.Printf("ERROR: Failed to write rollback file: %v\n", err)
 				}
 				if err := rollbackFile.Close(); err != nil {
@@ -249,8 +266,23 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 	var b strings.Builder
 
 	// Flush all existing kernel rulesets first to guarantee zero stale rules or tables
-	b.WriteString("# SoftRouter Managed Ruleset - Clean Generation\n")
-	b.WriteString("flush ruleset\n\n")
+	// Only touch tables SoftRouter owns. Never `flush ruleset`: that would wipe
+	// Docker, CrowdSec, miniupnpd and any other tool's tables.
+	// "add" then "delete" is the idempotent nft idiom (no error if absent) and
+	// the whole file is applied atomically in a single transaction.
+	b.WriteString("# SoftRouter Managed Ruleset - scoped to owned tables\n")
+	b.WriteString(ownedTablesResetScript + "\n")
+
+	// Validate everything that gets interpolated into the ruleset
+	for _, n := range append(append([]string{}, wanInterfaces...), lanInterfaces...) {
+		if !isValidInterfaceName(n) {
+			return "", fmt.Errorf("refusing to generate ruleset: invalid interface name %q", n)
+		}
+		if err := sanitizeNFTValue(n); err != nil {
+			return "", fmt.Errorf("refusing to generate ruleset: interface %q: %v", n, err)
+		}
+	}
+	baseline := !cfg.FirewallEnabled && !cfg.ProvisioningMode
 
 	// Load and generate alias defines
 	aliasStore, err := loadFirewallAliases()
@@ -285,7 +317,7 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 
 	// GeoBlocking rules (before established/related to block early)
 	geoConfig, err = loadGeoBlockingConfig()
-	if err == nil && geoConfig.Enabled {
+	if err == nil && geoConfig.Enabled && !baseline {
 		b.WriteString(generateGeoBlockingRules(geoConfig))
 	}
 
@@ -299,12 +331,35 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 	b.WriteString("    ip protocol icmp accept\n")
 	b.WriteString("    ip6 nexthdr icmpv6 accept\n")
 
-	// Accept SSH (port 22) - prevent lockout
-	b.WriteString("    tcp dport 22 accept comment \"SSH access\"\n")
-
-	// Accept DNS (port 53) - explicit rules for robustness
-	b.WriteString("    udp dport 53 accept comment \"DNS\"\n")
-	b.WriteString("    tcp dport 53 accept comment \"DNS\"\n")
+	// SSH and DNS: LAN always; WAN only during provisioning or explicit opt-in.
+	for _, lan := range lanInterfaces {
+		b.WriteString(fmt.Sprintf("    iifname \"%s\" tcp dport 22 accept comment \"SSH (LAN)\"\n", lan))
+		b.WriteString(fmt.Sprintf("    iifname \"%s\" udp dport 53 accept comment \"DNS (LAN)\"\n", lan))
+		b.WriteString(fmt.Sprintf("    iifname \"%s\" tcp dport 53 accept comment \"DNS (LAN)\"\n", lan))
+	}
+	if cfg.ProvisioningMode || cfg.AllowWANSSH {
+		for _, wan := range wanInterfaces {
+			b.WriteString(fmt.Sprintf("    iifname \"%s\" tcp dport 22 accept comment \"WAN SSH (provisioning/opt-in)\"\n", wan))
+		}
+	}
+	if cfg.ProvisioningMode || cfg.AllowWANDNS {
+		for _, wan := range wanInterfaces {
+			b.WriteString(fmt.Sprintf("    iifname \"%s\" udp dport 53 accept comment \"WAN DNS (provisioning/opt-in)\"\n", wan))
+			b.WriteString(fmt.Sprintf("    iifname \"%s\" tcp dport 53 accept comment \"WAN DNS (provisioning/opt-in)\"\n", wan))
+		}
+	}
+	// OpenVPN server listener (only if the server has been set up)
+	if _, statErr := os.Stat(ovpnServerDir + "/server.conf"); statErr == nil {
+		for _, wan := range wanInterfaces {
+			b.WriteString(fmt.Sprintf("    iifname \"%s\" udp dport %d accept comment \"OpenVPN server\"\n", wan, ovpnPort))
+		}
+	}
+	// WireGuard listener (previously never opened on the input chain)
+	if cfg.WireGuardEnabled() {
+		for _, wan := range wanInterfaces {
+			b.WriteString(fmt.Sprintf("    iifname \"%s\" udp dport 51820 accept comment \"WireGuard\"\n", wan))
+		}
+	}
 
 	// Accept all from LAN interfaces
 	for _, lan := range lanInterfaces {
@@ -312,8 +367,10 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 	}
 
 	// Accept DNAT'd connections from WAN (for WebUI access)
-	for _, wan := range wanInterfaces {
-		b.WriteString(fmt.Sprintf("    iifname \"%s\" ct status dnat accept comment \"WAN DNAT\"\n", wan))
+	if !baseline {
+		for _, wan := range wanInterfaces {
+			b.WriteString(fmt.Sprintf("    iifname \"%s\" ct status dnat accept comment \"WAN DNAT\"\n", wan))
+		}
 	}
 
 	// Log dropped packets (rate-limited for debugging)
@@ -331,14 +388,19 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 	blockedMACs := GetActiveBlockedMACs()
 	if len(blockedMACs) > 0 {
 		b.WriteString("    # Parental Controls Blocks\n")
-		for _, mac := range blockedMACs {
+		for _, rawMAC := range blockedMACs {
+			mac, merr := validateMAC(rawMAC)
+			if merr != nil {
+				log.Printf("WARNING: skipping invalid blocked MAC %q", rawMAC)
+				continue
+			}
 			b.WriteString(fmt.Sprintf("    ether saddr %s drop comment \"Parental Control Block\"\n", mac))
 		}
 		b.WriteString("\n")
 	}
 
 	// Suricata IPS Queue
-	if cfg.IPSEnabled {
+	if cfg.IPSEnabled && !baseline {
 		b.WriteString("    queue num 0 bypass comment \"suricata-ips\"\n\n")
 	}
 
@@ -365,8 +427,10 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 	}
 
 	// Allow port forwarding (WAN -> LAN via DNAT) - INTERFACE SCOPED
-	for _, wan := range wanInterfaces {
-		b.WriteString(fmt.Sprintf("    iifname \"%s\" ct status dnat accept comment \"Port forwarding\"\n", wan))
+	if !baseline {
+		for _, wan := range wanInterfaces {
+			b.WriteString(fmt.Sprintf("    iifname \"%s\" ct status dnat accept comment \"Port forwarding\"\n", wan))
+		}
 	}
 
 	// Log dropped packets (rate-limited for debugging)
@@ -379,7 +443,7 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 	// Note: IPv6 NAT is intentionally not implemented as it's typically not needed
 	// for IPv6 deployments which use direct routing. If IPv6 NAT is required in
 	// the future, a separate 'table ip6 nat' section would be added here.
-	b.WriteString("table ip nat {\n")
+	b.WriteString("table ip softrouter_nat {\n")
 
 	// PREROUTING Chain
 	b.WriteString("  chain prerouting {\n")
@@ -393,7 +457,11 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 		b.WriteString(fmt.Sprintf("    iifname \"%s\" fib daddr type local tcp dport 80 dnat to 127.0.0.1:8080 comment \"LAN WebUI HTTP redirect\"\n", lan))
 		targetHTTPS := "443"
 		if cfg.TLS.Port != "" {
-			targetHTTPS = strings.TrimPrefix(cfg.TLS.Port, ":")
+			tp, perr := validatePortString(cfg.TLS.Port)
+			if perr != nil {
+				return "", fmt.Errorf("invalid TLS port in config: %v", perr)
+			}
+			targetHTTPS = strconv.Itoa(tp)
 		}
 		b.WriteString(fmt.Sprintf("    iifname \"%s\" fib daddr type local tcp dport %s dnat to 127.0.0.1:%s comment \"LAN WebUI HTTPS\"\n",
 			lan, targetHTTPS, targetHTTPS))
@@ -401,7 +469,7 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 
 	// Port Forwarding Rules
 	for _, rule := range pfRules {
-		if !rule.Enabled {
+		if !rule.Enabled || baseline {
 			continue
 		}
 		if err := validatePortForwardingRuleFields(rule); err != nil {
@@ -416,12 +484,12 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 
 		for _, wan := range wanInterfaces {
 			b.WriteString(fmt.Sprintf("    iifname \"%s\" %s dport %d dnat to %s comment \"PF: %s\"\n",
-				wan, proto, rule.ExternalPort, dnatTarget, rule.Description))
+				wan, proto, rule.ExternalPort, dnatTarget, sanitizeComment(rule.Description)))
 		}
 	}
 
 	// WAN Access to WebUI (if enabled)
-	if cfg.WebAccess.AllowWAN {
+	if cfg.WebAccess.AllowWAN && !baseline {
 		httpPort := cfg.WebAccess.WANPortHTTP
 		if httpPort == 0 {
 			httpPort = 980
@@ -433,7 +501,11 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 
 		targetHTTPS := "443"
 		if cfg.TLS.Port != "" {
-			targetHTTPS = strings.TrimPrefix(cfg.TLS.Port, ":")
+			tp, perr := validatePortString(cfg.TLS.Port)
+			if perr != nil {
+				return "", fmt.Errorf("invalid TLS port in config: %v", perr)
+			}
+			targetHTTPS = strconv.Itoa(tp)
 		}
 
 		for _, wan := range wanInterfaces {
@@ -468,6 +540,9 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 		fmt.Println("Warning: ProtectedSubnet not configured, hairpin NAT may not work optimally")
 	}
 	if subnet != "" {
+		if _, _, cerr := net.ParseCIDR(subnet); cerr != nil {
+			return "", fmt.Errorf("invalid protected subnet %q: %v", subnet, cerr)
+		}
 		b.WriteString(fmt.Sprintf("    ip saddr %s ip daddr %s masquerade comment \"Hairpin NAT\"\n",
 			subnet, subnet))
 	}
@@ -477,7 +552,24 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 
 	// Inject control plane protection into the ruleset
 	ruleset := b.String()
-	ruleset = injectControlPlaneProtectionV2(ruleset)
+	ruleset = injectControlPlaneProtectionV2(ruleset, cfg, wanInterfaces)
 
 	return ruleset, nil
+}
+
+
+// sanitizeComment strips everything but a conservative character set so a
+// user-supplied description can never terminate the quoted nft comment.
+func sanitizeComment(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == ' ' || r == '-' || r == '_' || r == '.' {
+			b.WriteRune(r)
+		}
+	}
+	out := b.String()
+	if len(out) > 64 {
+		out = out[:64]
+	}
+	return out
 }

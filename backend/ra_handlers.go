@@ -46,6 +46,12 @@ func setRAConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Same prefix/DNS validation as the generator (prefix must be an IPv6 /64)
+	if err := validateRAConfig(req.Interface, req.Prefix, req.DNSServers); err != nil {
+		http.Error(w, "Invalid RA config: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// Load current config
 	store, err := loadRADVDConfig()
 	if err != nil {

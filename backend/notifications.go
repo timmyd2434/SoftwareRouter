@@ -394,9 +394,12 @@ func validateWebhookURL(rawURL string) error {
 		return fmt.Errorf("webhook URL is empty")
 	}
 
-	// Must be https or http
-	if !strings.HasPrefix(rawURL, "https://") && !strings.HasPrefix(rawURL, "http://") {
-		return fmt.Errorf("webhook URL must start with http:// or https://")
+	// https is required unless the operator explicitly opted in to plain http
+	configLock.RLock()
+	allowInsecure := config.AllowInsecureWebhook
+	configLock.RUnlock()
+	if !strings.HasPrefix(rawURL, "https://") && !(allowInsecure && strings.HasPrefix(rawURL, "http://")) {
+		return fmt.Errorf("webhook URL must use https:// (set allow_insecure_webhook to permit http)")
 	}
 
 	// Parse to extract hostname

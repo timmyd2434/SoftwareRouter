@@ -39,6 +39,7 @@ func TestBackupAndRestore(t *testing.T) {
 		"config.json":                   `{"adguard":{"url":"http://localhost:3000"}}`,
 		"interfaces_config.json":        `{"vlans":{"eth1.10":{"parentInterface":"eth1","vlanId":10}}}`,
 		"user_credentials.json":         `{"username":"testadmin","password":"hashedpassword"}`,
+		"token_secret.key":              `super-secret-signing-key`,
 		"vpn_clients/client1.conf":      `client-config-data`,
 		"nested/dir/deep/file.txt":      `nested-content`,
 		"should_skip.bak":               `should-be-ignored`,
@@ -82,7 +83,6 @@ func TestBackupAndRestore(t *testing.T) {
 	expectedPresent := []string{
 		"config.json",
 		"interfaces_config.json",
-		"user_credentials.json",
 		"vpn_clients/client1.conf",
 		"nested/dir/deep/file.txt",
 	}
@@ -94,6 +94,16 @@ func TestBackupAndRestore(t *testing.T) {
 		if content != filesToCreate[relPath] {
 			t.Errorf("Content mismatch for %s. Expected '%s', got '%s'", relPath, filesToCreate[relPath], content)
 		}
+	}
+
+	// Secrets must never be exported
+	for _, secret := range []string{"token_secret.key", "user_credentials.json"} {
+		if _, ok := snapshot.Files[secret]; ok {
+			t.Errorf("%s must be excluded from backups", secret)
+		}
+	}
+	if snapshot.Config.Credentials.Password != "" {
+		t.Error("credential hash must not be exported in legacy fields")
 	}
 
 	// Verify skipped files
@@ -116,7 +126,7 @@ func TestBackupAndRestore(t *testing.T) {
 	}
 	// 7. Verify all files are restored with exact contents
 	for relPath, expectedContent := range filesToCreate {
-		if relPath == "should_skip.bak" {
+		if relPath == "should_skip.bak" || relPath == "token_secret.key" || relPath == "user_credentials.json" {
 			// This was not backed up, so it should not be restored
 			fullPath := filepath.Join(tempConfigDir, relPath)
 			if _, err := os.Stat(fullPath); !os.IsNotExist(err) {
@@ -135,5 +145,47 @@ func TestBackupAndRestore(t *testing.T) {
 		if string(data) != expectedContent {
 			t.Errorf("Restored content mismatch for %s. Expected '%s', got '%s'", relPath, expectedContent, string(data))
 		}
+	}
+}
+
+func TestBackupFormatV2Argon2id(t *testing.T) {
+	enc, err := encryptBackup([]byte("hello world"), "pw-123456")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(enc[:7]) != backupMagicV2 {
+		t.Fatalf("expected %s header", backupMagicV2)
+	}
+	if out, err := decryptBackup(enc, "pw-123456"); err != nil || string(out) != "hello world" {
+		t.Fatalf("round trip failed: %v", err)
+	}
+	if _, err := decryptBackup(enc, "wrong"); err == nil {
+		t.Error("wrong password must fail")
+	}
+	// Tampering with KDF header must be detected (AAD) or rejected
+	tampered := append([]byte{}, enc...)
+	tampered[8+3]++ // change time cost
+	if _, err := decryptBackup(tampered, "pw-123456"); err == nil {
+		t.Error("tampered header must fail")
+	}
+	// Absurd KDF params from a crafted file are rejected before allocation
+	crafted := append([]byte{}, enc...)
+	crafted[12], crafted[13], crafted[14], crafted[15] = 0xff, 0xff, 0xff, 0xff
+	if _, err := decryptBackup(crafted, "pw-123456"); err == nil {
+		t.Error("oversized memory param must be rejected")
+	}
+}
+
+func TestBackupLegacyV1StillReadable(t *testing.T) {
+	salt := make([]byte, 16)
+	nonce := make([]byte, 12)
+	key := deriveKeyLegacy("legacy-pw", salt)
+	gcm, _ := newGCM(key)
+	ct := gcm.Seal(nil, nonce, []byte("old data"), nil)
+	blob := append([]byte(backupMagicV1), salt...)
+	blob = append(blob, nonce...)
+	blob = append(blob, ct...)
+	if out, err := decryptBackup(blob, "legacy-pw"); err != nil || string(out) != "old data" {
+		t.Fatalf("legacy backup unreadable: %v", err)
 	}
 }

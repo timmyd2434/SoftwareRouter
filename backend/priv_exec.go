@@ -50,7 +50,8 @@ var allowedCommands = map[string]bool{
 	"suricata-update": true, // Suricata rule updater
 	"ss":              true, // Socket statistics (active connections)
 	"netstat":         true, // Network statistics (fallback)
-	"dnsmasq":         true, // DHCP/DNS server (version check)
+	"dnsmasq":         true, // DHCP/DNS server (version check, --test)
+	"radvd":           true, // Router advertisement daemon (--configtest only)
 	"conntrack":       true, // Connection tracking CLI
 	"./update.sh":     true, // System update script
 	"update.sh":       true, // System update script

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -184,46 +185,36 @@ func uploadVPNClientConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close() //nolint:errcheck
 
-	// 1. Ensure directories exist
-	os.MkdirAll(vpnClientConfigDir, 0750)
+	// 1. Read (bounded) and validate the config BEFORE touching disk.
+	raw, err := io.ReadAll(io.LimitReader(file, maxOVPNConfigSize+1))
+	if err != nil {
+		http.Error(w, "Failed to read config", http.StatusBadRequest)
+		return
+	}
+	configLines, verr := sanitizeOpenVPNConfig(string(raw))
+	if verr != nil {
+		logAuditEvent(getUsernameFromToken(r), "vpn.client.upload", "openvpn", "rejected: "+verr.Error(), getClientIP(r), false)
+		http.Error(w, "Invalid OpenVPN config: "+verr.Error(), http.StatusBadRequest)
+		return
+	}
 
-	// 2. Save Auth File
-	// #nosec G304 G703: path is validated or constructed from safe internal sources
+	// 2. Ensure directories exist and save the auth file
+	os.MkdirAll(vpnClientConfigDir, 0750)
 	authContent := fmt.Sprintf("%s\n%s", username, password)
 	if err := os.WriteFile(vpnAuthFile, []byte(authContent), 0600); err != nil {
 		respondSystemError(w, ErrGenericInternalError, "Failed to save credentials", err)
 		return
 	}
 
-	// 3. Process Config File
-	// We read the uploaded file, inject our specific settings, and write to disk
-	var configLines []string
-	// (Simplification: read entire file to memory)
-	buf := make([]byte, 1024*1024)
-	n, _ := file.Read(buf)
-	content := string(buf[:n])
-
-	lines := strings.Split(content, "\n")
-	for _, line := range lines {
-		// remove existing auth-user-pass or dev lines to avoid conflict
-		if strings.HasPrefix(strings.TrimSpace(line), "auth-user-pass") {
-			continue
-		}
-		if strings.HasPrefix(strings.TrimSpace(line), "dev ") {
-			continue
-		}
-		configLines = append(configLines, line)
-	}
-
-	// Inject our mandatory settings
+	// 3. Inject only the settings SoftRouter controls. script-security is NOT
+	// set (OpenVPN default is 1: no user scripts).
 	configLines = append(configLines, "")
 	configLines = append(configLines, "# SoftRouter Injected Settings")
 	configLines = append(configLines, fmt.Sprintf("auth-user-pass %s", vpnAuthFile))
-	configLines = append(configLines, "dev tun1")          // Force tun1 for easy routing
-	configLines = append(configLines, "route-noexec")      // Manual routing handling
-	configLines = append(configLines, "script-security 2") // Allow scripts if needed (future proofing)
+	configLines = append(configLines, "dev tun1")     // Force tun1 for easy routing
+	configLines = append(configLines, "route-noexec") // Manual routing handling
 
-	finalConfig := strings.Join(configLines, "\n")
+	finalConfig := strings.Join(configLines, "\n") + "\n"
 	if err := os.WriteFile(vpnConfigFile, []byte(finalConfig), 0600); err != nil {
 		respondSystemError(w, ErrGenericInternalError, "Failed to write config", err)
 		return

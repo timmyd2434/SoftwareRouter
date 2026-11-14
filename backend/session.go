@@ -29,7 +29,8 @@ type SessionStore struct {
 
 var (
 	sessionStore   = &SessionStore{sessions: make(map[string]*Session)}
-	sessionTimeout = 24 * time.Hour // Default 24 hour timeout
+	sessionTimeout = 12 * time.Hour // Absolute session lifetime (never extended)
+	idleTimeout    = 30 * time.Minute // Inactivity timeout
 )
 
 // AddSession adds a new session to the store
@@ -104,9 +105,9 @@ func (ss *SessionStore) UpdateLastUsed(token string) {
 	defer ss.mu.Unlock()
 
 	if session, exists := ss.sessions[token]; exists {
+		// Activity only refreshes the idle timer. ExpiresAt is an absolute cap
+		// set at login and is deliberately never extended.
 		session.LastUsed = time.Now()
-		// Extend expiration on activity
-		session.ExpiresAt = time.Now().Add(sessionTimeout)
 	}
 }
 
@@ -171,7 +172,7 @@ func (ss *SessionStore) CleanupExpiredSessions() {
 
 	now := time.Now()
 	for token, session := range ss.sessions {
-		if now.After(session.ExpiresAt) {
+		if now.After(session.ExpiresAt) || now.Sub(session.LastUsed) > idleTimeout {
 			delete(ss.sessions, token)
 		}
 	}
@@ -184,8 +185,12 @@ func (ss *SessionStore) ValidateSession(token string) bool {
 		return false
 	}
 
-	// Check if expired
-	if time.Now().After(session.ExpiresAt) {
+	// Absolute lifetime and idle timeout
+	now := time.Now()
+	ss.mu.RLock()
+	expiresAt, lastUsed := session.ExpiresAt, session.LastUsed
+	ss.mu.RUnlock()
+	if now.After(expiresAt) || now.Sub(lastUsed) > idleTimeout {
 		ss.DeleteSession(token)
 		return false
 	}

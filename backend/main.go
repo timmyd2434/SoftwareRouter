@@ -80,6 +80,25 @@ type Config struct {
 	BlockedAppCategories []string `json:"blocked_app_categories"`
 	TrustProxies         bool     `json:"trust_proxies"`
 	TrustedProxies       []string `json:"trusted_proxies"`
+
+	// Provisioning / lockdown state (P0-1)
+	ProvisioningMode    bool      `json:"provisioning_mode"`
+	ProvisioningStarted time.Time `json:"provisioning_started_at"`
+	ProvisioningExpires time.Time `json:"provisioning_expires_at"`
+	AllowWANSSH         bool      `json:"allow_wan_ssh"`
+	AllowWANDNS         bool      `json:"allow_wan_dns"`
+
+	// Host allowlist for CORS / redirects (P2-3)
+	AllowedHosts []string `json:"allowed_hosts"`
+
+	// Reject plain-http webhooks unless explicitly allowed (P2-7)
+	AllowInsecureWebhook bool `json:"allow_insecure_webhook"`
+}
+
+// WireGuardEnabled reports whether the wg0 interface currently exists.
+func (c Config) WireGuardEnabled() bool {
+	_, err := net.InterfaceByName("wg0")
+	return err == nil
 }
 
 type WebAccessConfig struct {
@@ -329,6 +348,92 @@ func safeClose(f *os.File, context string) {
 	}
 }
 
+// hostHeaderAllowed implements the Host allowlist (P2-3). IP literals and
+// localhost are always accepted (not DNS-rebindable); hostnames must be listed
+// in config.allowed_hosts. If no allowlist is configured, behaviour is unchanged.
+func hostHeaderAllowed(hostport string) bool {
+	configLock.RLock()
+	allowedHosts := config.AllowedHosts
+	configLock.RUnlock()
+	if len(allowedHosts) == 0 {
+		return true
+	}
+	host := hostport
+	if h, _, err := net.SplitHostPort(hostport); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	if net.ParseIP(host) != nil || strings.EqualFold(host, "localhost") {
+		return true
+	}
+	for _, a := range allowedHosts {
+		if strings.EqualFold(a, host) {
+			return true
+		}
+	}
+	return false
+}
+
+// securityHeadersMiddleware sets every security header in one place and
+// enforces the Host allowlist. It must wrap the CORS middleware.
+func securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !hostHeaderAllowed(r.Host) {
+			log.Printf("SECURITY: Rejected request with unrecognised Host %q from %s", r.Host, r.RemoteAddr)
+			http.Error(w, "Misdirected request", http.StatusMisdirectedRequest)
+			return
+		}
+		h := w.Header()
+		h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("X-XSS-Protection", "0") // legacy auditor is itself an attack surface; rely on CSP
+		h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		h.Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			h.Set("Cache-Control", "no-store")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// expensiveOpsMiddleware rate-limits costly endpoints per client IP and allows
+// only one such operation to run at a time (global semaphore).
+var expensiveSem = make(chan struct{}, 1)
+
+func expensiveOpsMiddleware(next http.Handler) http.Handler {
+	opLimiter := NewRateLimiter()    // 5 per 10 min
+	backupLimiter := NewRateLimiter() // 2 per 10 min
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			next.ServeHTTP(w, r)
+			return
+		}
+		ip := getClientIP(r)
+		switch r.URL.Path {
+		case "/api/backup/create":
+			if !backupLimiter.Allow(ip, 2, 10*time.Minute) {
+				http.Error(w, "Too many backup requests. Try again later.", http.StatusTooManyRequests)
+				return
+			}
+		case "/api/backup/restore", "/api/backup/restore-local", "/api/system/update/apply", "/api/diagnostics/speedtest":
+			if !opLimiter.Allow(ip, 5, 10*time.Minute) {
+				http.Error(w, "Too many requests. Try again later.", http.StatusTooManyRequests)
+				return
+			}
+			select {
+			case expensiveSem <- struct{}{}:
+				defer func() { <-expensiveSem }()
+			default:
+				http.Error(w, "Another maintenance operation is already running", http.StatusTooManyRequests)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func enableCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Get allowed origins from config
@@ -355,7 +460,7 @@ func enableCORS(next http.Handler) http.Handler {
 				scheme = "https"
 			}
 			sameOrigin := fmt.Sprintf("%s://%s", scheme, r.Host)
-			if origin == sameOrigin {
+			if origin == sameOrigin && hostHeaderAllowed(r.Host) {
 				allowed = true
 			}
 
@@ -371,6 +476,7 @@ func enableCORS(next http.Handler) http.Handler {
 
 			if allowed {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
 				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token")
 			} else {
@@ -378,13 +484,9 @@ func enableCORS(next http.Handler) http.Handler {
 			}
 		}
 
-		// Security Headers
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("X-XSS-Protection", "1; mode=block")
-		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:;")
-		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		// NOTE: security headers (CSP, HSTS, ...) are set in exactly one place:
+		// securityHeadersMiddleware, so nothing here can overwrite them.
+		w.Header().Add("Vary", "Origin")
 
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
@@ -522,10 +624,13 @@ func loadSystemConfig() {
 		config = Config{
 			ProtectedSubnet: "10.0.0.0/24",
 			WebAccess: WebAccessConfig{
-				AllowWAN:     true,
+				AllowWAN:     false,
 				WANPortHTTP:  980,
 				WANPortHTTPS: 9443,
 			},
+			FirewallEnabled: true,
+			AllowWANSSH:     true,
+			AllowWANDNS:     true,
 			TLS: TLSConfig{
 				Enabled:  true,
 				CertFile: tlsCertPath,
@@ -538,7 +643,8 @@ func loadSystemConfig() {
 				Password: os.Getenv("AGH_PASSWORD"),
 			},
 		}
-		// Save default config
+		// Fresh install: open the time-boxed provisioning window
+		startProvisioningWindowLocked()
 		saveConfigLocked()
 		return
 	}
@@ -617,7 +723,12 @@ func main() {
 	initPortForwarding()
 	InitFirewallManager()
 	// Apply rules initially — skip watchdog since there's no user to confirm at boot
-	firewallManager.ApplyFirewallRules(true)
+	// ApplyFirewallRules emits a safe baseline when the firewall is disabled
+	// (never an empty ruleset), and WAN SSH/DNS only while provisioning.
+	if err := firewallManager.ApplyFirewallRules(true); err != nil {
+		log.Printf("[FIREWALL] Boot apply failed: %v", err)
+	}
+	startProvisioningExpiry()
 	InitDNSServices() // Initialize DHCP (dnsmasq) and DNS services
 
 	initTrafficStats()
@@ -678,8 +789,11 @@ func main() {
 	mux.HandleFunc("GET /api/config", authRead(getConfig))
 	mux.HandleFunc("POST /api/config", authWrite(updateConfig))
 
-	// System Setup Wizard
-	mux.HandleFunc("GET /api/system/needs-setup", func(w http.ResponseWriter, r *http.Request) {
+	// Lockdown: close provisioning/WAN management exposure
+	mux.HandleFunc("POST /api/system/lockdown", authWrite(lockdownHandler))
+
+	// System Setup Wizard (public, rate-limited, minimal response)
+	mux.HandleFunc("GET /api/system/needs-setup", rateLimitMiddleware(readLimiter, 20, time.Minute)(func(w http.ResponseWriter, r *http.Request) {
 		// This endpoint doesn't require auth - it's checked before login
 		needsSetup := isFirstBoot() && needsWANConfiguration()
 
@@ -687,7 +801,7 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]bool{
 			"needs_setup": needsSetup,
 		})
-	})
+	}))
 
 	mux.HandleFunc("POST /api/interface/metadata/bulk", authMiddleware(csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -706,6 +820,22 @@ func main() {
 		if metaStore == nil {
 			metaStore = &InterfaceMetadataStore{
 				Metadata: make(map[string]InterfaceMetadata),
+			}
+		}
+
+		// Validate everything BEFORE storing: these values end up in nft rulesets.
+		if len(req.Updates) > 128 {
+			http.Error(w, "Too many updates", http.StatusBadRequest)
+			return
+		}
+		for _, update := range req.Updates {
+			if !isValidInterfaceName(update.Interface) {
+				http.Error(w, "Invalid interface name", http.StatusBadRequest)
+				return
+			}
+			if err := validateInterfaceLabel(update.Label); err != nil {
+				http.Error(w, "Invalid label: "+err.Error(), http.StatusBadRequest)
+				return
 			}
 		}
 
@@ -769,8 +899,31 @@ func main() {
 		if limitStr != "" {
 			fmt.Sscanf(limitStr, "%d", &limit)
 		}
+		if limit < 1 {
+			limit = 100
+		}
+		if limit > 1000 {
+			limit = 1000 // hard cap
+		}
+		offset := 0
+		if offStr := r.URL.Query().Get("offset"); offStr != "" {
+			fmt.Sscanf(offStr, "%d", &offset)
+		}
+		if offset < 0 || offset > 100000 {
+			offset = 0
+		}
 
-		logs, err := getAuditLogs(startTime, endTime, actionFilter, userFilter, limit)
+		logs, err := getAuditLogs(startTime, endTime, actionFilter, userFilter, limit+offset)
+		if err == nil {
+			if offset >= len(logs) {
+				logs = logs[:0]
+			} else {
+				logs = logs[offset:]
+			}
+			if len(logs) > limit {
+				logs = logs[:limit]
+			}
+		}
 		if err != nil {
 			log.Printf("[ERROR] Failed to retrieve audit logs: %v", err)
 			respondSystemError(w, ErrGenericInternalError, "Failed to retrieve audit logs", err)
@@ -781,23 +934,18 @@ func main() {
 		json.NewEncoder(w).Encode(logs)
 	}))
 
-	mux.HandleFunc("/api/backup/create", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
+	// POST only, CSRF-protected; the password travels in the JSON body, never in the URL.
+	mux.HandleFunc("POST /api/backup/create", authMiddleware(csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Password string `json:"password"`
 		}
-
-		password := r.URL.Query().Get("password")
-		if password == "" && r.Method == http.MethodPost && r.Body != nil {
-			var req struct {
-				Password string `json:"password"`
-			}
+		if r.Body != nil {
 			_ = json.NewDecoder(r.Body).Decode(&req)
-			password = req.Password
 		}
+		password := req.Password
 
-		if password == "" {
-			http.Error(w, "Password parameter or JSON body required to create encrypted backup", http.StatusBadRequest)
+		if len(password) < 8 {
+			http.Error(w, "A backup password of at least 8 characters is required (JSON body)", http.StatusBadRequest)
 			return
 		}
 
@@ -817,7 +965,7 @@ func main() {
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"softrouter-backup-%s.enc\"",
 			time.Now().Format("2006-01-02-150405")))
 		w.Write(backupData)
-	}))
+	})))
 
 	mux.HandleFunc("POST /api/backup/restore", authMiddleware(csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, 10<<20) // 10 MB limit for backup file
@@ -1087,8 +1235,15 @@ func main() {
 		configLock.RLock()
 		enabled := config.FirewallEnabled
 		configLock.RUnlock()
+		configLock.RLock()
+		prov := config.ProvisioningMode
+		configLock.RUnlock()
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]bool{"enabled": enabled})
+		json.NewEncoder(w).Encode(map[string]bool{
+			"enabled":           enabled,
+			"kernel_active":     kernelHasTable("inet", "softrouter"),
+			"provisioning_mode": prov,
+		})
 	}))
 
 	mux.HandleFunc("POST /api/firewall/toggle", authMiddleware(csrfMiddleware(func(w http.ResponseWriter, r *http.Request) {
@@ -1115,8 +1270,12 @@ func main() {
 			}
 			logAuditEvent(getUsernameFromToken(r), "firewall.toggle", "firewall", "Enabled firewall", getClientIP(r), true)
 		} else {
-			if _, err := runPrivilegedCombinedOutput("nft", "flush", "ruleset"); err != nil {
-				log.Printf("[ERROR] Failed to flush ruleset when disabling firewall: %v", err)
+			// Never flush the whole ruleset: install the safe baseline instead
+			// (stateful input drop on WAN, NAT and LAN->WAN forwarding intact).
+			if firewallManager != nil {
+				if err := firewallManager.ApplyFirewallRules(true); err != nil {
+					log.Printf("[ERROR] Failed to apply baseline ruleset when disabling firewall: %v", err)
+				}
 			}
 			logAuditEvent(getUsernameFromToken(r), "firewall.toggle", "firewall", "Disabled firewall", getClientIP(r), true)
 		}
@@ -1279,7 +1438,7 @@ func main() {
 		http.FileServer(http.Dir(staticDir)).ServeHTTP(w, r)
 	})
 
-	handler := enableCORS(wrappedMux)
+	handler := enableCORS(expensiveOpsMiddleware(wrappedMux))
 
 	// Load TLS configuration
 	configLock.RLock()
@@ -1299,16 +1458,8 @@ func main() {
 		log.Fatalf("CRITICAL: Failed to ensure TLS certificates: %v", err)
 	}
 
-	// Add HSTS, CSP, and security headers
-	secureHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none';")
-		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
-		handler.ServeHTTP(w, r)
-	})
+	// Single security-header middleware (runs before and cannot be overwritten by CORS)
+	secureHandler := securityHeadersMiddleware(handler)
 
 	log.Printf("Starting HTTPS server on %s", tlsPort)
 
@@ -1316,10 +1467,25 @@ func main() {
 	go func() {
 		redirectMux := http.NewServeMux()
 		redirectMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			// Extract host without port
+			// Extract host without port, then validate it. Never reflect an
+			// unvalidated Host header into a Location redirect.
 			host := r.Host
-			if idx := strings.Index(host, ":"); idx != -1 {
-				host = host[:idx]
+			if h, _, err := net.SplitHostPort(host); err == nil {
+				host = h
+			}
+			if !hostHeaderAllowed(r.Host) || validateHostOrIP(strings.Trim(host, "[]")) != nil {
+				configLock.RLock()
+				fallback := ""
+				for _, a := range config.AllowedHosts {
+					fallback = a
+					break
+				}
+				configLock.RUnlock()
+				if fallback == "" {
+					http.Error(w, "Bad request", http.StatusBadRequest)
+					return
+				}
+				host = fallback
 			}
 
 			// Build HTTPS URL

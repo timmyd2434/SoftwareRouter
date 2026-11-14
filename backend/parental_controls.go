@@ -150,7 +150,11 @@ func GetActiveBlockedMACs() []string {
 
 	for _, p := range parentalConfig.Policies {
 		if parentalActive[p.ID] {
-			for _, mac := range p.MACAddresses {
+			for _, rawMAC := range p.MACAddresses {
+				mac, merr := validateMAC(rawMAC)
+				if merr != nil {
+					continue // never emit an unvalidated MAC into the ruleset
+				}
 				if !seen[mac] {
 					macs = append(macs, mac)
 					seen[mac] = true
