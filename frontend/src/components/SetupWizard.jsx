@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
+import { authFetch } from '../apiConfig';
 import './SetupWizard.css';
 
 export default function SetupWizard({ show, onComplete }) {
@@ -8,6 +9,7 @@ export default function SetupWizard({ show, onComplete }) {
     const [selectedLANs, setSelectedLANs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [lockdown, setLockdown] = useState(true);
 
     useEffect(() => {
         if (show) {
@@ -17,12 +19,7 @@ export default function SetupWizard({ show, onComplete }) {
 
     const fetchInterfaces = async () => {
         try {
-            const token = localStorage.getItem('sr_token');
-            const response = await fetch('/api/interfaces', {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
+            const response = await authFetch('/api/interfaces');
 
             if (!response.ok) throw new Error('Failed to fetch interfaces');
 
@@ -48,14 +45,6 @@ export default function SetupWizard({ show, onComplete }) {
 
         try {
             setLoading(true);
-            const token = localStorage.getItem('sr_token');
-
-            // Get CSRF token
-            const csrfResponse = await fetch('/api/csrf-token', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const csrfData = await csrfResponse.json();
-
             // Build updates array
             const updates = interfaces.map(iface => {
                 let label = 'None';
@@ -69,17 +58,21 @@ export default function SetupWizard({ show, onComplete }) {
             });
 
             // Apply configuration
-            const response = await fetch('/api/interface/metadata/bulk', {
+            const response = await authFetch('/api/interface/metadata/bulk', {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                    'X-CSRF-Token': csrfData.token
-                },
                 body: JSON.stringify({ updates })
             });
 
             if (!response.ok) throw new Error('Failed to save configuration');
+
+            // Close the provisioning window (WAN SSH/DNS) unless the operator opted out
+            if (lockdown) {
+                const lock = await authFetch('/api/system/lockdown', {
+                    method: 'POST',
+                    body: JSON.stringify({ close_webui_wan: false })
+                });
+                if (!lock.ok) throw new Error('Configuration saved, but lockdown failed. Use Settings to retry.');
+            }
 
             setLoading(false);
             onComplete();
@@ -129,6 +122,20 @@ export default function SetupWizard({ show, onComplete }) {
                                         <button type="button" className="btn-close" onClick={() => setError('')}></button>
                                     </div>
                                 )}
+
+                                <div className="form-check mb-3">
+                                    <input
+                                        className="form-check-input"
+                                        type="checkbox"
+                                        id="lockdown-after-setup"
+                                        checked={lockdown}
+                                        onChange={(e) => setLockdown(e.target.checked)}
+                                    />
+                                    <label className="form-check-label" htmlFor="lockdown-after-setup">
+                                        <strong>Lock down WAN access after setup</strong> (recommended).
+                                        Closes SSH and DNS on the internet-facing interface. They stay open on your LAN.
+                                    </label>
+                                </div>
 
                                 <div className="card mb-4">
                                     <div className="card-header bg-primary text-white">

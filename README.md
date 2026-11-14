@@ -82,7 +82,7 @@ sudo ./install.sh
 
 **Tested on:**
 - Debian 12 (Bookworm) stable
-- Debian 13 (Trixie) testing
+- Debian 13 (Trixie) — current stable release (primary target)
 - Ubuntu 22.04 LTS and 24.04 LTS
 
 ### Accessing the Interface

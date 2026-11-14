@@ -24,20 +24,18 @@ const getApiBaseUrl = () => {
 export const API_BASE_URL = getApiBaseUrl();
 
 // CSRF Token Management
+// The session lives in an HttpOnly, Secure, SameSite=Strict cookie set by the
+// server; JavaScript never sees or stores it (nothing in localStorage), so an XSS
+// bug can no longer exfiltrate the session token.
 let csrfToken = null;
 
 export const getCSRFToken = async () => {
     if (csrfToken) return csrfToken;
 
-    const token = localStorage.getItem('sr_token');
-    if (!token) return null;
-
     try {
         const response = await fetch(`${API_BASE_URL}/api/csrf-token`, {
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-            }
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' }
         });
 
         if (response.ok) {
@@ -52,12 +50,10 @@ export const getCSRFToken = async () => {
     return null;
 };
 
+export const clearCSRFToken = () => { csrfToken = null; };
+
 export const authFetch = async (url, options = {}) => {
-    const token = localStorage.getItem('sr_token');
-    let headers = {
-        ...options.headers,
-        'Authorization': `Bearer ${token}`,
-    };
+    let headers = { ...options.headers };
 
     if (!(options.body instanceof FormData)) {
         headers['Content-Type'] = 'application/json';
@@ -72,31 +68,28 @@ export const authFetch = async (url, options = {}) => {
         }
     }
 
-    let response = await fetch(url, { ...options, headers });
+    let response = await fetch(url, { ...options, headers, credentials: 'include' });
 
     // If 403 Forbidden and it's a state-changing operation, CSRF token might have expired.
     // Try to clear cached token, fetch a new one, and retry once.
     if (response.status === 403 && isStateChanging) {
-        csrfToken = null; // Clear cached token
+        csrfToken = null;
         const freshCsrf = await getCSRFToken();
         if (freshCsrf) {
             headers['X-CSRF-Token'] = freshCsrf;
-            response = await fetch(url, { ...options, headers });
+            response = await fetch(url, { ...options, headers, credentials: 'include' });
         }
     }
 
-    // SECURITY FIX: Server now consumes CSRF tokens on use (single-use).
-    // Clear cached token after every state-changing request so the next
-    // mutation fetches a fresh one instead of replaying the consumed token.
+    // Server consumes CSRF tokens on use (single-use): never replay one.
     if (isStateChanging) {
         csrfToken = null;
     }
 
     if (response.status === 401) {
-        localStorage.removeItem('sr_token');
         localStorage.removeItem('sr_user');
-        csrfToken = null; // Clear CSRF token on logout
-        window.location.reload(); // Force redirect to login
+        csrfToken = null;
+        window.location.reload(); // App re-probes the session and shows the login page
     }
 
     return response;

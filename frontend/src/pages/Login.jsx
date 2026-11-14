@@ -18,12 +18,13 @@ const Login = ({ onLogin }) => {
             const res = await fetch(API_ENDPOINTS.LOGIN, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({ username, password })
             });
 
             if (res.ok) {
                 const data = await res.json();
-                localStorage.setItem('sr_token', data.token);
+                // The session token is an HttpOnly cookie; only the display name is kept.
                 localStorage.setItem('sr_user', data.user);
                 onLogin(data);
             } else {

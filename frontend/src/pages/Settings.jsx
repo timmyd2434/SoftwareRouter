@@ -24,6 +24,7 @@ const Settings = () => {
     });
 
     const [creds, setCreds] = useState({
+        currentPassword: '',
         newUsername: '',
         newPassword: '',
         confirmPassword: ''
@@ -134,16 +135,19 @@ const Settings = () => {
             const res = await authFetch(API_ENDPOINTS.UPDATE_CREDS, {
                 method: 'POST',
                 body: JSON.stringify({
+                    currentPassword: creds.currentPassword,
                     newUsername: creds.newUsername,
                     newPassword: creds.newPassword
                 })
             });
             if (res.ok) {
-                setMessage({ type: 'success', text: 'Credentials updated successfully' });
-                localStorage.setItem('sr_user', creds.newUsername);
-                setCreds({ newUsername: '', newPassword: '', confirmPassword: '' });
+                // The server revokes every session on a credential change: sign in again.
+                setMessage({ type: 'success', text: 'Credentials updated. Please sign in again.' });
+                localStorage.removeItem('sr_user');
+                setCreds({ currentPassword: '', newUsername: '', newPassword: '', confirmPassword: '' });
+                setTimeout(() => window.location.reload(), 1500);
             } else {
-                setMessage({ type: 'error', text: 'Failed to update credentials' });
+                setMessage({ type: 'error', text: res.status === 401 ? 'Current password is incorrect' : 'Failed to update credentials' });
             }
         } catch {
             setMessage({ type: 'error', text: 'Network error' });
@@ -179,6 +183,20 @@ const Settings = () => {
                         <h3>Administrative Access</h3>
                     </div>
                     <form onSubmit={handleUpdateCreds} className="card-form">
+                        <div className="input-group">
+                            <label>Current Password</label>
+                            <div className="field-wrapper">
+                                <Lock size={18} />
+                                <input
+                                    type="password"
+                                    value={creds.currentPassword}
+                                    onChange={e => setCreds({ ...creds, currentPassword: e.target.value })}
+                                    placeholder="Enter current password"
+                                    autoComplete="current-password"
+                                    required
+                                />
+                            </div>
+                        </div>
                         <div className="input-group">
                             <label>New Username</label>
                             <div className="field-wrapper">

@@ -10,8 +10,21 @@ const MainLayout = ({ children, onLogout }) => {
     const [alertsLoading, setAlertsLoading] = useState(true);
     const [showAlerts, setShowAlerts] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [provisioning, setProvisioning] = useState(false);
     const currentUser = localStorage.getItem('sr_user') || 'Admin';
     const navigate = useNavigate();
+
+    useEffect(() => {
+        authFetch(API_ENDPOINTS.FIREWALL_STATUS)
+            .then(r => (r.ok ? r.json() : null))
+            .then(d => setProvisioning(!!(d && d.provisioning_mode)))
+            .catch(() => {});
+    }, []);
+
+    const lockDownNow = async () => {
+        const res = await authFetch('/api/system/lockdown', { method: 'POST', body: JSON.stringify({}) });
+        if (res.ok) setProvisioning(false);
+    };
 
     useEffect(() => {
         const fetchAlerts = async () => {
@@ -109,6 +122,15 @@ const MainLayout = ({ children, onLogout }) => {
                 </header>
 
                 <div className="content-area">
+                    {provisioning && (
+                        <div className="alert alert-warning d-flex justify-content-between align-items-center" role="alert">
+                            <span>
+                                <strong>Provisioning mode:</strong> SSH and DNS are currently reachable from the internet-facing
+                                interface. This closes automatically, but you can lock it down now.
+                            </span>
+                            <button className="btn btn-sm btn-warning ms-3" onClick={lockDownNow}>Lock down now</button>
+                        </div>
+                    )}
                     {children}
                 </div>
             </main>

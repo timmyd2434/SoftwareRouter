@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import MainLayout from './components/layout/MainLayout';
+import { clearCSRFToken } from './apiConfig';
 import Dashboard from './pages/Dashboard';
 import Interfaces from './pages/Interfaces';
 import Firewall from './pages/Firewall';
@@ -34,7 +35,8 @@ import './App.css';
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('sr_token'));
+  // null = still probing the cookie session, true/false afterwards
+  const [isAuthenticated, setIsAuthenticated] = useState(null);
   const [lastActivity, setLastActivity] = useState(Date.now());
   const [showWizard, setShowWizard] = useState(false);
 
@@ -43,40 +45,38 @@ function App() {
     setLastActivity(Date.now());
   };
 
+  // Probe the cookie session once on load (plain fetch: a 401 must not trigger a reload loop)
+  useEffect(() => {
+    fetch('/api/status', { credentials: 'include' })
+      .then(r => setIsAuthenticated(r.ok))
+      .catch(() => setIsAuthenticated(false));
+  }, []);
+
   const handleLogout = async () => {
     try {
-      // Call logout endpoint (Tier 4: Session management)
-      const token = localStorage.getItem('sr_token');
-      if (token) {
-        // Fetch CSRF token for the logout POST
-        let csrfToken = null;
-        try {
-          const csrfRes = await fetch('/api/csrf-token', {
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
-          if (csrfRes.ok) {
-            const csrfData = await csrfRes.json();
-            csrfToken = csrfData.token;
-          }
-        } catch {
-          // Ignore CSRF fetch errors during logout
+      let csrfToken = null;
+      try {
+        const csrfRes = await fetch('/api/csrf-token', { credentials: 'include' });
+        if (csrfRes.ok) {
+          csrfToken = (await csrfRes.json()).token;
         }
-
-        await fetch('/api/logout', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
-          },
-        }).catch(() => {
-          // Ignore errors - logout locally regardless
-        });
+      } catch {
+        // Ignore CSRF fetch errors during logout
       }
+
+      await fetch('/api/logout', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
+        },
+      }).catch(() => {
+        // Ignore errors - logout locally regardless
+      });
     } finally {
-      // Always clear local storage and log out
-      localStorage.removeItem('sr_token');
       localStorage.removeItem('sr_user');
+      clearCSRFToken();
       setIsAuthenticated(false);
     }
   };
@@ -116,7 +116,7 @@ function App() {
   // Tier 4: Check if setup wizard is needed (first boot with no WAN configured)
   useEffect(() => {
     if (isAuthenticated) {
-      fetch('/api/system/needs-setup')
+      fetch('/api/system/needs-setup', { credentials: 'include' })
         .then(r => r.json())
         .then(data => {
           if (data.needs_setup) {
@@ -126,6 +126,10 @@ function App() {
         .catch(err => console.error('Failed to check setup status:', err));
     }
   }, [isAuthenticated]);
+
+  if (isAuthenticated === null) {
+    return null; // probing session
+  }
 
   if (!isAuthenticated) {
     return <Login onLogin={handleLogin} />;

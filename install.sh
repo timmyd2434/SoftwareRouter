@@ -1,6 +1,6 @@
 #!/bin/bash
 # SoftRouter - All-Inclusive Master Installation Script
-# Targets: Debian/Ubuntu Headless Servers
+# Targets: Debian 13 (Trixie, stable) and Debian 12; Ubuntu 24.04 also works
 # Author: Antigravity AI
 
 set -e
@@ -149,7 +149,7 @@ sleep 3
 echo ""
 echo -e "${CYAN}[1/10] Installing System Dependencies...${NC}"
 apt update
-apt install -y curl git golang-go nftables iproute2 systemd jq wget bsdmainutils wireguard openvpn easy-rsa qrencode unbound dnsmasq net-tools iptables ca-certificates gnupg lsb-release frr frr-pythontools speedtest-cli miniupnpd ieee-data traceroute nodejs npm
+apt install -y curl git golang-1.24-go nftables iproute2 systemd jq wget bsdmainutils wireguard openvpn easy-rsa qrencode unbound dnsmasq net-tools iptables ca-certificates gnupg lsb-release frr frr-pythontools speedtest-cli miniupnpd ieee-data traceroute nodejs npm
 
 # Enable FRR Daemons
 sed -i 's/bgpd=no/bgpd=yes/' /etc/frr/daemons
@@ -558,6 +558,8 @@ echo -e "  ✓ Repo path saved: $(pwd)"
 # Backend
 echo -e "Compiling Go Backend..."
 cd backend
+# golang-1.24-go installs to /usr/lib/go-1.24/bin (go.mod requires Go >= 1.24)
+export PATH=/usr/lib/go-1.24/bin:$PATH
 go build -o softrouter-backend .
 cp softrouter-backend /usr/local/bin/softrouter-backend
 chmod +x /usr/local/bin/softrouter-backend
@@ -574,14 +576,16 @@ cd ..
 
 # 9. Firewall Baseline
 echo -e "${CYAN}[8/10] Applying Firewall Baseline (nftables)...${NC}"
-# Write a clean baseline that just flushes the ruleset.
-# The SoftRouter backend manages its own "table inet softrouter" and writes
-# the full ruleset on startup.  A static "table inet filter" here would
-# accumulate stale rules across updates, so we intentionally omit it.
+# Baseline: never `flush ruleset` (that would wipe Docker/CrowdSec/miniupnpd tables
+# on every nftables restart). Only SoftRouter's own tables are reset; the backend
+# rewrites this file with the full ruleset on startup.
 cat <<EOF > /etc/nftables.conf
 # SoftRouter nftables baseline — managed by softrouter-backend
 # DO NOT add static tables here; the backend writes table inet softrouter.
-flush ruleset
+table inet softrouter
+delete table inet softrouter
+table ip softrouter_nat
+delete table ip softrouter_nat
 EOF
 systemctl enable nftables
 systemctl restart nftables
@@ -632,6 +636,16 @@ AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW CAP_SYS_MODUL
 
 # Explicitly allow kernel module loading
 ProtectKernelModules=no
+
+# Hardening that is compatible with sudo-based privileged execution
+# (NoNewPrivileges is intentionally NOT set: it would break sudo)
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+# Root-only runtime dir (fallback dnsmasq config/pid live here, not in /tmp)
+RuntimeDirectory=softrouter
+RuntimeDirectoryMode=0700
 
 # Basic filesystem protections
 ProtectSystem=full
