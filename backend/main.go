@@ -95,9 +95,11 @@ type Config struct {
 	AllowInsecureWebhook bool `json:"allow_insecure_webhook"`
 }
 
-// WireGuardEnabled reports whether the wg0 interface currently exists.
+// WireGuardEnabled reports whether a WireGuard server is configured (wg0.conf
+// exists). Keyed on the file, not the live interface, so the firewall rules are
+// present even when wg0 is down or starts after the firewall is applied.
 func (c Config) WireGuardEnabled() bool {
-	_, err := net.InterfaceByName("wg0")
+	_, err := os.Stat(wgConfPath)
 	return err == nil
 }
 

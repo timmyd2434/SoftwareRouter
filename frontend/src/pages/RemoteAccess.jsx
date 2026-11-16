@@ -227,13 +227,16 @@ const RemoteAccess = () => {
             });
             if (res.ok) {
                 const result = await res.json();
-                setMessage({ type: 'success', text: `Profile for ${newClientName} generated.` });
+                setMessage(result.warning
+                    ? { type: 'error', text: result.warning }
+                    : { type: 'success', text: `Profile for ${newClientName} generated. Import it into the WireGuard app as-is.` });
                 setNewClientName('');
                 setShowModal(false);
                 setShowQR({ name: newClientName, config: result.config });
                 fetchClients();
             } else {
-                setMessage({ type: 'error', text: 'Failed to generate profile.' });
+                const detail = (await res.text()).trim();
+                setMessage({ type: 'error', text: detail || 'Failed to generate profile.' });
             }
         } catch { setMessage({ type: 'error', text: 'Network error' }); }
         finally { setGenerating(false); }

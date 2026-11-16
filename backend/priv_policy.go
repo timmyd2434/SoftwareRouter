@@ -241,10 +241,24 @@ func policyWg(args []string) error {
 	switch {
 	case len(args) == 1 && (args[0] == "genkey" || args[0] == "pubkey" || args[0] == "show"):
 		return nil
-	case len(args) == 3 && args[0] == "syncconf" && ifaceRe.MatchString(args[1]) && pathUnder(args[2], "/etc/wireguard"):
+	// wg set wg0 peer <key> allowed-ips 10.8.0.N/32   |   wg set wg0 peer <key> remove
+	case len(args) == 6 && args[0] == "set" && args[1] == "wg0" && args[2] == "peer" &&
+		wgKeyRe.MatchString(args[3]) && args[4] == "allowed-ips" && wgPeerAddrOK(args[5]):
+		return nil
+	case len(args) == 5 && args[0] == "set" && args[1] == "wg0" && args[2] == "peer" &&
+		wgKeyRe.MatchString(args[3]) && args[4] == "remove":
 		return nil
 	}
 	return fmt.Errorf("wg arguments are not permitted")
+}
+
+func wgPeerAddrOK(a string) bool {
+	m := wgPeerAddrRe.FindStringSubmatch(a)
+	if m == nil {
+		return false
+	}
+	n, err := strconv.Atoi(m[1])
+	return err == nil && n >= 2 && n <= 254
 }
 
 func policyCloudflared(args []string) error {

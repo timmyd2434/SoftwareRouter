@@ -29,6 +29,10 @@ CrowdSec's local API defaults to `127.0.0.1:8080`, the same port as SoftwareRout
 Also fixed: the non-root update path passed an absolute `.../update.sh` that the old allowlist never matched.
 Still open: sudoers (`NOPASSWD: ALL`) is the real boundary if the backend process itself is compromised.
 
+## WireGuard: client files import without edits
+`backend/wireguard_peers.go`. The generated client config now has the configured public endpoint (static IP, DDNS name or auto-detected IP; the browser's Host header is no longer used, and generation is refused if no endpoint can be determined). Addresses are allocated from the peers actually in `wg0.conf` (lowest free 10.8.0.N), duplicate names are refused, deleting a client removes its `[Peer]` block and live peer, and new peers are loaded with `wg set` (the old `wg syncconf` call always failed on a wg-quick style file). The firewall now trusts `wg0` for input and forwarding, and the WAN `udp 51820` rule exists whenever `wg0.conf` does. Peers added by hand to `wg0.conf` keep working but are not shown in the client list.
+Public endpoint hint: if you use a Cloudflare hostname, set the record to DNS only (not proxied); the proxy does not carry UDP.
+
 ## Upgrade notes
 * A pre-upgrade `table ip nat` stays loaded until reboot; the new rules use `ip softrouter_nat`. Reboot once after upgrading.
 * Install Go with `golang-1.24-go` (`/usr/lib/go-1.24/bin`).

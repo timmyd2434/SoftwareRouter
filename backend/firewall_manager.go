@@ -348,6 +348,11 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 			b.WriteString(fmt.Sprintf("    iifname \"%s\" tcp dport 53 accept comment \"WAN DNS (provisioning/opt-in)\"\n", wan))
 		}
 	}
+	// WireGuard peers are the admin's own devices: treat wg0 like a LAN interface
+	// for traffic to the router itself.
+	if cfg.WireGuardEnabled() {
+		b.WriteString("    iifname \"wg0\" accept comment \"WireGuard peers (trusted)\"\n")
+	}
 	// OpenVPN server listener (only if the server has been set up)
 	if _, statErr := os.Stat(ovpnServerDir + "/server.conf"); statErr == nil {
 		for _, wan := range wanInterfaces {
@@ -424,6 +429,11 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 				b.WriteString(fmt.Sprintf("    iifname \"%s\" oifname \"%s\" accept comment \"LAN to LAN\"\n", lan1, lan2))
 			}
 		}
+	}
+
+	// WireGuard peers may reach LAN and (full tunnel) the internet
+	if cfg.WireGuardEnabled() {
+		b.WriteString("    iifname \"wg0\" accept comment \"WireGuard peers to LAN/WAN\"\n")
 	}
 
 	// Allow port forwarding (WAN -> LAN via DNAT) - INTERFACE SCOPED
