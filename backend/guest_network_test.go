@@ -267,3 +267,57 @@ func TestStaleVLANLabels(t *testing.T) {
 		t.Errorf("stale labels = %v, want %v", got, want)
 	}
 }
+
+func TestGuestAllowRuleCanBeLimitedToOneNetwork(t *testing.T) {
+	fm := &FirewallManager{}
+	gen := func(allow []GuestAllowRule) string {
+		rs, err := fm.generateFullRulesetGuest([]string{"eth0"}, []string{"br0"},
+			[]string{"eth1.20", "eth1.30"}, allow, testCfg(nil), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rs
+	}
+	const rule20 = `iifname "eth1.20" ip daddr 192.168.3.102 tcp dport 443 accept`
+	const rule30 = `iifname "eth1.30" ip daddr 192.168.3.102 tcp dport 443 accept`
+	base := GuestAllowRule{Name: "Jellyfin", Destination: "192.168.3.102", Ports: []int{443}, Enabled: true}
+
+	// No networks selected: every isolated network gets it (the old behaviour).
+	rs := gen([]GuestAllowRule{base})
+	if !strings.Contains(rs, rule20) || !strings.Contains(rs, rule30) {
+		t.Error("an unscoped rule must apply to every isolated network")
+	}
+
+	// Only eth1.20 selected: eth1.30 must not get it.
+	scoped := base
+	scoped.Interfaces = []string{"eth1.20"}
+	rs = gen([]GuestAllowRule{scoped})
+	if !strings.Contains(rs, rule20) || strings.Contains(rs, rule30) {
+		t.Errorf("rule limited to eth1.20 leaked to eth1.30:\n%s", rs)
+	}
+
+	// A rule scoped to a network that no longer exists matches nothing (fail closed).
+	gone := base
+	gone.Interfaces = []string{"eth1.99"}
+	rs = gen([]GuestAllowRule{gone})
+	if strings.Contains(rs, "ip daddr 192.168.3.102") {
+		t.Error("rule scoped to a missing network must not apply anywhere")
+	}
+}
+
+func TestNormalizeGuestAllowRuleInterfaces(t *testing.T) {
+	got, err := normalizeGuestAllowRule(GuestAllowRule{
+		Destination: "10.0.0.1", Ports: []int{1}, Interfaces: []string{" eno1.20 ", "eno1.20", "", "eno1.30"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(got.Interfaces, ",") != "eno1.20,eno1.30" {
+		t.Errorf("interfaces not cleaned: %v", got.Interfaces)
+	}
+	for _, bad := range []string{`eth1" accept comment "x`, "a b", "../x", strings.Repeat("x", 40)} {
+		if _, err := normalizeGuestAllowRule(GuestAllowRule{Destination: "10.0.0.1", Ports: []int{1}, Interfaces: []string{bad}}); err == nil {
+			t.Errorf("network name %q should be rejected", bad)
+		}
+	}
+}

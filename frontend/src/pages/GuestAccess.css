@@ -64,3 +64,20 @@
 .guest-rule-off td:not(:last-child):not(:nth-last-child(2)) {
     opacity: 0.5;
 }
+
+.guest-checks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.guest-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: pointer;
+}
+
+.guest-check input {
+    width: auto;
+}

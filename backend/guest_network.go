@@ -34,6 +34,9 @@ type GuestAllowRule struct {
 	Protocol    string `json:"protocol"`    // "tcp" (default) or "udp"
 	Ports       []int  `json:"ports"`       // 1-65535, at most maxGuestAllowPorts
 	Enabled     bool   `json:"enabled"`
+	// Interfaces limits the rule to these isolated networks. Empty means every
+	// isolated network. A rule whose listed networks no longer exist matches nothing.
+	Interfaces []string `json:"interfaces"`
 }
 
 const (
@@ -84,7 +87,28 @@ func validateGuestAllowRule(r GuestAllowRule) error {
 			return fmt.Errorf("port %d out of range", p)
 		}
 	}
+	if len(r.Interfaces) > maxGuestAllowRules {
+		return fmt.Errorf("too many networks selected")
+	}
+	for _, iface := range r.Interfaces {
+		if !isValidInterfaceName(iface) {
+			return fmt.Errorf("invalid network name %q", iface)
+		}
+	}
 	return nil
+}
+
+// appliesToGuest reports whether a rule covers the given isolated interface.
+func (r GuestAllowRule) appliesToGuest(iface string) bool {
+	if len(r.Interfaces) == 0 {
+		return true
+	}
+	for _, name := range r.Interfaces {
+		if name == iface {
+			return true
+		}
+	}
+	return false
 }
 
 // writeGuestInputRules emits the only things a guest interface may ask of the
@@ -102,7 +126,7 @@ func writeGuestInputRules(b *strings.Builder, guestInterfaces []string) {
 func writeGuestForwardRules(b *strings.Builder, guestInterfaces, wanInterfaces []string, allow []GuestAllowRule) {
 	for _, g := range guestInterfaces {
 		for _, r := range allow {
-			if !r.Enabled {
+			if !r.Enabled || !r.appliesToGuest(g) {
 				continue
 			}
 			if err := validateGuestAllowRule(r); err != nil {
@@ -158,6 +182,16 @@ func normalizeGuestAllowRule(r GuestAllowRule) (GuestAllowRule, error) {
 		}
 	}
 	r.Ports = ports
+	seenIf := map[string]bool{}
+	ifaces := make([]string, 0, len(r.Interfaces))
+	for _, iface := range r.Interfaces {
+		iface = strings.TrimSpace(iface)
+		if iface != "" && !seenIf[iface] {
+			seenIf[iface] = true
+			ifaces = append(ifaces, iface)
+		}
+	}
+	r.Interfaces = ifaces
 	if err := validateGuestAllowRule(r); err != nil {
 		return r, err
 	}

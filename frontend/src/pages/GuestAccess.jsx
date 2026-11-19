@@ -4,7 +4,7 @@ import { API_ENDPOINTS, authFetch } from '../apiConfig';
 import './PortForwarding.css';
 import './GuestAccess.css';
 
-const emptyForm = { name: '', destination: '', protocol: 'tcp', ports: '' };
+const emptyForm = { name: '', destination: '', protocol: 'tcp', ports: '', interfaces: [] };
 
 // "443, 80" -> { ports: [443, 80] } or { error: '...' }
 const parsePorts = (text) => {
@@ -89,7 +89,8 @@ const GuestAccess = () => {
             name: rule.name || '',
             destination: rule.destination,
             protocol: rule.protocol || 'tcp',
-            ports: (rule.ports || []).join(', ')
+            ports: (rule.ports || []).join(', '),
+            interfaces: rule.interfaces || []
         });
         setFormError(null);
         setShowModal(true);
@@ -105,6 +106,18 @@ const GuestAccess = () => {
         if (!response.ok) throw new Error(await readError(response, 'The change was not applied'));
     };
 
+    const toggleNetwork = (name) => {
+        const has = form.interfaces.includes(name);
+        setForm({
+            ...form,
+            interfaces: has ? form.interfaces.filter((n) => n !== name) : [...form.interfaces, name]
+        });
+    };
+
+    // Networks offered in the form: every isolated network, plus any the rule already names
+    // (so a network that is no longer isolated can still be unticked).
+    const networkChoices = Array.from(new Set([...guestInterfaces, ...form.interfaces]));
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         const parsed = parsePorts(form.ports);
@@ -117,6 +130,7 @@ const GuestAccess = () => {
             destination: form.destination,
             protocol: form.protocol,
             ports: parsed.ports,
+            interfaces: form.interfaces,
             enabled: editingRule ? editingRule.enabled : true
         };
         try {
@@ -217,6 +231,7 @@ const GuestAccess = () => {
                                     <th>Destination</th>
                                     <th>Protocol</th>
                                     <th>Ports</th>
+                                    <th>Networks</th>
                                     <th>Status</th>
                                     <th>Actions</th>
                                 </tr>
@@ -228,6 +243,9 @@ const GuestAccess = () => {
                                         <td className="target-cell">{rule.destination}</td>
                                         <td><span className={`badge ${rule.protocol === 'udp' ? 'udp' : 'tcp'}`}>{(rule.protocol || 'tcp').toUpperCase()}</span></td>
                                         <td className="port-cell">{(rule.ports || []).join(', ')}</td>
+                                        <td>{rule.interfaces && rule.interfaces.length > 0
+                                            ? rule.interfaces.map((name) => <span className="guest-chip" key={name}>{name}</span>)
+                                            : 'All'}</td>
                                         <td>
                                             <label className="toggle-switch">
                                                 <input
@@ -311,6 +329,25 @@ const GuestAccess = () => {
                                     <span className="guest-hint">Separate several with commas: 80, 443</span>
                                 </div>
                             </div>
+
+                            {networkChoices.length > 1 && (
+                                <div className="form-group">
+                                    <label>Applies to</label>
+                                    <div className="guest-checks">
+                                        {networkChoices.map((name) => (
+                                            <label className="guest-check" key={name}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={form.interfaces.includes(name)}
+                                                    onChange={() => toggleNetwork(name)}
+                                                />
+                                                <span className="guest-chip">{name}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                    <span className="guest-hint">Leave all unticked to apply to every isolated network.</span>
+                                </div>
+                            )}
 
                             {formError && <div className="guest-error" role="alert">{formError}</div>}
 

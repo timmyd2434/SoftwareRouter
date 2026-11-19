@@ -23,6 +23,7 @@ Open **Guest / IoT** in the sidebar and choose **Add Exception**:
 * **Destination**: an IPv4 address or network, e.g. `192.168.3.102` or `192.168.3.0/24`
 * **Protocol**: TCP or UDP
 * **Ports**: one or more, e.g. `443` or `80, 443`
+* **Applies to**: with two or more isolated networks, tick the ones the exception covers (for example Guest but not IoT). Leave all unticked to cover every isolated network. An exception limited to a network that no longer exists applies nowhere.
 
 Each change is validated, saved to `/etc/softrouter/guest_access.json` and applied to the
 firewall immediately. If the firewall rejects a change, it is rolled back. Exceptions can
