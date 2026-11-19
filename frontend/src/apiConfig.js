@@ -141,6 +141,7 @@ export const API_ENDPOINTS = {
     OVPN_SERVER_CLIENTS: `${API_BASE_URL}/api/vpn/server-openvpn/clients`,
     OVPN_SERVER_DOWNLOAD: `${API_BASE_URL}/api/vpn/server-openvpn/download`,
     PORT_FORWARDING: `${API_BASE_URL}/api/port-forwarding`,
+    GUEST_ACCESS: `${API_BASE_URL}/api/guest-access`,
     SETTINGS: `${API_BASE_URL}/api/settings`,
     NETWORK_CLIENTS: `${API_BASE_URL}/api/network/clients`,
     DHCP_STATIC: `${API_BASE_URL}/api/dhcp/static`,

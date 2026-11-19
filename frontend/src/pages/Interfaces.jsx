@@ -70,6 +70,7 @@ const Interfaces = () => {
         { value: 'LAN', color: '#22c55e' },
         { value: 'DMZ', color: '#f59e0b' },
         { value: 'Guest', color: '#8b5cf6' },
+        { value: 'IoT', color: '#ec4899' },
         { value: 'Management', color: '#06b6d4' },
         { value: 'Trunk', color: '#6366f1' }
     ];

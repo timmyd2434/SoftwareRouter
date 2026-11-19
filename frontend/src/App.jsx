@@ -18,6 +18,7 @@ import Settings from './pages/Settings';
 import RemoteAccess from './pages/RemoteAccess';
 import DNSAnalytics from './pages/DNSAnalytics';
 import PortForwarding from './pages/PortForwarding';
+import GuestAccess from './pages/GuestAccess';
 import Routing from './pages/Routing';
 import MultiWAN from './pages/MultiWAN';
 import DynamicRouting from './pages/DynamicRouting';
@@ -160,6 +161,7 @@ function App() {
           <Route path="/services" element={<Services />} />
           <Route path="/dns-analytics" element={<DNSAnalytics />} />
           <Route path="/port-forwarding" element={<PortForwarding />} />
+          <Route path="/guest-access" element={<GuestAccess />} />
           <Route path="/routing" element={<Routing />} />
           <Route path="/multi-wan" element={<MultiWAN />} />
           <Route path="/dynamic-routing" element={<DynamicRouting />} />

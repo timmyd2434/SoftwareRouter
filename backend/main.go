@@ -723,6 +723,7 @@ func main() {
 	InitQoS() // 4. Initialize Networking
 
 	initPortForwarding()
+	loadGuestAllowRules() // Guest/IoT exceptions must be loaded before the boot-time firewall apply
 	InitFirewallManager()
 	// Apply rules initially — skip watchdog since there's no user to confirm at boot
 	// ApplyFirewallRules emits a safe baseline when the firewall is disabled
@@ -1374,6 +1375,12 @@ func main() {
 	mux.HandleFunc("POST /api/port-forwarding", authMiddleware(csrfMiddleware(createPortForwardingRule)))
 	mux.HandleFunc("PUT /api/port-forwarding", authMiddleware(csrfMiddleware(updatePortForwardingRuleHandler)))
 	mux.HandleFunc("DELETE /api/port-forwarding", authMiddleware(csrfMiddleware(removePortForwardingRule)))
+
+	// Guest / IoT access exceptions
+	mux.HandleFunc("GET /api/guest-access", authMiddleware(listGuestAccess))
+	mux.HandleFunc("POST /api/guest-access", authMiddleware(csrfMiddleware(createGuestAccessRule)))
+	mux.HandleFunc("PUT /api/guest-access", authMiddleware(csrfMiddleware(updateGuestAccessRule)))
+	mux.HandleFunc("DELETE /api/guest-access", authMiddleware(csrfMiddleware(deleteGuestAccessRule)))
 
 	// Routes (Static)
 	mux.HandleFunc("GET /api/routes", authMiddleware(getRoutes))

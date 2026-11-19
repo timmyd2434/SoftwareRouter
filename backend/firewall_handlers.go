@@ -251,6 +251,11 @@ func addFirewallRule(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Quotes are not allowed in firewall rule comments", http.StatusBadRequest)
 		return
 	}
+	// The comment is wrapped in quotes below, so a backslash could escape the closing quote.
+	if strings.Contains(rule.Comment, `\`) {
+		http.Error(w, "Backslashes are not allowed in firewall rule comments", http.StatusBadRequest)
+		return
+	}
 
 	// Whitelist allowed nftables keywords
 	allowedKeywords := map[string]bool{
@@ -332,9 +337,11 @@ func addFirewallRule(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Fields(rule.Raw)
 	args = append(args, parts...)
 
-	// Add comment if provided
+	// Add comment if provided. nft joins its arguments with spaces before
+	// parsing, so the comment MUST be quoted: an unquoted multi-word comment
+	// such as "IoT DHCP" is a syntax error (and made every such add fail with FW001).
 	if rule.Comment != "" {
-		args = append(args, "comment", rule.Comment)
+		args = append(args, "comment", `"`+rule.Comment+`"`)
 	}
 
 	fmt.Printf("Executing NFT: nft %v\n", args) // Debug log

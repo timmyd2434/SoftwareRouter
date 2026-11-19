@@ -188,7 +188,7 @@ func setInterfaceLabel(w http.ResponseWriter, r *http.Request) {
 
 	// Validate label (optional but recommended values)
 	validLabels := map[string]bool{
-		"WAN": true, "LAN": true, "DMZ": true, "Guest": true,
+		"WAN": true, "LAN": true, "DMZ": true, "Guest": true, "IoT": true,
 		"Management": true, "Trunk": true, "": true, // Empty is allowed (to clear)
 	}
 	if req.Label != "" && !validLabels[req.Label] {

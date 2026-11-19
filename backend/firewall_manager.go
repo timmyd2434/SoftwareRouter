@@ -82,12 +82,17 @@ func (fm *FirewallManager) ApplyFirewallRules(skipWatchdog bool) error {
 
 	wanInterfaces := []string{}
 	lanInterfaces := []string{}
+	guestInterfaces := []string{} // isolated Guest/IoT interfaces (never LAN-trusted)
 
 	// Step A: Explicit metadata labels
 	for iface, meta := range metaStore.Metadata {
 		if strings.EqualFold(meta.Label, "WAN") || strings.EqualFold(meta.Label, "Internet") {
 			if !inList(wanInterfaces, iface) {
 				wanInterfaces = append(wanInterfaces, iface)
+			}
+		} else if isGuestLabel(meta.Label) {
+			if !inList(guestInterfaces, iface) {
+				guestInterfaces = append(guestInterfaces, iface)
 			}
 		} else if strings.EqualFold(meta.Label, "LAN") || strings.EqualFold(meta.Label, "Bridge") {
 			if !inList(lanInterfaces, iface) {
@@ -133,7 +138,7 @@ func (fm *FirewallManager) ApplyFirewallRules(skipWatchdog bool) error {
 		if name == "lo" || strings.HasPrefix(name, "veth") || strings.HasPrefix(name, "docker") || strings.HasPrefix(name, "br-") {
 			continue
 		}
-		if inList(wanInterfaces, name) {
+		if inList(wanInterfaces, name) || inList(guestInterfaces, name) {
 			continue
 		}
 		if !inList(lanInterfaces, name) {
@@ -146,10 +151,10 @@ func (fm *FirewallManager) ApplyFirewallRules(skipWatchdog bool) error {
 		return fmt.Errorf("CRITICAL: No WAN interfaces detected or defined. Refusing to apply firewall rules")
 	}
 
-	fmt.Printf("[FIREWALL] Active WAN Interfaces: %v | Active LAN Interfaces: %v\n", wanInterfaces, lanInterfaces)
+	fmt.Printf("[FIREWALL] Active WAN Interfaces: %v | Active LAN Interfaces: %v | Guest Interfaces: %v\n", wanInterfaces, lanInterfaces, guestInterfaces)
 
 	// 4. Generate complete ruleset as text
-	ruleset, err := fm.generateFullRuleset(wanInterfaces, lanInterfaces, cfg, pfRules)
+	ruleset, err := fm.generateFullRulesetGuest(wanInterfaces, lanInterfaces, guestInterfaces, GetGuestAllowRules(), cfg, pfRules)
 	if err != nil {
 		return fmt.Errorf("Failed to generate ruleset: %v", err)
 	}
@@ -261,8 +266,16 @@ func (fm *FirewallManager) ApplyFirewallRules(skipWatchdog bool) error {
 	return nil
 }
 
-// generateFullRuleset creates a complete nftables configuration as text
+// generateFullRuleset creates a complete nftables configuration as text, with
+// no isolated guest interfaces. Kept for callers/tests that predate guest support.
 func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []string, cfg Config, pfRules []PortForwardingRule) (string, error) {
+	return fm.generateFullRulesetGuest(wanInterfaces, lanInterfaces, nil, nil, cfg, pfRules)
+}
+
+// generateFullRulesetGuest creates a complete nftables configuration as text.
+// guestInterfaces are isolated (Guest/IoT): DHCP+DNS to the router, internet
+// access, and the explicit guestAllow exceptions, nothing else.
+func (fm *FirewallManager) generateFullRulesetGuest(wanInterfaces, lanInterfaces, guestInterfaces []string, guestAllow []GuestAllowRule, cfg Config, pfRules []PortForwardingRule) (string, error) {
 	var b strings.Builder
 
 	// Flush all existing kernel rulesets first to guarantee zero stale rules or tables
@@ -274,7 +287,7 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 	b.WriteString(ownedTablesResetScript + "\n")
 
 	// Validate everything that gets interpolated into the ruleset
-	for _, n := range append(append([]string{}, wanInterfaces...), lanInterfaces...) {
+	for _, n := range append(append(append([]string{}, wanInterfaces...), lanInterfaces...), guestInterfaces...) {
 		if !isValidInterfaceName(n) {
 			return "", fmt.Errorf("refusing to generate ruleset: invalid interface name %q", n)
 		}
@@ -366,6 +379,9 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 		}
 	}
 
+	// Guest/IoT interfaces: DHCP + DNS only, no trust
+	writeGuestInputRules(&b, guestInterfaces)
+
 	// Accept all from LAN interfaces
 	for _, lan := range lanInterfaces {
 		b.WriteString(fmt.Sprintf("    iifname \"%s\" accept comment \"LAN trust\"\n", lan))
@@ -421,6 +437,9 @@ func (fm *FirewallManager) generateFullRuleset(wanInterfaces, lanInterfaces []st
 			b.WriteString(fmt.Sprintf("    iifname \"%s\" oifname \"%s\" accept comment \"LAN to WAN\"\n", lan, wan))
 		}
 	}
+
+	// Guest/IoT -> explicit exceptions, then WAN. Never guest -> LAN or LAN -> guest.
+	writeGuestForwardRules(&b, guestInterfaces, wanInterfaces, guestAllow)
 
 	// Allow LAN -> LAN (Inter-LAN and Inter-Bridge routing)
 	for _, lan1 := range lanInterfaces {
