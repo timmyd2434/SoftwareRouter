@@ -17,7 +17,7 @@ func guestInterfaceNames() []string {
 		return names
 	}
 	for iface, m := range meta.Metadata {
-		if isGuestLabel(m.Label) {
+		if isGuestLabel(m.Label) && interfaceExists(iface) {
 			names = append(names, iface)
 		}
 	}

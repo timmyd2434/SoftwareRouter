@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -64,6 +65,76 @@ func saveInterfaceMetadata(store *InterfaceMetadataStore) error {
 	}
 
 	return os.WriteFile(metadataFilePath, data, 0600)
+}
+
+// interfaceExists reports whether a network interface with this name is present.
+func interfaceExists(name string) bool {
+	_, err := net.InterfaceByName(name)
+	return err == nil
+}
+
+// isPersistedVLAN reports whether a VLAN is still defined in interfaces_config.json.
+func isPersistedVLAN(name string) bool {
+	interfacesStoreLock.RLock()
+	defer interfacesStoreLock.RUnlock()
+	_, ok := interfacesStore.VLANs[name]
+	return ok
+}
+
+// removeInterfaceMetadata deletes the stored label of an interface.
+func removeInterfaceMetadata(name string) {
+	store, err := loadInterfaceMetadata()
+	if err != nil || store == nil {
+		return
+	}
+	if _, ok := store.Metadata[name]; !ok {
+		return
+	}
+	delete(store.Metadata, name)
+	if err := saveInterfaceMetadata(store); err != nil {
+		log.Printf("WARNING: could not remove stale label for %s: %v", name, err)
+	}
+}
+
+// staleVLANLabels picks out labels that belong to VLANs that are gone: the name
+// is VLAN-style (eth0.10), the interface does not exist, and no persisted VLAN
+// config refers to it. Physical NICs, bonds, bridges and tunnels are never
+// returned, so a label on a link that is merely down is left alone.
+func staleVLANLabels(names []string, exists, persisted func(string) bool) []string {
+	stale := []string{}
+	for _, name := range names {
+		if strings.Contains(name, ".") && !exists(name) && !persisted(name) {
+			stale = append(stale, name)
+		}
+	}
+	sort.Strings(stale)
+	return stale
+}
+
+// pruneStaleVLANMetadata removes leftover labels of deleted VLANs. Without this a
+// deleted VLAN keeps its label forever and the firewall generator keeps emitting
+// rules for an interface that no longer exists.
+func pruneStaleVLANMetadata() {
+	store, err := loadInterfaceMetadata()
+	if err != nil || store == nil {
+		return
+	}
+	names := make([]string, 0, len(store.Metadata))
+	for name := range store.Metadata {
+		names = append(names, name)
+	}
+	stale := staleVLANLabels(names, interfaceExists, isPersistedVLAN)
+	if len(stale) == 0 {
+		return
+	}
+	for _, name := range stale {
+		delete(store.Metadata, name)
+	}
+	if err := saveInterfaceMetadata(store); err != nil {
+		log.Printf("WARNING: could not prune stale interface labels: %v", err)
+		return
+	}
+	log.Printf("Removed stale interface labels for deleted VLANs: %v", stale)
 }
 
 // --- HTTP Handlers ---
@@ -309,6 +380,12 @@ func deleteVLAN(w http.ResponseWriter, r *http.Request) {
 
 	// Remove from persistence
 	removePersistedVLAN(interfaceName)
+
+	// Drop its label and regenerate the firewall so no rules are left behind
+	removeInterfaceMetadata(interfaceName)
+	if err := firewallManager.ApplyFirewallRules(true); err != nil {
+		log.Printf("WARNING: firewall refresh after deleting %s failed: %v", interfaceName, err)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{

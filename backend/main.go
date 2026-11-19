@@ -719,6 +719,7 @@ func main() {
 	loadSystemConfig()
 	loadTokenSecret()
 	applyInterfacesConfig() // Restore custom interfaces (Bonds, VLANs, Bridges, IP configuration)
+	pruneStaleVLANMetadata() // Forget labels of VLANs that were deleted
 	initWireGuard()
 	InitQoS() // 4. Initialize Networking
 
