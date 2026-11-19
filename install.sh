@@ -617,58 +617,11 @@ fi
 # Ensure softrouter owns the configuration directories
 chown -R softrouter:softrouter /etc/softrouter /etc/dnsmasq.d /etc/wireguard 2>/dev/null || true
 
-# Configure sudoers for passwordless execution of allowed commands
-cat <<'EOF' > /etc/sudoers.d/softrouter
-softrouter ALL=(ALL) NOPASSWD: ALL
-EOF
-chmod 440 /etc/sudoers.d/softrouter
-
-cat <<EOF > /etc/systemd/system/softrouter.service
-[Unit]
-Description=SoftRouter Backend Service
-After=network.target network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=softrouter
-Group=softrouter
-WorkingDirectory=/usr/local/bin
-ExecStart=/usr/local/bin/softrouter-backend
-Restart=always
-RestartSec=5
-
-# Security & Capabilities
-# CAP_NET_ADMIN: Network configuration (IP, routes, firewall)
-# CAP_NET_BIND_SERVICE: Bind to privileged ports
-# CAP_NET_RAW: Raw sockets (ping, etc)
-# CAP_SYS_MODULE: Load kernel modules (bonding, wireguard)
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW CAP_SYS_MODULE
-AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW CAP_SYS_MODULE
-
-# Explicitly allow kernel module loading
-ProtectKernelModules=no
-
-# Hardening that is compatible with sudo-based privileged execution
-# (NoNewPrivileges is intentionally NOT set: it would break sudo)
-ProtectControlGroups=yes
-LockPersonality=yes
-RestrictRealtime=yes
-RestrictSUIDSGID=yes
-# Root-only runtime dir (fallback dnsmasq config/pid live here, not in /tmp)
-RuntimeDirectory=softrouter
-RuntimeDirectoryMode=0700
-
-# Basic filesystem protections
-ProtectSystem=full
-ProtectHome=yes
-PrivateTmp=yes
-# Allow writing to configuration directories
-ReadWritePaths=/etc/softrouter /etc/dnsmasq.d /etc/wireguard
-
-[Install]
-WantedBy=multi-user.target
-EOF
+# Install the service unit from the repository. update.sh copies the same file on
+# every update, so a fresh install and an updated install always run the same unit.
+# The service runs as root with a restricted capability set, so no sudoers entry is
+# needed (older installers granted the softrouter account passwordless root via sudo).
+cp "$(cat /etc/softrouter/repo_path)/softrouter.service" /etc/systemd/system/softrouter.service
 
 # 11. Finalize
 echo -e "${CYAN}[10/10] Launching System...${NC}"

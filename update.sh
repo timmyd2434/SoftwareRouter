@@ -328,6 +328,15 @@ if [ -f "$SCRIPT_DIR/softrouter.service" ]; then
     systemctl enable softrouter 2>/dev/null || true
     echo "  ✓ Installed softrouter.service"
 fi
+
+# Older installers granted the softrouter account passwordless root via sudo. The
+# service runs as root, so that entry is unused. Remove it, but only if it is exactly
+# the legacy line so an administrator's own sudoers changes are never touched.
+if [ -f /etc/sudoers.d/softrouter ] && \
+   [ "$(tr -d ' \t\r' < /etc/sudoers.d/softrouter | grep -v '^$')" = "softrouterALL=(ALL)NOPASSWD:ALL" ]; then
+    rm -f /etc/sudoers.d/softrouter
+    echo "  ✓ Removed unused NOPASSWD sudoers entry"
+fi
 echo ""
 
 # Ensure DHCP and DNS services are enabled and active

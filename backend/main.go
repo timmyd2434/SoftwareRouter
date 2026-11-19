@@ -138,6 +138,45 @@ var (
 	configPath = "/etc/softrouter/config.json"
 )
 
+// wgBlanketMasqueradePostUp is the rule older versions wrote into wg0.conf. It has no
+// interface match, so it masqueraded every packet leaving the router, including
+// LAN-to-LAN and VLAN traffic, which hid real client addresses from servers.
+const wgBlanketMasqueradePostUp = "PostUp = nft add rule inet wg-filter postrouting masquerade"
+
+// wgScopedMasqueradePostUp only masquerades traffic that arrived from wg0 and is
+// leaving through another interface. Internet-bound traffic is also masqueraded by
+// the main firewall's WAN rules, so this only matters for peers reaching other networks.
+const wgScopedMasqueradePostUp = `PostUp = nft add rule inet wg-filter postrouting iifname "wg0" oifname != "wg0" masquerade`
+
+// wireGuardBaseConf returns a fresh server config for the given private key.
+func wireGuardBaseConf(privKey string) string {
+	return "[Interface]\n" +
+		"PrivateKey = " + privKey + "\n" +
+		"Address = 10.8.0.1/24\n" +
+		"ListenPort = 51820\n" +
+		"PostUp = nft add table inet wg-filter\n" +
+		"PostUp = nft add chain inet wg-filter postrouting '{ type nat hook postrouting priority 100; policy accept; }'\n" +
+		wgScopedMasqueradePostUp + "\n" +
+		"PostDown = nft delete table inet wg-filter\n"
+}
+
+// scopeWireGuardMasquerade replaces the legacy unscoped masquerade line in an existing
+// wg0.conf and leaves everything else (peers, hand edits) untouched.
+func scopeWireGuardMasquerade(conf string) (string, bool) {
+	lines := strings.Split(conf, "\n")
+	changed := false
+	for i, line := range lines {
+		if strings.TrimSpace(line) == wgBlanketMasqueradePostUp {
+			lines[i] = wgScopedMasqueradePostUp
+			changed = true
+		}
+	}
+	if !changed {
+		return conf, false
+	}
+	return strings.Join(lines, "\n"), true
+}
+
 func initWireGuard() {
 	configDir := "/etc/softrouter"
 	wgDir := "/etc/wireguard"
@@ -182,6 +221,14 @@ func initWireGuard() {
 		if strings.Contains(string(confData), "postrouting { type nat") {
 			log.Println("[INFO] WireGuard wg0.conf contains unquoted PostUp syntax. Updating...")
 			needConfig = true
+		} else if fixed, changed := scopeWireGuardMasquerade(string(confData)); changed {
+			// Older versions wrote a masquerade rule with no interface match, which
+			// rewrote the source address of ALL forwarded traffic (LAN, VLANs, ...).
+			if err := writeFileAtomic(confPath, []byte(fixed), 0600); err != nil {
+				log.Printf("[ERROR] Failed to scope WireGuard masquerade rule: %v", err)
+			} else {
+				log.Println("[INFO] Scoped the WireGuard masquerade rule in wg0.conf to wg0 traffic; restart wg-quick@wg0 to apply it")
+			}
 		}
 	}
 
@@ -193,7 +240,7 @@ func initWireGuard() {
 			log.Printf("[ERROR] Failed to read WireGuard private key for config: %v", err)
 			return
 		}
-		baseConf := fmt.Sprintf("[Interface]\nPrivateKey = %s\nAddress = 10.8.0.1/24\nListenPort = 51820\nPostUp = nft add table inet wg-filter\nPostUp = nft add chain inet wg-filter postrouting '{ type nat hook postrouting priority 100; policy accept; }'\nPostUp = nft add rule inet wg-filter postrouting masquerade\nPostDown = nft delete table inet wg-filter\n", strings.TrimSpace(string(privData)))
+		baseConf := wireGuardBaseConf(strings.TrimSpace(string(privData)))
 		// #nosec G304 G703: path is validated or constructed from safe internal sources
 		if err := os.WriteFile(confPath, []byte(baseConf), 0600); err != nil {
 			log.Printf("[ERROR] Failed to write WireGuard config: %v", err)
@@ -1378,10 +1425,10 @@ func main() {
 	mux.HandleFunc("DELETE /api/port-forwarding", authMiddleware(csrfMiddleware(removePortForwardingRule)))
 
 	// Guest / IoT access exceptions
-	mux.HandleFunc("GET /api/guest-access", authMiddleware(listGuestAccess))
-	mux.HandleFunc("POST /api/guest-access", authMiddleware(csrfMiddleware(createGuestAccessRule)))
-	mux.HandleFunc("PUT /api/guest-access", authMiddleware(csrfMiddleware(updateGuestAccessRule)))
-	mux.HandleFunc("DELETE /api/guest-access", authMiddleware(csrfMiddleware(deleteGuestAccessRule)))
+	mux.HandleFunc("GET /api/guest-access", authRead(listGuestAccess))
+	mux.HandleFunc("POST /api/guest-access", authWrite(createGuestAccessRule))
+	mux.HandleFunc("PUT /api/guest-access", authWrite(updateGuestAccessRule))
+	mux.HandleFunc("DELETE /api/guest-access", authWrite(deleteGuestAccessRule))
 
 	// Routes (Static)
 	mux.HandleFunc("GET /api/routes", authMiddleware(getRoutes))
