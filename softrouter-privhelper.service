@@ -1,0 +1,19 @@
+[Unit]
+Description=SoftRouter privileged helper
+Documentation=file:///opt/SoftwareRouter/docs/PRIVILEGED_HELPER.md
+After=local-fs.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/softrouter-backend privhelper
+Restart=always
+RestartSec=2
+# Socket directory: root:softrouter 0750 (the helper sets the group). Kept separate from
+# the backend's RuntimeDirectory, which systemd removes whenever the backend restarts.
+RuntimeDirectory=softrouter-priv
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+
+[Install]
+WantedBy=multi-user.target

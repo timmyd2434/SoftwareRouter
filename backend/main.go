@@ -763,6 +763,11 @@ func maskPassword(password string) string {
 
 
 func main() {
+	// "softrouter-backend privhelper" runs the root-only helper (softrouter-privhelper.service).
+	if len(os.Args) > 1 && os.Args[1] == "privhelper" {
+		runPrivHelper()
+		return
+	}
 	loadSystemConfig()
 	loadTokenSecret()
 	applyInterfacesConfig() // Restore custom interfaces (Bonds, VLANs, Bridges, IP configuration)

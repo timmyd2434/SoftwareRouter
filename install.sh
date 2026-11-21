@@ -622,6 +622,8 @@ chown -R softrouter:softrouter /etc/softrouter /etc/dnsmasq.d /etc/wireguard 2>/
 # The service runs as root with a restricted capability set, so no sudoers entry is
 # needed (older installers granted the softrouter account passwordless root via sudo).
 cp "$(cat /etc/softrouter/repo_path)/softrouter.service" /etc/systemd/system/softrouter.service
+# The privileged helper unit is installed but not enabled; see docs/PRIVILEGED_HELPER.md.
+cp "$(cat /etc/softrouter/repo_path)/softrouter-privhelper.service" /etc/systemd/system/softrouter-privhelper.service
 
 # 11. Finalize
 echo -e "${CYAN}[10/10] Launching System...${NC}"

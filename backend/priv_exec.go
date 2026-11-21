@@ -202,6 +202,13 @@ func runPrivileged(cmd string, args ...string) error {
 
 	ctx, cancel := getCommandContext(cmd)
 	defer cancel()
+	if _, herr, used := tryHelperExec("", nil, false, cmd, args...); used {
+		logCommandExecution(cmd, args, herr == nil, herr)
+		if herr != nil {
+			return fmt.Errorf("command '%s %s' failed: %w", cmd, strings.Join(args, " "), herr)
+		}
+		return nil
+	}
 
 	// #nosec G204 G702: cmd and args are strictly validated by validateCommand
 	execCmd := getExecCommand(ctx, cmd, args...)
@@ -226,6 +233,13 @@ func runPrivilegedOutput(cmd string, args ...string) ([]byte, error) {
 
 	ctx, cancel := getCommandContext(cmd)
 	defer cancel()
+	if hout, herr, used := tryHelperExec("", nil, false, cmd, args...); used {
+		logCommandExecution(cmd, args, herr == nil, herr)
+		if herr != nil {
+			return hout, fmt.Errorf("command '%s %s' failed: %w", cmd, strings.Join(args, " "), herr)
+		}
+		return hout, nil
+	}
 
 	// #nosec G204 G702: cmd and args are strictly validated by validateCommand
 	execCmd := getExecCommand(ctx, cmd, args...)
@@ -250,6 +264,13 @@ func runPrivilegedCombinedOutput(cmd string, args ...string) ([]byte, error) {
 
 	ctx, cancel := getCommandContext(cmd)
 	defer cancel()
+	if hout, herr, used := tryHelperExec("", nil, true, cmd, args...); used {
+		logCommandExecution(cmd, args, herr == nil, herr)
+		if herr != nil {
+			return hout, fmt.Errorf("command '%s %s' failed: %w", cmd, strings.Join(args, " "), herr)
+		}
+		return hout, nil
+	}
 
 	// #nosec G204 G702: cmd and args are strictly validated by validateCommand
 	execCmd := getExecCommand(ctx, cmd, args...)
@@ -287,6 +308,13 @@ func runPrivilegedWithStdin(stdinData []byte, cmd string, args ...string) ([]byt
 
 	ctx, cancel := getCommandContext(cmd)
 	defer cancel()
+	if hout, herr, used := tryHelperExec("", stdinData, true, cmd, args...); used {
+		logCommandExecution(cmd, args, herr == nil, herr)
+		if herr != nil {
+			return hout, fmt.Errorf("command '%s %s' failed: %w", cmd, strings.Join(args, " "), herr)
+		}
+		return hout, nil
+	}
 
 	// #nosec G204 G702: cmd and args are strictly validated by validateCommand
 	execCmd := getExecCommand(ctx, cmd, args...)
@@ -318,6 +346,13 @@ func runPrivilegedInDir(dir string, cmd string, args ...string) error {
 
 	ctx, cancel := getCommandContext(cmd)
 	defer cancel()
+	if _, herr, used := tryHelperExec(dir, nil, false, cmd, args...); used {
+		logCommandExecution(cmd, args, herr == nil, herr)
+		if herr != nil {
+			return fmt.Errorf("command '%s %s' (in %s) failed: %w", cmd, strings.Join(args, " "), dir, herr)
+		}
+		return nil
+	}
 
 	// #nosec G204 G702: cmd and args are strictly validated by validateCommand
 	execCmd := getExecCommand(ctx, cmd, args...)
@@ -343,6 +378,13 @@ func runPrivilegedInDirCombinedOutput(dir string, cmd string, args ...string) ([
 
 	ctx, cancel := getCommandContext(cmd)
 	defer cancel()
+	if hout, herr, used := tryHelperExec(dir, nil, true, cmd, args...); used {
+		logCommandExecution(cmd, args, herr == nil, herr)
+		if herr != nil {
+			return hout, fmt.Errorf("command '%s %s' (in %s) failed: %w", cmd, strings.Join(args, " "), dir, herr)
+		}
+		return hout, nil
+	}
 
 	// #nosec G204 G702: cmd and args are strictly validated by validateCommand
 	execCmd := getExecCommand(ctx, cmd, args...)
@@ -368,6 +410,13 @@ func runPrivilegedWithStdinInDir(dir string, stdinData []byte, cmd string, args 
 
 	ctx, cancel := getCommandContext(cmd)
 	defer cancel()
+	if hout, herr, used := tryHelperExec(dir, stdinData, true, cmd, args...); used {
+		logCommandExecution(cmd, args, herr == nil, herr)
+		if herr != nil {
+			return hout, fmt.Errorf("command '%s %s' (in %s) failed: %w", cmd, strings.Join(args, " "), dir, herr)
+		}
+		return hout, nil
+	}
 
 	// #nosec G204 G702: cmd and args are strictly validated by validateCommand
 	execCmd := getExecCommand(ctx, cmd, args...)

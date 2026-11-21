@@ -209,6 +209,11 @@ if systemctl is-active --quiet softrouter 2>/dev/null; then
 else
     echo "  ℹ️  Service not running"
 fi
+# The privileged helper (if enabled) runs the same binary; stop it too so the file can be replaced.
+if systemctl is-active --quiet softrouter-privhelper 2>/dev/null; then
+    systemctl stop softrouter-privhelper 2>/dev/null || true
+    echo "  ✓ Privileged helper stopped"
+fi
 
 # Kill any running softrouter-backend processes
 if pgrep -f softrouter-backend > /dev/null 2>&1; then
@@ -324,6 +329,7 @@ sysctl -w net.netfilter.nf_conntrack_acct=1 2>/dev/null || true
 echo "⚙️  Configuring systemd service..."
 if [ -f "$SCRIPT_DIR/softrouter.service" ]; then
     cp "$SCRIPT_DIR/softrouter.service" /etc/systemd/system/
+    [ -f "$SCRIPT_DIR/softrouter-privhelper.service" ] && cp "$SCRIPT_DIR/softrouter-privhelper.service" /etc/systemd/system/
     systemctl daemon-reload 2>/dev/null || true
     systemctl enable softrouter 2>/dev/null || true
     echo "  ✓ Installed softrouter.service"
@@ -347,6 +353,9 @@ systemctl start dnsmasq 2>/dev/null || true
 # Restart the backend service
 echo "🚀 Starting SoftRouter backend service..."
 systemctl daemon-reload 2>/dev/null || true
+if systemctl is-enabled --quiet softrouter-privhelper 2>/dev/null; then
+    systemctl restart softrouter-privhelper 2>/dev/null || true
+fi
 systemctl restart softrouter 2>/dev/null || systemctl start softrouter 2>/dev/null || true
 sleep 2
 
@@ -362,6 +371,7 @@ fi
 echo "⚙️  Configuring systemd service..."
 if [ -f "$SCRIPT_DIR/softrouter.service" ]; then
     cp "$SCRIPT_DIR/softrouter.service" /etc/systemd/system/
+    [ -f "$SCRIPT_DIR/softrouter-privhelper.service" ] && cp "$SCRIPT_DIR/softrouter-privhelper.service" /etc/systemd/system/
     systemctl daemon-reload 2>/dev/null || true
     systemctl enable softrouter 2>/dev/null || true
     echo "  ✓ Installed softrouter.service"
@@ -376,6 +386,9 @@ systemctl start dnsmasq 2>/dev/null || true
 # Restart backend service
 echo "🚀 Starting SoftRouter backend service..."
 systemctl daemon-reload 2>/dev/null || true
+if systemctl is-enabled --quiet softrouter-privhelper 2>/dev/null; then
+    systemctl restart softrouter-privhelper 2>/dev/null || true
+fi
 if systemctl list-unit-files 2>/dev/null | grep -q "softrouter.service"; then
     systemctl restart softrouter 2>/dev/null || systemctl start softrouter 2>/dev/null || true
     sleep 2
