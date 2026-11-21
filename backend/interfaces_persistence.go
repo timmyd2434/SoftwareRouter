@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 )
 
@@ -240,12 +241,79 @@ func removePersistedIP(savedIP SavedIP) {
 	}
 }
 
+// removePersistedIPsFor forgets every saved address of an interface (used when it is deleted).
+func removePersistedIPsFor(name string) {
+	interfacesStoreLock.Lock()
+	defer interfacesStoreLock.Unlock()
+
+	kept := make([]SavedIP, 0, len(interfacesStore.IPs))
+	for _, ip := range interfacesStore.IPs {
+		if ip.InterfaceName != name {
+			kept = append(kept, ip)
+		}
+	}
+	if len(kept) == len(interfacesStore.IPs) {
+		return
+	}
+	interfacesStore.IPs = kept
+	if err := saveInterfacesConfigLocked(); err != nil {
+		log.Printf("ERROR: Failed to save IP persistence: %v", err)
+	}
+}
+
+// filterStaleIPs splits saved addresses into those to keep and the names of interfaces
+// whose addresses are stale: VLAN-style names (eth0.10) that do not exist and are not a
+// saved VLAN. Physical NICs, bonds and bridges are never treated as stale.
+func filterStaleIPs(ips []SavedIP, exists, persisted func(string) bool) (kept []SavedIP, stale []string) {
+	names := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		names = append(names, ip.InterfaceName)
+	}
+	staleSet := map[string]bool{}
+	for _, name := range staleVLANLabels(names, exists, persisted) {
+		staleSet[name] = true
+	}
+	for _, ip := range ips {
+		if staleSet[ip.InterfaceName] {
+			continue
+		}
+		kept = append(kept, ip)
+	}
+	for name := range staleSet {
+		stale = append(stale, name)
+	}
+	sort.Strings(stale)
+	return kept, stale
+}
+
+// pruneStaleVLANIPs removes saved addresses of deleted VLANs. Without this, every start
+// tries to add them to an interface that no longer exists, and recreating a VLAN with
+// the same name would silently give it the old address.
+func pruneStaleVLANIPs() {
+	interfacesStoreLock.Lock()
+	defer interfacesStoreLock.Unlock()
+
+	persisted := func(n string) bool { _, ok := interfacesStore.VLANs[n]; return ok }
+	kept, stale := filterStaleIPs(interfacesStore.IPs, interfaceExists, persisted)
+	if len(stale) == 0 {
+		return
+	}
+	interfacesStore.IPs = kept
+	if err := saveInterfacesConfigLocked(); err != nil {
+		log.Printf("ERROR: Failed to save IP persistence: %v", err)
+		return
+	}
+	log.Printf("[PERSIST] Removed saved addresses of deleted VLANs: %v", stale)
+}
+
 // applyInterfacesConfig recreates saved custom interfaces and applies IP addresses
 func applyInterfacesConfig() {
 	if err := loadInterfacesConfig(); err != nil {
 		log.Printf("ERROR: Failed to load interfaces config on boot: %v", err)
 		return
 	}
+
+	pruneStaleVLANIPs() // before the store is copied, so deleted VLANs are not re-addressed
 
 	interfacesStoreLock.RLock()
 	store := interfacesStore

@@ -380,6 +380,7 @@ func deleteVLAN(w http.ResponseWriter, r *http.Request) {
 
 	// Remove from persistence
 	removePersistedVLAN(interfaceName)
+	removePersistedIPsFor(interfaceName)
 
 	// Drop its label and regenerate the firewall so no rules are left behind
 	removeInterfaceMetadata(interfaceName)
