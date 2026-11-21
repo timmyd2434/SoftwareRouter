@@ -964,17 +964,7 @@ func main() {
 			offset = 0
 		}
 
-		logs, err := getAuditLogs(startTime, endTime, actionFilter, userFilter, limit+offset)
-		if err == nil {
-			if offset >= len(logs) {
-				logs = logs[:0]
-			} else {
-				logs = logs[offset:]
-			}
-			if len(logs) > limit {
-				logs = logs[:limit]
-			}
-		}
+		logs, err := getAuditLogsPage(startTime, endTime, actionFilter, userFilter, offset, limit)
 		if err != nil {
 			log.Printf("[ERROR] Failed to retrieve audit logs: %v", err)
 			respondSystemError(w, ErrGenericInternalError, "Failed to retrieve audit logs", err)
