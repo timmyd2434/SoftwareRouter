@@ -351,15 +351,12 @@ func applyInterfacesConfig() {
 		if miimonVal == 0 {
 			miimonVal = 100
 		}
-		miimonPath := filepath.Join("/sys/class/net", name, "bonding", "miimon")
-		_ = os.WriteFile(miimonPath, []byte(fmt.Sprintf("%d", miimonVal)), 0600)
+		_ = setBondOption(name, "miimon", fmt.Sprintf("%d", miimonVal))
 
 		// Set LACP recommended policies
 		if bond.Mode == "802.3ad" || modeNum == "4" {
-			lacpRatePath := filepath.Join("/sys/class/net", name, "bonding", "lacp_rate")
-			_ = os.WriteFile(lacpRatePath, []byte("slow"), 0600)
-			xmitHashPath := filepath.Join("/sys/class/net", name, "bonding", "xmit_hash_policy")
-			_ = os.WriteFile(xmitHashPath, []byte("layer3+4"), 0600)
+			_ = setBondOption(name, "lacp_rate", "slow")
+			_ = setBondOption(name, "xmit_hash_policy", "layer3+4")
 		}
 
 		// Bring bond UP

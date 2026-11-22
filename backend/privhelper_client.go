@@ -253,6 +253,9 @@ func writeManagedFileDirect(path string, content []byte, mode os.FileMode, appen
 	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
 		return err
 	}
+	if !appendMode {
+		return helperAtomicWrite(path, content, mode)
+	}
 	flags := os.O_WRONLY | os.O_CREATE | syscall.O_NOFOLLOW
 	if appendMode {
 		flags |= os.O_APPEND

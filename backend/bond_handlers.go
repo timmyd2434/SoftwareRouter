@@ -370,8 +370,7 @@ func createBond(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set MII monitoring interval
-	miimonPath := filepath.Join("/sys/class/net", req.Name, "bonding", "miimon")
-	if err := os.WriteFile(miimonPath, []byte(fmt.Sprintf("%d", req.MIIMon)), 0600); err != nil {
+	if err := setBondOption(req.Name, "miimon", fmt.Sprintf("%d", req.MIIMon)); err != nil {
 		fmt.Printf("Warning: Failed to set miimon: %v\n", err)
 		// Don't fail, continue with default
 	}
@@ -379,14 +378,12 @@ func createBond(w http.ResponseWriter, r *http.Request) {
 	// For 802.3ad mode, set recommended LACP parameters
 	if req.Mode == "802.3ad" || modeNum == "4" {
 		// Set LACP rate to slow (default, more stable)
-		lacpRatePath := filepath.Join("/sys/class/net", req.Name, "bonding", "lacp_rate")
-		if err := os.WriteFile(lacpRatePath, []byte("slow"), 0600); err != nil {
+		if err := setBondOption(req.Name, "lacp_rate", "slow"); err != nil {
 			fmt.Printf("Warning: Failed to set LACP rate: %v\n", err)
 		}
 
 		// Set xmit hash policy for better load distribution
-		xmitHashPath := filepath.Join("/sys/class/net", req.Name, "bonding", "xmit_hash_policy")
-		if err := os.WriteFile(xmitHashPath, []byte("layer3+4"), 0600); err != nil {
+		if err := setBondOption(req.Name, "xmit_hash_policy", "layer3+4"); err != nil {
 			fmt.Printf("Warning: Failed to set xmit_hash_policy: %v\n", err)
 		}
 	}

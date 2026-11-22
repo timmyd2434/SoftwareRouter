@@ -620,13 +620,10 @@ func helperWriteFile(path string, content []byte, mode os.FileMode, appendMode b
 	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
 		return err
 	}
-	flags := os.O_WRONLY | os.O_CREATE | syscall.O_NOFOLLOW
-	if appendMode {
-		flags |= os.O_APPEND
-	} else {
-		flags |= os.O_TRUNC
+	if !appendMode {
+		return helperAtomicWrite(path, content, mode)
 	}
-	f, err := os.OpenFile(path, flags, mode)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|syscall.O_NOFOLLOW|os.O_APPEND, mode)
 	if err != nil {
 		return err
 	}
@@ -639,6 +636,54 @@ func helperWriteFile(path string, content []byte, mode os.FileMode, appendMode b
 		return err
 	}
 	return f.Close()
+}
+
+// helperAtomicWrite replaces path with content so that readers (wg-quick, dnsmasq, nft, ...)
+// see either the complete old file or the complete new one, never a half-written file. The
+// content goes to a hidden temporary file in the same directory, is synced, and is then renamed
+// over the target. A symlink at the target is refused, as before.
+func helperAtomicWrite(path string, content []byte, mode os.FileMode) error {
+	dir, base := filepath.Dir(path), filepath.Base(path)
+	if fi, err := os.Lstat(path); err == nil {
+		if fi.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("refusing to replace symlink %s", path)
+		}
+		if fi.IsDir() {
+			return fmt.Errorf("%s is a directory", path)
+		}
+	}
+	tmp, err := os.CreateTemp(dir, "."+base+".softrouter-tmp-*") // O_EXCL, mode 0600
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	fail := func(err error) error {
+		tmp.Close()
+		os.Remove(name)
+		return err
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		return fail(err)
+	}
+	if _, err := tmp.Write(content); err != nil {
+		return fail(err)
+	}
+	if err := tmp.Sync(); err != nil {
+		return fail(err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(name)
+		return err
+	}
+	if err := os.Rename(name, path); err != nil {
+		os.Remove(name)
+		return err
+	}
+	if d, err := os.Open(dir); err == nil { // make the rename itself durable
+		d.Sync()
+		d.Close()
+	}
+	return nil
 }
 
 func helperMkdirDir(path string, mode os.FileMode) error {
