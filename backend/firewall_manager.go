@@ -386,6 +386,9 @@ func (fm *FirewallManager) generateFullRulesetGuest(wanInterfaces, lanInterfaces
 
 	// Accept all from LAN interfaces
 	for _, lan := range lanInterfaces {
+		if lan == "wg0" && cfg.WireGuardEnabled() {
+			continue // already accepted above as "WireGuard peers (trusted)"
+		}
 		b.WriteString(fmt.Sprintf("    iifname \"%s\" accept comment \"LAN trust\"\n", lan))
 	}
 
