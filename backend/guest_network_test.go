@@ -249,20 +249,22 @@ func TestGuestAccessHandlersRejectBadInput(t *testing.T) {
 }
 
 func TestStaleVLANLabels(t *testing.T) {
-	exists := map[string]bool{"eno1.20": true, "eno1.30": true, "enp3s0f1": true}
-	persisted := map[string]bool{"eno1.40": true} // defined but not up yet
+	exists := map[string]bool{"eno1.20": true, "eno1.30": true, "enp3s0f1": true, "br0": true}
+	persisted := map[string]bool{"eno1.40": true, "br2": true} // defined but not up yet
 	names := []string{
 		"eno1.20", "eno1.30", // present: keep
 		"eno1.3", "eno1.4", "enp3s0f0.30", // deleted VLANs: stale
-		"eno1.40",  // persisted VLAN that is not up: keep
+		"br1", "bond1", // deleted bridge and bond: stale
+		"eno1.40", "br2", // saved but not up yet: keep
 		"enp3s0f1", // physical NIC: keep
-		"enp9s0f9", // missing physical NIC: never pruned (not VLAN-style)
-		"br0",      // bridge: never pruned
+		"enp9s0f9", // missing physical NIC: never pruned (not virtual)
+		"br0",      // bridge that exists: keep
+		"wg0",      // tunnel: never pruned
 	}
 	got := staleVLANLabels(names,
 		func(n string) bool { return exists[n] },
 		func(n string) bool { return persisted[n] })
-	want := []string{"eno1.3", "eno1.4", "enp3s0f0.30"}
+	want := []string{"bond1", "br1", "eno1.3", "eno1.4", "enp3s0f0.30"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("stale labels = %v, want %v", got, want)
 	}

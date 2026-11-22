@@ -262,8 +262,8 @@ func removePersistedIPsFor(name string) {
 }
 
 // filterStaleIPs splits saved addresses into those to keep and the names of interfaces
-// whose addresses are stale: VLAN-style names (eth0.10) that do not exist and are not a
-// saved VLAN. Physical NICs, bonds and bridges are never treated as stale.
+// whose addresses are stale: VLANs, bridges and bonds that do not exist and are not in the
+// saved config. Physical NICs are never treated as stale.
 func filterStaleIPs(ips []SavedIP, exists, persisted func(string) bool) (kept []SavedIP, stale []string) {
 	names := make([]string, 0, len(ips))
 	for _, ip := range ips {
@@ -286,14 +286,14 @@ func filterStaleIPs(ips []SavedIP, exists, persisted func(string) bool) (kept []
 	return kept, stale
 }
 
-// pruneStaleVLANIPs removes saved addresses of deleted VLANs. Without this, every start
+// pruneStaleVLANIPs removes saved addresses of deleted VLANs, bridges and bonds. Without this, every start
 // tries to add them to an interface that no longer exists, and recreating a VLAN with
 // the same name would silently give it the old address.
 func pruneStaleVLANIPs() {
 	interfacesStoreLock.Lock()
 	defer interfacesStoreLock.Unlock()
 
-	persisted := func(n string) bool { _, ok := interfacesStore.VLANs[n]; return ok }
+	persisted := persistedVirtualLocked // the store lock is already held
 	kept, stale := filterStaleIPs(interfacesStore.IPs, interfaceExists, persisted)
 	if len(stale) == 0 {
 		return

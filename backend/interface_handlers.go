@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -73,11 +74,33 @@ func interfaceExists(name string) bool {
 	return err == nil
 }
 
-// isPersistedVLAN reports whether a VLAN is still defined in interfaces_config.json.
-func isPersistedVLAN(name string) bool {
+// virtualBridgeOrBond matches the names SoftRouter gives bridges (br0) and bonds (bond0).
+var virtualBridgeOrBond = regexp.MustCompile(`^(br|bond)[0-9]+$`)
+
+// isVirtualInterfaceName reports whether a name is something SoftRouter creates and can
+// delete (a VLAN such as eth0.10, a bridge such as br0, a bond such as bond0), as opposed to
+// a physical NIC, which always exists.
+func isVirtualInterfaceName(name string) bool {
+	return strings.Contains(name, ".") || virtualBridgeOrBond.MatchString(name)
+}
+
+// isPersistedVirtualInterface reports whether a VLAN, bridge or bond is still defined in
+// interfaces_config.json (it may simply not be up yet).
+func isPersistedVirtualInterface(name string) bool {
 	interfacesStoreLock.RLock()
 	defer interfacesStoreLock.RUnlock()
-	_, ok := interfacesStore.VLANs[name]
+	return persistedVirtualLocked(name)
+}
+
+// persistedVirtualLocked is isPersistedVirtualInterface for callers already holding the lock.
+func persistedVirtualLocked(name string) bool {
+	if _, ok := interfacesStore.VLANs[name]; ok {
+		return true
+	}
+	if _, ok := interfacesStore.Bridges[name]; ok {
+		return true
+	}
+	_, ok := interfacesStore.Bonds[name]
 	return ok
 }
 
@@ -96,14 +119,14 @@ func removeInterfaceMetadata(name string) {
 	}
 }
 
-// staleVLANLabels picks out labels that belong to VLANs that are gone: the name
-// is VLAN-style (eth0.10), the interface does not exist, and no persisted VLAN
-// config refers to it. Physical NICs, bonds, bridges and tunnels are never
-// returned, so a label on a link that is merely down is left alone.
+// staleVLANLabels picks out names that belong to virtual interfaces that are gone: the
+// name is a VLAN (eth0.10), bridge (br1) or bond (bond0), the interface does not exist,
+// and no saved config refers to it. Physical NICs and tunnels are never returned, so a
+// label on a link that is merely down is left alone.
 func staleVLANLabels(names []string, exists, persisted func(string) bool) []string {
 	stale := []string{}
 	for _, name := range names {
-		if strings.Contains(name, ".") && !exists(name) && !persisted(name) {
+		if isVirtualInterfaceName(name) && !exists(name) && !persisted(name) {
 			stale = append(stale, name)
 		}
 	}
@@ -123,7 +146,7 @@ func pruneStaleVLANMetadata() {
 	for name := range store.Metadata {
 		names = append(names, name)
 	}
-	stale := staleVLANLabels(names, interfaceExists, isPersistedVLAN)
+	stale := staleVLANLabels(names, interfaceExists, isPersistedVirtualInterface)
 	if len(stale) == 0 {
 		return
 	}
@@ -134,7 +157,7 @@ func pruneStaleVLANMetadata() {
 		log.Printf("WARNING: could not prune stale interface labels: %v", err)
 		return
 	}
-	log.Printf("Removed stale interface labels for deleted VLANs: %v", stale)
+	log.Printf("Removed stale interface labels for deleted VLANs, bridges or bonds: %v", stale)
 }
 
 // --- HTTP Handlers ---

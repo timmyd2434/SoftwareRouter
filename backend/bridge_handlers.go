@@ -306,6 +306,8 @@ func deleteBridge(w http.ResponseWriter, r *http.Request) {
 
 	// Remove bridge from persistence
 	removePersistedBridge(bridgeName)
+	removePersistedIPsFor(bridgeName)
+	removeInterfaceMetadata(bridgeName)
 
 	fmt.Printf("Bridge %s deleted successfully\n", bridgeName)
 

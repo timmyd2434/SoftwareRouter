@@ -96,7 +96,8 @@ func (fm *FirewallManager) ApplyFirewallRules(skipWatchdog bool) error {
 				guestInterfaces = append(guestInterfaces, iface)
 			}
 		} else if strings.EqualFold(meta.Label, "LAN") || strings.EqualFold(meta.Label, "Bridge") {
-			if !inList(lanInterfaces, iface) {
+			// A label left over from a deleted bridge or VLAN must not produce rules.
+			if interfaceExists(iface) && !inList(lanInterfaces, iface) {
 				lanInterfaces = append(lanInterfaces, iface)
 			}
 		}

@@ -54,3 +54,32 @@ func TestRemovePersistedIPsForOnlyTouchesThatInterface(t *testing.T) {
 		t.Errorf("unknown interface must not change the list, have %d entries", n)
 	}
 }
+
+func TestFilterStaleIPsCoversBridgesAndBonds(t *testing.T) {
+	ips := []SavedIP{
+		{InterfaceName: "br0", IPAddress: "192.168.3.1/24"},
+		{InterfaceName: "br1", IPAddress: "192.168.7.1/24"},   // deleted bridge
+		{InterfaceName: "bond1", IPAddress: "192.168.8.1/24"}, // deleted bond
+		{InterfaceName: "br2", IPAddress: "192.168.9.1/24"},   // saved, not up yet
+		{InterfaceName: "enp9s0f9", IPAddress: "10.0.0.1/24"}, // physical NIC
+	}
+	kept, stale := filterStaleIPs(ips,
+		func(n string) bool { return n == "br0" },
+		func(n string) bool { return n == "br2" })
+	if strings.Join(stale, ",") != "bond1,br1" || len(kept) != 3 {
+		t.Errorf("stale=%v kept=%d", stale, len(kept))
+	}
+}
+
+func TestVirtualInterfaceNames(t *testing.T) {
+	for _, yes := range []string{"eno1.20", "enp3s0f0.30", "br0", "br12", "bond0"} {
+		if !isVirtualInterfaceName(yes) {
+			t.Errorf("%q should count as virtual", yes)
+		}
+	}
+	for _, no := range []string{"eno1", "enp3s0f1", "wg0", "lo", "br-lan", "bridge", "bond", "docker0"} {
+		if isVirtualInterfaceName(no) {
+			t.Errorf("%q must not count as virtual", no)
+		}
+	}
+}

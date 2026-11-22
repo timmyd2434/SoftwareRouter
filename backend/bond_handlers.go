@@ -479,6 +479,8 @@ func deleteBond(w http.ResponseWriter, r *http.Request) {
 
 	// Remove bond from persistence
 	removePersistedBond(bondName)
+	removePersistedIPsFor(bondName)
+	removeInterfaceMetadata(bondName)
 
 	fmt.Printf("Bond %s deleted successfully\n", bondName)
 
