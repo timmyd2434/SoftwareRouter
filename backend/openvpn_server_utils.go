@@ -182,7 +182,7 @@ verb 3
 explicit-exit-notify 1
 `, ovpnPort, ovpnSubnet)
 
-	if err := os.WriteFile(filepath.Join(ovpnServerDir, "server.conf"), []byte(serverConf), 0600); err != nil {
+	if err := writeRootConfig(filepath.Join(ovpnServerDir, "server.conf"), []byte(serverConf), 0600); err != nil {
 		respondSystemError(w, ErrVPNCreateFailed, "Failed to write config", err)
 		return
 	}

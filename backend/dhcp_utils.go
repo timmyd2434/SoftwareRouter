@@ -316,7 +316,7 @@ func regenerateDnsmasqDHCPConfig(store *DHCPConfigStore) error {
 	}
 
 	// Write the configuration file
-	err := os.WriteFile(dnsmasqDHCPPath, []byte(config.String()), 0600)
+	err := writeRootConfig(dnsmasqDHCPPath, []byte(config.String()), 0600)
 	if err != nil {
 		return err
 	}

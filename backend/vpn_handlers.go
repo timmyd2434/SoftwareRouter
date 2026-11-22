@@ -119,7 +119,7 @@ func addVPNClient(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 4. Persist the peer (atomic), then load it into the running interface
-	if err := writeFileAtomic(wgConfPath, []byte(appendWGPeer(string(confBytes), req.Name, cleanPub, clientAddr)), 0600); err != nil {
+	if err := writeRootConfigAtomic(wgConfPath, []byte(appendWGPeer(string(confBytes), req.Name, cleanPub, clientAddr)), 0600); err != nil {
 		respondSystemError(w, ErrVPNCreateFailed, "Failed to update wg0.conf", err)
 		return
 	}
@@ -134,7 +134,7 @@ func addVPNClient(w http.ResponseWriter, r *http.Request) {
 	os.MkdirAll(wgClientsDir, 0750)
 	if err := os.WriteFile(clientConfPath, []byte(clientConf), 0600); err != nil {
 		// roll back so no orphan peer is left behind
-		_ = writeFileAtomic(wgConfPath, confBytes, 0600)
+		_ = writeRootConfigAtomic(wgConfPath, confBytes, 0600)
 		_ = runPrivileged("wg", "set", wgIface, "peer", cleanPub, "remove")
 		respondSystemError(w, ErrVPNCreateFailed, "Failed to save client config", err)
 		return
@@ -162,7 +162,7 @@ func deleteVPNClient(w http.ResponseWriter, r *http.Request) {
 	if content, err := os.ReadFile(wgConfPath); err == nil {
 		newContent, keys := removeWGPeersByName(string(content), name)
 		if len(keys) > 0 {
-			if err := writeFileAtomic(wgConfPath, []byte(newContent), 0600); err != nil {
+			if err := writeRootConfigAtomic(wgConfPath, []byte(newContent), 0600); err != nil {
 				respondSystemError(w, ErrVPNCreateFailed, "Failed to update wg0.conf", err)
 				return
 			}

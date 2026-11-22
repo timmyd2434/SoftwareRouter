@@ -119,7 +119,7 @@ func generateRADVDConfig() error {
 	if out, terr := runPrivilegedCombinedOutput("radvd", "--configtest", "--config="+candidate.Name()); terr != nil {
 		return fmt.Errorf("generated radvd config failed validation (previous config kept): %s", strings.TrimSpace(string(out)))
 	}
-	if err := os.WriteFile(radvdConfigPath, []byte(configContent), 0600); err != nil {
+	if err := writeRootConfig(radvdConfigPath, []byte(configContent), 0600); err != nil {
 		return fmt.Errorf("failed to write radvd config: %w", err)
 	}
 

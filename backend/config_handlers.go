@@ -261,7 +261,7 @@ func applyAdBlockerConfig(cfg Config) error {
 	if cfg.AdBlocker == "adguard" {
 		// Write port=0 so dnsmasq operates in DHCP-only mode without binding port 53
 		compatContent := "# Configured by SoftRouter: DHCP-only mode (AdGuard Home handles port 53 DNS)\nport=0\n"
-		os.WriteFile(adguardCompatFile, []byte(compatContent), 0644)
+		writeRootConfig(adguardCompatFile, []byte(compatContent), 0644)
 
 		// Stop unbound (conflicts with AdGuard on port 53)
 		runPrivileged("systemctl", "stop", "unbound")
@@ -278,7 +278,7 @@ func applyAdBlockerConfig(cfg Config) error {
 
 	if cfg.AdBlocker == "pihole" {
 		compatContent := "# Configured by SoftRouter: DHCP-only mode (Pi-hole handles port 53 DNS)\nport=0\n"
-		os.WriteFile(adguardCompatFile, []byte(compatContent), 0644)
+		writeRootConfig(adguardCompatFile, []byte(compatContent), 0644)
 
 		runPrivileged("systemctl", "stop", "unbound")
 

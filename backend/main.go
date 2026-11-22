@@ -224,7 +224,7 @@ func initWireGuard() {
 		} else if fixed, changed := scopeWireGuardMasquerade(string(confData)); changed {
 			// Older versions wrote a masquerade rule with no interface match, which
 			// rewrote the source address of ALL forwarded traffic (LAN, VLANs, ...).
-			if err := writeFileAtomic(confPath, []byte(fixed), 0600); err != nil {
+			if err := writeRootConfigAtomic(confPath, []byte(fixed), 0600); err != nil {
 				log.Printf("[ERROR] Failed to scope WireGuard masquerade rule: %v", err)
 			} else {
 				log.Println("[INFO] Scoped the WireGuard masquerade rule in wg0.conf to wg0 traffic; restart wg-quick@wg0 to apply it")
@@ -242,7 +242,7 @@ func initWireGuard() {
 		}
 		baseConf := wireGuardBaseConf(strings.TrimSpace(string(privData)))
 		// #nosec G304 G703: path is validated or constructed from safe internal sources
-		if err := os.WriteFile(confPath, []byte(baseConf), 0600); err != nil {
+		if err := writeRootConfig(confPath, []byte(baseConf), 0600); err != nil {
 			log.Printf("[ERROR] Failed to write WireGuard config: %v", err)
 			return
 		}

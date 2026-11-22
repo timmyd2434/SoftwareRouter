@@ -142,11 +142,8 @@ func toggleIPSMode(enable bool) error {
 		if err := os.MkdirAll(overrideDir, 0755); err != nil {
 			return fmt.Errorf("failed to create systemd override directory: %v", err)
 		}
-		overrideContent := `[Service]
-ExecStart=
-ExecStart=/usr/bin/suricata -D -q 0 -c /etc/suricata/suricata.yaml --pidfile /run/suricata.pid
-`
-		if err := os.WriteFile(overrideFile, []byte(overrideContent), 0644); err != nil {
+		overrideContent := suricataIPSOverride // single source of truth shared with the helper policy
+		if err := writeRootConfig(overrideFile, []byte(overrideContent), 0644); err != nil {
 			return fmt.Errorf("failed to write systemd override file: %v", err)
 		}
 	} else {
@@ -192,7 +189,7 @@ func updateAppControlRules(categories []string) error {
 	os.MkdirAll("/etc/suricata", 0755)
 
 	content := strings.Join(rules, "\n")
-	if err := os.WriteFile(modifyConfPath, []byte(content), 0644); err != nil {
+	if err := writeRootConfig(modifyConfPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to write modify.conf: %v", err)
 	}
 

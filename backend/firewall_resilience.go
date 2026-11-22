@@ -143,7 +143,7 @@ func syncToNftablesConf(ruleset string) error {
 	}
 
 	// Write the new ruleset
-	if err := os.WriteFile(nftablesConfPath, []byte(ruleset), 0600); err != nil {
+	if err := writeRootConfig(nftablesConfPath, []byte(ruleset), 0600); err != nil {
 		return fmt.Errorf("failed to write /etc/nftables.conf: %w", err)
 	}
 

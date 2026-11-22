@@ -201,7 +201,7 @@ func uploadVPNClientConfig(w http.ResponseWriter, r *http.Request) {
 	// 2. Ensure directories exist and save the auth file
 	os.MkdirAll(vpnClientConfigDir, 0750)
 	authContent := fmt.Sprintf("%s\n%s", username, password)
-	if err := os.WriteFile(vpnAuthFile, []byte(authContent), 0600); err != nil {
+	if err := writeRootConfig(vpnAuthFile, []byte(authContent), 0600); err != nil {
 		respondSystemError(w, ErrGenericInternalError, "Failed to save credentials", err)
 		return
 	}
@@ -215,7 +215,7 @@ func uploadVPNClientConfig(w http.ResponseWriter, r *http.Request) {
 	configLines = append(configLines, "route-noexec") // Manual routing handling
 
 	finalConfig := strings.Join(configLines, "\n") + "\n"
-	if err := os.WriteFile(vpnConfigFile, []byte(finalConfig), 0600); err != nil {
+	if err := writeRootConfig(vpnConfigFile, []byte(finalConfig), 0600); err != nil {
 		respondSystemError(w, ErrGenericInternalError, "Failed to write config", err)
 		return
 	}

@@ -141,17 +141,8 @@ func applyUPnPConfig(cfg UPnPConfig) error {
 	}
 
 	// Write config to temp file then privileged-copy to final location
-	tmpFile, err := os.CreateTemp("", "miniupnpd-*.conf")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmpFile.Name()
-	tmpFile.Close()
-	defer os.Remove(tmpPath)
-
-	err = os.WriteFile(tmpPath, []byte(confStr), 0600)
-	if err == nil {
-		runPrivileged("cp", tmpPath, miniupnpdConf)
+	if err := writeRootConfig(miniupnpdConf, []byte(confStr), 0600); err != nil {
+		log.Printf("[UPNP] Error writing %s: %v", miniupnpdConf, err)
 	}
 
 	runPrivileged("systemctl", "enable", "miniupnpd")
