@@ -1,0 +1,159 @@
+#!/bin/bash
+# softrouter-nonroot - run the SoftRouter web service as the unprivileged "softrouter" user.
+#
+#   sudo scripts/softrouter-nonroot status
+#   sudo scripts/softrouter-nonroot apply  [--dry-run] [--force]
+#   sudo scripts/softrouter-nonroot rollback [--dry-run]
+#
+# apply checks the privileged helper first, hands the service's own state directories to the
+# softrouter user, installs a systemd drop-in, restarts the service and verifies it. If the
+# verification fails it rolls back by itself. rollback removes the drop-in and restarts the
+# service as root again; file ownership is left as it is (root can still read everything).
+set -euo pipefail
+
+SERVICE=softrouter
+HELPER=softrouter-privhelper
+# The SR_* variables exist so the script can be tested without touching the real system.
+SOCKET="${SR_SOCKET:-/run/softrouter-priv/priv.sock}"
+DROPIN_DIR="${SR_SYSTEMD_DIR:-/etc/systemd/system}/${SERVICE}.service.d"
+DROPIN="${DROPIN_DIR}/10-nonroot.conf"
+APP_DIRS=(/etc/softrouter /var/log/softrouter /var/backups/softrouter /var/www/softrouter/vpn_configs)
+[ -n "${SR_APP_DIRS:-}" ] && read -r -a APP_DIRS <<< "$SR_APP_DIRS"
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO="${SR_REPO:-$(cat /etc/softrouter/repo_path 2>/dev/null || echo "$HERE")}"
+SRC="${REPO}/systemd/softrouter-nonroot.conf"
+
+DRY=0
+FORCE=0
+CMD="${1:-}"
+shift || true
+for arg in "$@"; do
+    case "$arg" in
+        --dry-run) DRY=1 ;;
+        --force) FORCE=1 ;;
+        *) echo "unknown option: $arg" >&2; exit 2 ;;
+    esac
+done
+
+say()  { echo "  $*"; }
+fail() { echo "  ✗ $*" >&2; }
+run()  { if [ "$DRY" = 1 ]; then echo "  [dry-run] $*"; else "$@"; fi; }
+
+need_root() { [ "$(id -u)" = 0 ] || { fail "run as root (sudo)"; exit 1; }; }
+
+service_user() { systemctl show -p User --value "$SERVICE" 2>/dev/null; }
+process_user() {
+    local pid
+    pid="$(systemctl show -p MainPID --value "$SERVICE" 2>/dev/null)"
+    [ -n "$pid" ] && [ "$pid" != 0 ] && ps -o user= -p "$pid" 2>/dev/null | tr -d ' ' || true
+}
+
+status() {
+    echo "SoftRouter service status"
+    if [ -f "$DROPIN" ]; then say "drop-in:        installed ($DROPIN)"; else say "drop-in:        not installed"; fi
+    say "configured user: $(service_user | sed 's/^$/root (default)/')"
+    say "running as:      $(process_user | sed 's/^$/not running/')"
+    say "helper:          $(systemctl is-active "$HELPER" 2>/dev/null || true)"
+    [ -S "$SOCKET" ] && say "helper socket:   present" || say "helper socket:   MISSING"
+}
+
+preflight() {
+    echo "Checking prerequisites"
+    local ok=1
+    [ -f "$SRC" ] || { fail "missing $SRC (update the repository first)"; ok=0; }
+    if ! systemctl is-active --quiet "$HELPER"; then
+        fail "$HELPER is not running (sudo systemctl enable --now $HELPER)"; ok=0
+    fi
+    [ -S "$SOCKET" ] || { fail "helper socket $SOCKET is missing"; ok=0; }
+    local shadow
+    shadow="$(journalctl -u "$SERVICE" --since '3 days ago' --no-pager 2>/dev/null | grep -c 'PRIVHELPER-SHADOW' || true)"
+    if [ "${shadow:-0}" -gt 0 ]; then
+        if [ "$FORCE" = 1 ]; then
+            say "warning: $shadow PRIVHELPER-SHADOW warning(s) in the last 3 days (continuing: --force)"
+        else
+            fail "$shadow PRIVHELPER-SHADOW warning(s) in the last 3 days: the helper would refuse something the backend writes."
+            fail "inspect: journalctl -u $SERVICE --since '3 days ago' | grep PRIVHELPER-SHADOW   (or use --force)"
+            ok=0
+        fi
+    else
+        say "no PRIVHELPER-SHADOW warnings in the last 3 days"
+    fi
+    [ "$ok" = 1 ] || exit 1
+}
+
+ensure_account() {
+    getent group softrouter >/dev/null || run groupadd -r softrouter
+    id -u softrouter >/dev/null 2>&1 || run useradd -r -g softrouter -d /etc/softrouter -s /usr/sbin/nologin softrouter
+}
+
+verify() {
+    echo "Verifying"
+    local i pid1 pid2
+    for i in $(seq 1 20); do
+        systemctl is-active --quiet "$SERVICE" && break
+        sleep 1
+    done
+    systemctl is-active --quiet "$SERVICE" || { fail "service is not active"; return 1; }
+    [ "$(process_user)" = softrouter ] || { fail "service is running as '$(process_user)', expected softrouter"; return 1; }
+    pid1="$(systemctl show -p MainPID --value "$SERVICE")"
+    sleep 8
+    pid2="$(systemctl show -p MainPID --value "$SERVICE")"
+    [ "$pid1" = "$pid2" ] && systemctl is-active --quiet "$SERVICE" || { fail "service restarted by itself (crash loop)"; return 1; }
+    if journalctl -u "$SERVICE" --since '-30s' --no-pager 2>/dev/null | grep -q 'privileged helper .* is not running'; then
+        fail "the backend cannot reach the helper"; return 1
+    fi
+    if ! journalctl -u "$HELPER" --since '-30s' --no-pager 2>/dev/null | grep -q 'PRIVHELPER'; then
+        fail "no privileged commands reached the helper in 30 s"; return 1
+    fi
+    say "running as softrouter, stable, and talking to the helper"
+}
+
+apply() {
+    need_root
+    [ -f "$DROPIN" ] && { say "already applied"; status; exit 0; }
+    preflight
+    echo "Applying"
+    ensure_account
+    for d in "${APP_DIRS[@]}"; do
+        run mkdir -p "$d"
+        run chown -R softrouter:softrouter "$d"
+    done
+    run mkdir -p "$DROPIN_DIR"
+    run install -m 0644 "$SRC" "$DROPIN"
+    run systemctl daemon-reload
+    run systemctl restart "$HELPER"
+    run systemctl restart "$SERVICE"
+    if [ "$DRY" = 1 ]; then echo "(dry run: nothing changed)"; exit 0; fi
+    if verify; then
+        echo "Done. Roll back any time with: sudo $0 rollback"
+    else
+        fail "verification failed, rolling back"
+        journalctl -u "$SERVICE" -n 25 --no-pager || true
+        rollback
+        exit 1
+    fi
+}
+
+rollback() {
+    need_root
+    echo "Rolling back"
+    if [ -f "$DROPIN" ]; then
+        run rm -f "$DROPIN"
+        run rmdir --ignore-fail-on-non-empty "$DROPIN_DIR"
+    else
+        say "drop-in not installed"
+    fi
+    run systemctl daemon-reload
+    run systemctl restart "$SERVICE"
+    [ "$DRY" = 1 ] && exit 0
+    sleep 3
+    systemctl is-active --quiet "$SERVICE" && say "service is back, running as $(process_user)" || fail "service is not active; check: journalctl -u $SERVICE -n 50"
+}
+
+case "$CMD" in
+    status)   status ;;
+    apply)    apply ;;
+    rollback) rollback ;;
+    *) echo "usage: $0 {status|apply|rollback} [--dry-run] [--force]" >&2; exit 2 ;;
+esac

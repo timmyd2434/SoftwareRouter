@@ -226,10 +226,29 @@ func handlePrivRequest(req PrivRequest) PrivResponse {
 	case "read":
 		data, readErr := helperReadFile(req.Path)
 		if readErr != nil {
+			if os.IsNotExist(readErr) {
+				return PrivResponse{ExitCode: 2, Stderr: "no such file"} // routine: not logged
+			}
 			log.Printf("[PRIVHELPER] read %s -> %v", req.Path, readErr)
 			return PrivResponse{ExitCode: 1, Stderr: readErr.Error()}
 		}
 		return PrivResponse{ExitCode: 0, Data: data}
+	case "exists":
+		// Lets the unprivileged backend ask whether a managed config file exists, because the
+		// directories holding them (such as /etc/wireguard) are not traversable by its user.
+		if pathErr := validateManagedPath(req.Path, false); pathErr != nil && validateManagedReadPath(req.Path) != nil {
+			log.Printf("[PRIVHELPER] exists %s -> %v", req.Path, pathErr)
+			return PrivResponse{ExitCode: 1, Stderr: pathErr.Error()}
+		}
+		_, statErr := os.Lstat(req.Path)
+		switch {
+		case statErr == nil:
+			return PrivResponse{ExitCode: 0, Stdout: "yes"}
+		case os.IsNotExist(statErr):
+			return PrivResponse{ExitCode: 0, Stdout: "no"}
+		default:
+			return PrivResponse{ExitCode: 1, Stderr: statErr.Error()}
+		}
 	default:
 		err = fmt.Errorf("unknown privileged operation: %s", req.Op)
 	}
@@ -368,6 +387,9 @@ func validateManagedReadPath(path string) error {
 		"/etc/openvpn/server/ta.key":          true,
 		"/etc/openvpn/server/crl.pem":         true,
 		"/etc/openvpn/easy-rsa/pki/index.txt": true,
+		// The backend lists and edits WireGuard peers. It already holds the server key, so this
+		// does not expose anything it could not derive; the file is written only through the helper.
+		"/etc/wireguard/wg0.conf": true,
 	}
 	if allowedFiles[path] {
 		return nil

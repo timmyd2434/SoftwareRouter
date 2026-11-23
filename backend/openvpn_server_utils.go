@@ -87,7 +87,7 @@ func getOpenVPNServerStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if configured
-	if _, err := os.Stat(filepath.Join(ovpnServerDir, "server.conf")); err == nil {
+	if ok, _ := managedPathExists(filepath.Join(ovpnServerDir, "server.conf")); ok {
 		status.Installed = true
 	}
 
@@ -224,7 +224,7 @@ func listOpenVPNClients(w http.ResponseWriter, r *http.Request) {
 func listOpenVPNClientsInternal() ([]OpenVPNClientCert, error) {
 	indexFile := filepath.Join(ovpnEasyRsaDir, "pki", "index.txt")
 	// #nosec G304 G703: path is validated or constructed from safe internal sources
-	data, err := os.ReadFile(indexFile)
+	data, err := readManagedFile(indexFile)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []OpenVPNClientCert{}, nil
@@ -286,10 +286,10 @@ func createOpenVPNClient(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build .ovpn content
-	ca, _ := os.ReadFile(filepath.Join(ovpnServerDir, "ca.crt"))
-	ta, _ := os.ReadFile(filepath.Join(ovpnServerDir, "ta.key"))
-	cert, _ := os.ReadFile(filepath.Join(ovpnEasyRsaDir, "pki", "issued", req.Name+".crt"))
-	key, _ := os.ReadFile(filepath.Join(ovpnEasyRsaDir, "pki", "private", req.Name+".key"))
+	ca, _ := readManagedFile(filepath.Join(ovpnServerDir, "ca.crt"))
+	ta, _ := readManagedFile(filepath.Join(ovpnServerDir, "ta.key"))
+	cert, _ := readManagedFile(filepath.Join(ovpnEasyRsaDir, "pki", "issued", req.Name+".crt"))
+	key, _ := readManagedFile(filepath.Join(ovpnEasyRsaDir, "pki", "private", req.Name+".key"))
 
 	// Get VPN endpoint from configuration
 	publicIP, err := getVPNEndpoint()

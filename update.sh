@@ -75,6 +75,20 @@ fi
 echo "ℹ️  Update running as root, repo owned by: $REAL_USER"
 
 # Safety Trap: Guarantee that softrouter-backend is restarted under all circumstances
+# After "scripts/softrouter-nonroot apply" the web service runs as the "softrouter" user through a
+# systemd drop-in. update.sh runs as root, so it must (a) hand back anything it created in the
+# service's own directories and (b) never start a root copy of the backend by hand.
+nonroot_applied() {
+    [ -f /etc/systemd/system/softrouter.service.d/10-nonroot.conf ]
+}
+
+fix_state_ownership() {
+    nonroot_applied || return 0
+    for d in /etc/softrouter /var/log/softrouter /var/backups/softrouter /var/www/softrouter/vpn_configs; do
+        if [ -d "$d" ]; then chown -R softrouter:softrouter "$d" 2>/dev/null || true; fi
+    done
+}
+
 ensure_service_running() {
     local exit_code=$?
     if [ $exit_code -ne 0 ]; then
@@ -95,7 +109,10 @@ ensure_service_running() {
         sleep 2
     fi
 
-    if ! pgrep -f softrouter-backend > /dev/null 2>&1; then
+    if nonroot_applied && ! systemctl is-active --quiet softrouter 2>/dev/null; then
+        echo "  ⚠️  softrouter is not active; not starting a root copy by hand (non-root mode)."
+        echo "      Check: journalctl -u softrouter -n 50   or roll back: scripts/softrouter-nonroot rollback"
+    elif ! pgrep -f softrouter-backend > /dev/null 2>&1; then
         if [ -x /usr/local/bin/softrouter-backend ]; then
             nohup /usr/local/bin/softrouter-backend > /var/log/softrouter-backend.log 2>&1 &
         elif [ -x "$SCRIPT_DIR/backend/softrouter-backend" ]; then
@@ -356,6 +373,7 @@ systemctl daemon-reload 2>/dev/null || true
 if systemctl is-enabled --quiet softrouter-privhelper 2>/dev/null; then
     systemctl restart softrouter-privhelper 2>/dev/null || true
 fi
+fix_state_ownership
 systemctl restart softrouter 2>/dev/null || systemctl start softrouter 2>/dev/null || true
 sleep 2
 
@@ -389,14 +407,20 @@ systemctl daemon-reload 2>/dev/null || true
 if systemctl is-enabled --quiet softrouter-privhelper 2>/dev/null; then
     systemctl restart softrouter-privhelper 2>/dev/null || true
 fi
+fix_state_ownership
 if systemctl list-unit-files 2>/dev/null | grep -q "softrouter.service"; then
     systemctl restart softrouter 2>/dev/null || systemctl start softrouter 2>/dev/null || true
     sleep 2
     if systemctl is-active --quiet softrouter 2>/dev/null || pgrep -f softrouter-backend > /dev/null 2>&1; then
         echo "  ✓ Service started successfully"
     else
-        echo "  ⚠️ systemd restart failed, starting binary directly..."
-        nohup /usr/local/bin/softrouter-backend > /var/log/softrouter-backend.log 2>&1 &
+        if nonroot_applied; then
+            echo "  ⚠️ systemd restart failed; not starting a root copy by hand (non-root mode)."
+            echo "     Check: journalctl -u softrouter -n 50   or roll back: scripts/softrouter-nonroot rollback"
+        else
+            echo "  ⚠️ systemd restart failed, starting binary directly..."
+            nohup /usr/local/bin/softrouter-backend > /var/log/softrouter-backend.log 2>&1 &
+        fi
     fi
 else
     echo "  ℹ️  systemd service not found - starting binary directly"

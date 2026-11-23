@@ -99,8 +99,13 @@ type Config struct {
 // exists). Keyed on the file, not the live interface, so the firewall rules are
 // present even when wg0 is down or starts after the firewall is applied.
 func (c Config) WireGuardEnabled() bool {
-	_, err := os.Stat(wgConfPath)
-	return err == nil
+	exists, err := managedPathExists(wgConfPath)
+	if err != nil {
+		// Unknown (for example the helper is down): do not open WireGuard ports on a guess.
+		log.Printf("[WARN] cannot check whether %s exists: %v", wgConfPath, err)
+		return false
+	}
+	return exists
 }
 
 type WebAccessConfig struct {
@@ -215,9 +220,11 @@ func initWireGuard() {
 	}
 
 	needConfig := false
-	if _, err := os.Stat(confPath); os.IsNotExist(err) {
+	if exists, existsErr := managedPathExists(confPath); existsErr != nil {
+		log.Printf("[ERROR] cannot check %s: %v", confPath, existsErr)
+	} else if !exists {
 		needConfig = true
-	} else if confData, err := os.ReadFile(confPath); err == nil {
+	} else if confData, err := readManagedFile(confPath); err == nil {
 		if strings.Contains(string(confData), "postrouting { type nat") {
 			log.Println("[INFO] WireGuard wg0.conf contains unquoted PostUp syntax. Updating...")
 			needConfig = true

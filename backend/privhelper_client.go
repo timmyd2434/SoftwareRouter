@@ -12,6 +12,10 @@ import (
 	"time"
 )
 
+// isRoot reports whether the backend runs as root. It is a variable so tests can simulate the
+// unprivileged service account.
+var isRoot = func() bool { return os.Getuid() == 0 }
+
 // errHelperUnreachable means the helper could not be contacted at all, so nothing was
 // executed and it is safe to fall back to running the command locally.
 var errHelperUnreachable = errors.New("privileged helper unreachable")
@@ -137,7 +141,7 @@ func writeManagedFile(path string, content []byte, mode os.FileMode) error {
 	if privHelperAvailable() {
 		return helperFileOp(req)
 	}
-	if os.Getuid() == 0 {
+	if isRoot() {
 		return writeManagedFileDirect(path, content, mode, false)
 	}
 	return fmt.Errorf("privileged helper unavailable and process is not root")
@@ -148,7 +152,7 @@ func appendManagedFile(path string, content []byte, mode os.FileMode) error {
 	if privHelperAvailable() {
 		return helperFileOp(req)
 	}
-	if os.Getuid() == 0 {
+	if isRoot() {
 		return writeManagedFileDirect(path, content, mode, true)
 	}
 	return fmt.Errorf("privileged helper unavailable and process is not root")
@@ -159,7 +163,7 @@ func mkdirManagedDir(path string, mode os.FileMode) error {
 	if privHelperAvailable() {
 		return helperFileOp(req)
 	}
-	if os.Getuid() == 0 {
+	if isRoot() {
 		return os.MkdirAll(path, mode)
 	}
 	return fmt.Errorf("privileged helper unavailable and process is not root")
@@ -170,7 +174,7 @@ func removeManagedFile(path string) error {
 	if privHelperAvailable() {
 		return helperFileOp(req)
 	}
-	if os.Getuid() == 0 {
+	if isRoot() {
 		err := os.Remove(path)
 		if os.IsNotExist(err) {
 			return nil
@@ -185,7 +189,7 @@ func removeManagedDirAll(path string) error {
 	if privHelperAvailable() {
 		return helperFileOp(req)
 	}
-	if os.Getuid() == 0 {
+	if isRoot() {
 		return os.RemoveAll(path)
 	}
 	return fmt.Errorf("privileged helper unavailable and process is not root")
@@ -196,7 +200,7 @@ func renameManagedPath(oldPath, newPath string) error {
 	if privHelperAvailable() {
 		return helperFileOp(req)
 	}
-	if os.Getuid() == 0 {
+	if isRoot() {
 		return os.Rename(oldPath, newPath)
 	}
 	return fmt.Errorf("privileged helper unavailable and process is not root")
@@ -207,7 +211,7 @@ func copyManagedPath(src, dst string) error {
 	if privHelperAvailable() {
 		return helperFileOp(req)
 	}
-	if os.Getuid() == 0 {
+	if isRoot() {
 		return copyPathDirect(src, dst)
 	}
 	return fmt.Errorf("privileged helper unavailable and process is not root")
@@ -221,6 +225,9 @@ func readManagedFile(path string) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+		if resp.ExitCode == 2 {
+			return nil, &os.PathError{Op: "read", Path: path, Err: syscall.ENOENT} // os.IsNotExist works
+		}
 		if resp.ExitCode != 0 {
 			if resp.Stderr != "" {
 				return nil, fmt.Errorf("%s", resp.Stderr)
@@ -229,7 +236,7 @@ func readManagedFile(path string) ([]byte, error) {
 		}
 		return resp.Data, nil
 	}
-	if os.Getuid() == 0 {
+	if isRoot() {
 		if err := validateManagedReadPath(path); err != nil {
 			return nil, err
 		}
@@ -316,4 +323,31 @@ func copyPathDirect(src, dst string) error {
 		return err
 	}
 	return os.WriteFile(dst, data, info.Mode().Perm())
+}
+
+// managedPathExists reports whether a managed config file exists. Root checks directly; the
+// unprivileged backend asks the helper, because directories such as /etc/wireguard are not
+// traversable by its user.
+func managedPathExists(path string) (bool, error) {
+	if isRoot() {
+		_, err := os.Stat(path)
+		if err == nil {
+			return true, nil
+		}
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	if !privHelperAvailable() {
+		return false, errHelperRequired
+	}
+	resp, err := runViaHelperRequest(PrivRequest{Op: "exists", Path: path})
+	if err != nil {
+		return false, err
+	}
+	if resp.ExitCode != 0 {
+		return false, fmt.Errorf("%s", resp.Stderr)
+	}
+	return resp.Stdout == "yes", nil
 }

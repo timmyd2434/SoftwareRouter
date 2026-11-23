@@ -104,8 +104,12 @@ func getUpdateStatus(w http.ResponseWriter, r *http.Request) {
 		return cmd.CombinedOutput()
 	}
 
-	// Fetch latest from origin (non-fatal — display cached data if it fails)
-	if out, err := runGitCombined("fetch", "origin"); err != nil {
+	// Fetch latest from origin (non-fatal — display cached data if it fails). Without root the
+	// service cannot write into the repository, so it only asks the remote (read-only).
+	var remoteFull string
+	if !isRoot() {
+		remoteFull = readOnlyRemoteHead(runGit, branch)
+	} else if out, err := runGitCombined("fetch", "origin"); err != nil {
 		log.Printf("[WARN] git fetch origin failed (%v): %s — trying HTTPS...", err, strings.TrimSpace(string(out)))
 		refSpec := fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", branch, branch)
 		if out2, err2 := runGitCombined("fetch", "https://github.com/timmyd2434/SoftwareRouter.git", refSpec); err2 != nil {
@@ -125,6 +129,33 @@ func getUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	currentCommit := strings.TrimSpace(string(currCommitOut))
 	if err != nil {
 		log.Printf("[WARN] git rev-parse HEAD failed in %s: %v", repoDir, err)
+	}
+
+	if remoteFull != "" {
+		currentFullOut, _ := runGit("rev-parse", "HEAD")
+		currentFull := strings.TrimSpace(string(currentFullOut))
+		behind := 0
+		if currentFull != remoteFull {
+			// If the commits are already in the local repository the count is exact; otherwise
+			// report that at least one new commit exists.
+			if _, err := runGit("cat-file", "-e", remoteFull+"^{commit}"); err == nil {
+				if out, err := runGit("rev-list", "--count", "HEAD.."+remoteFull); err == nil {
+					behind, _ = strconv.Atoi(strings.TrimSpace(string(out)))
+				}
+			} else {
+				behind = 1
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(UpdateStatus{
+			CurrentBranch:   currentBranch,
+			CurrentCommit:   currentCommit,
+			LatestCommit:    shortCommit(remoteFull),
+			UpdateAvailable: behind > 0,
+			BehindCount:     behind,
+			LastChecked:     time.Now().Format(time.RFC3339),
+		})
+		return
 	}
 
 	// Latest commit on the remote branch
@@ -197,7 +228,9 @@ func applyUpdate(w http.ResponseWriter, r *http.Request) {
 		var output []byte
 		var err error
 		homeDir := os.Getenv("HOME")
-		if homeDir == "" {
+		if homeDir == "" || !isRoot() {
+			// The update runs as root in its own unit, so use root's home for its build cache,
+			// not the service account's directory.
 			homeDir = "/root"
 		}
 		pathEnv := "/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -205,7 +238,7 @@ func applyUpdate(w http.ResponseWriter, r *http.Request) {
 			pathEnv += ":" + curPath
 		}
 
-		if os.Getuid() == 0 {
+		if isRoot() || privHelperAvailable() {
 			// Run via systemd-run in isolated transient unit so stopping softrouter doesn't kill the update script
 			unitName := fmt.Sprintf("softrouter-update-%d", time.Now().Unix())
 			sysdArgs := []string{

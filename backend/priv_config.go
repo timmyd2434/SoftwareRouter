@@ -28,7 +28,7 @@ func shadowCheckManagedWrite(path string, content []byte) {
 
 // writeRootConfig writes a root-interpreted config file (not atomic, like os.WriteFile).
 func writeRootConfig(path string, content []byte, mode os.FileMode) error {
-	if os.Getuid() == 0 {
+	if isRoot() {
 		shadowCheckManagedWrite(path, content)
 		return os.WriteFile(path, content, mode)
 	}
@@ -38,9 +38,21 @@ func writeRootConfig(path string, content []byte, mode os.FileMode) error {
 // writeRootConfigAtomic is writeRootConfig for files that must never be seen half-written
 // (wg0.conf is read by wg-quick at any moment).
 func writeRootConfigAtomic(path string, content []byte, mode os.FileMode) error {
-	if os.Getuid() == 0 {
+	if isRoot() {
 		shadowCheckManagedWrite(path, content)
 		return writeFileAtomic(path, content, mode)
 	}
 	return writeManagedFile(path, content, mode)
+}
+
+// defaultWGConfPath is where the WireGuard server config really lives.
+const defaultWGConfPath = "/etc/wireguard/wg0.conf"
+
+// readWireGuardConf reads wg0.conf. The file is root-owned, so without root it is read through
+// the helper. Tests point wgConfPath at a temporary file, which is read directly.
+func readWireGuardConf() ([]byte, error) {
+	if wgConfPath != defaultWGConfPath {
+		return os.ReadFile(wgConfPath)
+	}
+	return readManagedFile(wgConfPath)
 }

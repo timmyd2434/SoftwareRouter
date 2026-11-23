@@ -57,7 +57,7 @@ func addVPNClient(w http.ResponseWriter, r *http.Request) {
 	defer wgMu.Unlock()
 
 	// 1. Current server config and existing peers
-	confBytes, err := os.ReadFile(wgConfPath)
+	confBytes, err := readWireGuardConf()
 	if err != nil {
 		respondSystemError(w, ErrVPNCreateFailed, "WireGuard is not initialised (wg0.conf missing)", err)
 		return
@@ -159,7 +159,7 @@ func deleteVPNClient(w http.ResponseWriter, r *http.Request) {
 	defer wgMu.Unlock()
 
 	removed := 0
-	if content, err := os.ReadFile(wgConfPath); err == nil {
+	if content, err := readWireGuardConf(); err == nil {
 		newContent, keys := removeWGPeersByName(string(content), name)
 		if len(keys) > 0 {
 			if err := writeRootConfigAtomic(wgConfPath, []byte(newContent), 0600); err != nil {

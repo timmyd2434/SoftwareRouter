@@ -369,7 +369,7 @@ func (fm *FirewallManager) generateFullRulesetGuest(wanInterfaces, lanInterfaces
 		b.WriteString("    iifname \"wg0\" accept comment \"WireGuard peers (trusted)\"\n")
 	}
 	// OpenVPN server listener (only if the server has been set up)
-	if _, statErr := os.Stat(ovpnServerDir + "/server.conf"); statErr == nil {
+	if ok, _ := managedPathExists(ovpnServerDir + "/server.conf"); ok {
 		for _, wan := range wanInterfaces {
 			b.WriteString(fmt.Sprintf("    iifname \"%s\" udp dport %d accept comment \"OpenVPN server\"\n", wan, ovpnPort))
 		}
