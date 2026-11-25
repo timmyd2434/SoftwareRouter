@@ -93,6 +93,9 @@ type Config struct {
 
 	// Reject plain-http webhooks unless explicitly allowed (P2-7)
 	AllowInsecureWebhook bool `json:"allow_insecure_webhook"`
+
+	// GuestSettings is filled in from guest_access.json just before the firewall is generated.
+	GuestSettings GuestSettings `json:"-"`
 }
 
 // WireGuardEnabled reports whether a WireGuard server is configured (wg0.conf
@@ -1431,6 +1434,7 @@ func main() {
 	mux.HandleFunc("POST /api/guest-access", authWrite(createGuestAccessRule))
 	mux.HandleFunc("PUT /api/guest-access", authWrite(updateGuestAccessRule))
 	mux.HandleFunc("DELETE /api/guest-access", authWrite(deleteGuestAccessRule))
+	mux.HandleFunc("PUT /api/guest-access/settings", authWrite(updateGuestSettings))
 
 	// Routes (Static)
 	mux.HandleFunc("GET /api/routes", authMiddleware(getRoutes))

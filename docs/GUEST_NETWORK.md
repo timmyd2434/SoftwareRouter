@@ -42,3 +42,23 @@ sudo nft list chain inet softrouter input   | grep -i guest
 Guest clients should use the router (or your DNS server) for DNS. If a split-DNS rewrite
 (e.g. in AdGuard Home) points a name at an internal reverse proxy, make sure the guest
 DHCP scope hands out that DNS server, and that the proxy only serves what guests may see.
+
+## DNS control (optional, off by default)
+
+On the same page, three switches apply to **every** isolated network:
+
+| Switch | What it does |
+|--------|--------------|
+| Force DNS through the router | Redirects DNS (port 53) that devices send to any other server (such as 8.8.8.8) to the router, so your ad blocker sees every query. DNS that cannot be redirected, such as IPv6 DNS to an outside server, is dropped. |
+| Block DNS-over-TLS and DNS-over-QUIC | Drops port 853. |
+| Block DNS-over-HTTPS to well-known resolvers | Drops HTTPS and QUIC to the published addresses of Cloudflare, Google, Quad9, OpenDNS, AdGuard DNS, CleanBrowsing and Control D. |
+
+Limits: the DoH list only covers resolvers with known addresses. A resolver that shares an address
+with ordinary websites is not caught by it; block those by name in your ad blocker's lists. A device
+that insists on its own encrypted DNS and has nothing else to fall back on may lose DNS entirely, which
+is the point of the setting. Each rule has a counter, so you can see attempts with
+`sudo nft list chain inet softrouter forward | grep -i guest` and
+`sudo nft list chain ip softrouter_nat prerouting | grep -i guest`.
+
+The settings are stored next to the exceptions in `/etc/softrouter/guest_access.json`, survive every
+firewall regeneration, and are applied with the same automatic rollback as exceptions.

@@ -156,6 +156,7 @@ func (fm *FirewallManager) ApplyFirewallRules(skipWatchdog bool) error {
 	fmt.Printf("[FIREWALL] Active WAN Interfaces: %v | Active LAN Interfaces: %v | Guest Interfaces: %v\n", wanInterfaces, lanInterfaces, guestInterfaces)
 
 	// 4. Generate complete ruleset as text
+	cfg.GuestSettings = GetGuestSettings()
 	ruleset, err := fm.generateFullRulesetGuest(wanInterfaces, lanInterfaces, guestInterfaces, GetGuestAllowRules(), cfg, pfRules)
 	if err != nil {
 		return fmt.Errorf("Failed to generate ruleset: %v", err)
@@ -444,6 +445,7 @@ func (fm *FirewallManager) generateFullRulesetGuest(wanInterfaces, lanInterfaces
 	}
 
 	// Guest/IoT -> explicit exceptions, then WAN. Never guest -> LAN or LAN -> guest.
+	writeGuestDNSBlocks(&b, guestInterfaces, cfg.GuestSettings)
 	writeGuestForwardRules(&b, guestInterfaces, wanInterfaces, guestAllow)
 
 	// Allow LAN -> LAN (Inter-LAN and Inter-Bridge routing)
@@ -482,6 +484,9 @@ func (fm *FirewallManager) generateFullRulesetGuest(wanInterfaces, lanInterfaces
 	// PREROUTING Chain
 	b.WriteString("  chain prerouting {\n")
 	b.WriteString("    type nat hook prerouting priority dstnat; policy accept;\n\n")
+
+	// Guest/IoT DNS enforcement (opt-in): send their DNS to the router.
+	writeGuestDNSRedirect(&b, guestInterfaces, cfg.GuestSettings)
 
 	// LAN Access to WebUI (DNAT to localhost)
 	// IMPORTANT: Use "fib daddr type local" to only match traffic destined for the

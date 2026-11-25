@@ -41,6 +41,7 @@ const readError = async (response, fallback) => {
 const GuestAccess = () => {
     const [rules, setRules] = useState([]);
     const [guestInterfaces, setGuestInterfaces] = useState([]);
+    const [settings, setSettings] = useState({ enforce_dns: false, block_dot: false, block_doh: false });
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [busy, setBusy] = useState(false);
@@ -61,6 +62,7 @@ const GuestAccess = () => {
             const data = await response.json();
             setRules(data.rules || []);
             setGuestInterfaces(data.guest_interfaces || []);
+            if (data.settings) setSettings(data.settings);
             setError(null);
         } catch (err) {
             setError(err.message);
@@ -145,6 +147,25 @@ const GuestAccess = () => {
         }
     };
 
+    const handleSetting = async (key) => {
+        const next = { ...settings, [key]: !settings[key] };
+        try {
+            setBusy(true);
+            const response = await authFetch(API_ENDPOINTS.GUEST_ACCESS_SETTINGS, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(next)
+            });
+            if (!response.ok) throw new Error(await readError(response, 'The change was not applied'));
+            setSettings(next);
+            setError(null);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setBusy(false);
+        }
+    };
+
     const handleToggle = async (rule) => {
         try {
             setBusy(true);
@@ -213,6 +234,47 @@ const GuestAccess = () => {
                     </div>
                 </div>
             ))}
+
+            <div className="guest-dns">
+                <h2>DNS control</h2>
+                <p className="guest-hint">
+                    Applies to every isolated network. Off by default. Turn these on to make sure your ad blocker
+                    sees every query from these devices, even ones that try to use another DNS server.
+                </p>
+                {[
+                    {
+                        key: 'enforce_dns',
+                        title: 'Force DNS through the router',
+                        text: 'Any DNS query to another server (such as 8.8.8.8) is redirected to the router. DNS that cannot be redirected, such as IPv6 DNS to an outside server, is dropped.'
+                    },
+                    {
+                        key: 'block_dot',
+                        title: 'Block DNS-over-TLS and DNS-over-QUIC',
+                        text: 'Drops port 853, so devices cannot send encrypted DNS around the router.'
+                    },
+                    {
+                        key: 'block_doh',
+                        title: 'Block DNS-over-HTTPS to well-known resolvers',
+                        text: 'Drops HTTPS and QUIC to the addresses of Cloudflare, Google, Quad9, OpenDNS, AdGuard, CleanBrowsing and Control D resolvers. Resolvers that share an address with ordinary websites are not covered; your ad blocker\'s lists cover those by name.'
+                    }
+                ].map((item) => (
+                    <div className="guest-dns-row" key={item.key}>
+                        <div>
+                            <strong>{item.title}</strong>
+                            <span className="guest-hint">{item.text}</span>
+                        </div>
+                        <label className="toggle-switch">
+                            <input
+                                type="checkbox"
+                                checked={!!settings[item.key]}
+                                disabled={busy}
+                                onChange={() => handleSetting(item.key)}
+                            />
+                            <span className="toggle-slider"></span>
+                        </label>
+                    </div>
+                ))}
+            </div>
 
             <div className="rules-list">
                 {loading ? (

@@ -201,7 +201,8 @@ func normalizeGuestAllowRule(r GuestAllowRule) (GuestAllowRule, error) {
 // ---------------------------------------------------------------- storage
 
 type guestAllowStore struct {
-	Rules []GuestAllowRule `json:"rules"`
+	Rules    []GuestAllowRule `json:"rules"`
+	Settings GuestSettings    `json:"settings"`
 }
 
 var (
@@ -251,12 +252,36 @@ func GetGuestAllowRules() []GuestAllowRule {
 	return out
 }
 
-// setGuestAllowRules replaces the stored rules and persists them atomically.
+// setGuestAllowRules replaces the stored rules (keeping the settings) and persists them atomically.
 func setGuestAllowRules(rules []GuestAllowRule) error {
 	guestStoreLock.Lock()
 	defer guestStoreLock.Unlock()
+	return saveGuestStoreLocked(guestAllowStore{Rules: rules, Settings: guestStore.Settings})
+}
 
-	data, err := json.MarshalIndent(guestAllowStore{Rules: rules}, "", "  ")
+// setGuestSettings replaces the settings (keeping the rules) and persists them atomically.
+func setGuestSettings(settings GuestSettings) error {
+	guestStoreLock.Lock()
+	defer guestStoreLock.Unlock()
+	return saveGuestStoreLocked(guestAllowStore{Rules: guestStore.Rules, Settings: settings})
+}
+
+// GetGuestSettings returns the stored settings (all off when nothing has been saved).
+func GetGuestSettings() GuestSettings {
+	guestStoreLock.RLock()
+	ready := guestStoreReady
+	guestStoreLock.RUnlock()
+	if !ready {
+		loadGuestAllowRules()
+	}
+	guestStoreLock.RLock()
+	defer guestStoreLock.RUnlock()
+	return guestStore.Settings
+}
+
+// saveGuestStoreLocked writes the store to disk atomically; the caller holds guestStoreLock.
+func saveGuestStoreLocked(store guestAllowStore) error {
+	data, err := json.MarshalIndent(store, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -286,7 +311,7 @@ func setGuestAllowRules(rules []GuestAllowRule) error {
 		os.Remove(name)
 		return fmt.Errorf("failed to replace guest access config: %w", err)
 	}
-	guestStore.Rules = rules
+	guestStore = store
 	guestStoreReady = true
 	return nil
 }

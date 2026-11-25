@@ -81,3 +81,33 @@
 .guest-check input {
     width: auto;
 }
+
+.guest-dns {
+    margin-bottom: 1.5rem;
+    padding: 1rem 1.25rem;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+}
+
+.guest-dns h2 {
+    margin: 0 0 0.25rem;
+    font-size: 1.1rem;
+}
+
+.guest-dns-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1.5rem;
+    padding: 0.75rem 0;
+    border-top: 1px solid var(--border-color);
+}
+
+.guest-dns-row:first-of-type {
+    margin-top: 0.75rem;
+}
+
+.guest-dns-row > div {
+    max-width: 70ch;
+}

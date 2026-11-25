@@ -30,6 +30,7 @@ func listGuestAccess(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"rules":            GetGuestAllowRules(),
+		"settings":         GetGuestSettings(),
 		"guest_interfaces": guestInterfaceNames(),
 	})
 }
@@ -152,4 +153,35 @@ func deleteGuestAccessRule(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+// PUT /api/guest-access/settings
+func updateGuestSettings(w http.ResponseWriter, r *http.Request) {
+	var settings GuestSettings
+	r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&settings); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	previous := GetGuestSettings()
+	details, _ := json.Marshal(settings)
+	if err := setGuestSettings(settings); err != nil {
+		logAuditEvent(getUsernameFromToken(r), "guest_access.settings", "dns", string(details), getClientIP(r), false)
+		respondSystemError(w, ErrNetworkRuleAddFailed, "Failed to save guest network settings", err)
+		return
+	}
+	// Same safety net as the rules: if the firewall refuses the change, put the old settings back.
+	if err := firewallManager.ApplyFirewallRules(true); err != nil {
+		_ = setGuestSettings(previous)
+		_ = firewallManager.ApplyFirewallRules(true)
+		logAuditEvent(getUsernameFromToken(r), "guest_access.settings", "dns", string(details), getClientIP(r), false)
+		respondSystemError(w, ErrNetworkRuleAddFailed, "Firewall rejected the change; it was not applied", err)
+		return
+	}
+	logAuditEvent(getUsernameFromToken(r), "guest_access.settings", "dns", string(details), getClientIP(r), true)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(settings)
 }
